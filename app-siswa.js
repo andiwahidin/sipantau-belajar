@@ -1,6 +1,6 @@
 // ============================================================================
-// FILE: app-siswa.js
-// Logika Halaman Publik Siswa & Modal Profil Tugas Belum Selesai
+// FILE: app-siswa.js (v3.1)
+// Logika Halaman Publik Siswa dengan Filter Kelas, Guru, dan Mata Pelajaran
 // ============================================================================
 
 let pubStudents = [];
@@ -8,6 +8,7 @@ let pubAssessments = [];
 let pubScores = [];
 let pubTeachersMap = {};
 let pubClassesMap = {};
+let allSettingsInClass = [];
 
 window.onload = async () => {
     await loadInitialPublicDropdowns();
@@ -34,14 +35,52 @@ async function loadInitialPublicDropdowns() {
     if (params.get('kelas')) {
         selClass.value = params.get('kelas');
         if (params.get('guru')) selTeacher.value = params.get('guru');
+        await populatePublicMapelDropdown(params.get('mapel'));
         await loadPublicData();
+    }
+}
+
+async function onPublicClassChange() {
+    await populatePublicMapelDropdown();
+    await loadPublicData();
+}
+
+async function onPublicTeacherChange() {
+    await populatePublicMapelDropdown();
+    await loadPublicData();
+}
+
+async function populatePublicMapelDropdown(preferredMapel = null) {
+    const classId = document.getElementById('pub-class').value;
+    const teacherId = document.getElementById('pub-teacher').value;
+    const selMapel = document.getElementById('pub-mapel');
+
+    if (!classId) {
+        selMapel.innerHTML = '<option value="all">-- Semua Mata Pelajaran --</option>';
+        return;
+    }
+
+    let q = db.from('teacher_settings').select('*').eq('class_id', classId);
+    if (teacherId !== 'all') q = q.eq('teacher_id', teacherId);
+    const { data } = await q;
+    allSettingsInClass = data || [];
+
+    const uniqueMapels = [...new Set(allSettingsInClass.map(s => s.mapel))];
+    selMapel.innerHTML = '<option value="all">-- Semua Mata Pelajaran --</option>';
+    uniqueMapels.forEach(m => {
+        selMapel.innerHTML += `<option value="${m}">${m}</option>`;
+    });
+
+    if (preferredMapel && uniqueMapels.includes(preferredMapel)) {
+        selMapel.value = preferredMapel;
     }
 }
 
 function copyPublicLink() {
     const k = document.getElementById('pub-class').value;
     const g = document.getElementById('pub-teacher').value;
-    const url = `${window.location.origin}${window.location.pathname}?kelas=${k}&guru=${g}`;
+    const m = encodeURIComponent(document.getElementById('pub-mapel').value);
+    const url = `${window.location.origin}${window.location.pathname}?kelas=${k}&guru=${g}&mapel=${m}`;
     navigator.clipboard.writeText(url);
     showToast('Link Halaman Siswa berhasil disalin!');
 }
@@ -49,6 +88,7 @@ function copyPublicLink() {
 async function loadPublicData() {
     const classId = document.getElementById('pub-class').value;
     const teacherId = document.getElementById('pub-teacher').value;
+    const mapelFilter = document.getElementById('pub-mapel').value;
     const tbody = document.getElementById('pub-tbody');
     const linksBox = document.getElementById('pub-links-box');
     const cardsContainer = document.getElementById('pub-assessment-cards');
@@ -64,21 +104,23 @@ async function loadPublicData() {
 
     let queryAss = db.from('assessments').select('*').eq('class_id', classId).order('id');
     if (teacherId !== 'all') queryAss = queryAss.eq('teacher_id', teacherId);
+    if (mapelFilter && mapelFilter !== 'all') queryAss = queryAss.eq('mapel', mapelFilter);
+
     const { data: assessments } = await queryAss;
     pubAssessments = assessments || [];
 
-    // Render Kartu Tugas & Link Pengumpulan Guru
     if (pubAssessments.length) {
         linksBox.classList.remove('hidden');
         cardsContainer.innerHTML = '';
         pubAssessments.forEach(a => {
             const labelKat = a.kategori === 'tugas' ? 'Tugas' : (a.kategori === 'ujian_bab' ? 'Ujian Akhir Bab' : 'Ujian Semester');
             const namaGuru = pubTeachersMap[a.teacher_id] || 'Guru Mapel';
+            const namaMapel = a.mapel || 'Mata Pelajaran';
             cardsContainer.innerHTML += `
                 <div class="bg-slate-50/80 p-4 rounded-2xl border border-slate-200 flex flex-col justify-between gap-3 hover:border-indigo-300 transition">
                     <div>
                         <div class="flex items-center justify-between gap-2">
-                            <span class="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800">${labelKat} • ${a.tipe_kerja}</span>
+                            <span class="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800">${namaMapel} • ${labelKat}</span>
                             <span class="text-[11px] font-semibold text-slate-500 truncate">${namaGuru}</span>
                         </div>
                         <h4 class="font-extrabold text-sm text-slate-900 mt-2">${a.judul}</h4>
@@ -103,7 +145,6 @@ async function loadPublicData() {
     const assIds = pubAssessments.map(a => a.id);
     pubScores = [];
     if (assIds.length) {
-        // Hanya mengambil status_kumpul & link_tugas_siswa (TIDAK mengambil kolom nilai)
         const { data: sc } = await db.from('scores')
             .select('assessment_id, student_id, status_kumpul, link_tugas_siswa')
             .in('assessment_id', assIds);
@@ -148,7 +189,7 @@ function renderPublicTable() {
                     <span class="inline-flex items-center gap-1 px-2.5 py-1 mr-1.5 mb-1.5 rounded-full text-xs font-bold border ${
                         sudah ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
                     }">
-                        ${sudah ? '✅' : '❌'} ${a.judul}
+                        ${sudah ? '✅' : '❌'} [${a.mapel || 'Mapel'}] ${a.judul}
                     </span>
                 `;
             });
@@ -177,9 +218,6 @@ function renderPublicTable() {
     });
 }
 
-// ============================================================================
-// PROFIL INTERAKTIF SISWA (MENAMPILKAN TUGAS YANG BELUM DISELESAIKAN)
-// ============================================================================
 function openStudentProfileModal(studentId) {
     const stu = pubStudents.find(s => s.id === studentId);
     if (!stu) return;
@@ -213,7 +251,6 @@ function openStudentProfileModal(studentId) {
     document.getElementById('prof-pending-count').innerText = pendingTasks.length;
     document.getElementById('prof-done-count').innerText = completedTasks.length;
 
-    // Render Tugas yang BELUM Selesai
     const pendingContainer = document.getElementById('prof-pending-list');
     pendingContainer.innerHTML = '';
     if (!pendingTasks.length) {
@@ -226,10 +263,11 @@ function openStudentProfileModal(studentId) {
         pendingTasks.forEach(({ ass }) => {
             const labelKat = ass.kategori === 'tugas' ? 'Tugas' : (ass.kategori === 'ujian_bab' ? 'Ujian Akhir Bab' : 'Ujian Semester');
             const namaGuru = pubTeachersMap[ass.teacher_id] || 'Guru Mapel';
+            const namaMapel = ass.mapel || 'Mata Pelajaran';
             pendingContainer.innerHTML += `
                 <div class="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                        <span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-rose-200/70 text-rose-900">${labelKat} • ${namaGuru}</span>
+                        <span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-rose-200/70 text-rose-900">${namaMapel} • ${labelKat} • ${namaGuru}</span>
                         <h5 class="font-extrabold text-sm text-slate-900 mt-1">${ass.judul}</h5>
                     </div>
                     <div class="flex flex-wrap gap-2 shrink-0">
@@ -247,7 +285,6 @@ function openStudentProfileModal(studentId) {
         });
     }
 
-    // Render Tugas yang SUDAH Selesai
     const doneContainer = document.getElementById('prof-done-list');
     doneContainer.innerHTML = '';
     if (!completedTasks.length) {
@@ -255,10 +292,11 @@ function openStudentProfileModal(studentId) {
     } else {
         completedTasks.forEach(({ ass, rec }) => {
             const namaGuru = pubTeachersMap[ass.teacher_id] || 'Guru Mapel';
+            const namaMapel = ass.mapel || 'Mata Pelajaran';
             doneContainer.innerHTML += `
                 <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2 text-xs">
                     <div>
-                        <span class="font-bold text-slate-800">✅ ${ass.judul}</span>
+                        <span class="font-bold text-slate-800">✅ [${namaMapel}] ${ass.judul}</span>
                         <span class="text-slate-400 ml-1">(${namaGuru})</span>
                     </div>
                     ${rec?.link_tugas_siswa ? `<a href="${rec.link_tugas_siswa}" target="_blank" class="text-indigo-600 font-bold hover:underline">Lihat Link Bukti ↗</a>` : '<span class="text-emerald-700 font-bold">Tercatat di Guru</span>'}
@@ -274,9 +312,6 @@ function closeStudentProfileModal() {
     document.getElementById('modal-student-profile').classList.add('hidden');
 }
 
-// ============================================================================
-// MODAL SETOR LINK TUGAS OLEH SISWA
-// ============================================================================
 function openSubmitModal(assId, assTitle, prefilledNisn = '') {
     closeStudentProfileModal();
     document.getElementById('mod-ass-id').value = assId;
@@ -292,7 +327,6 @@ function closeSubmitModal() {
 
 async function submitStudentTaskLink(e) {
     e.preventDefault();
-    const classId = document.getElementById('pub-class').value;
     const assessment_id = Number(document.getElementById('mod-ass-id').value);
     const nisn = document.getElementById('mod-nisn').value.trim();
     const link_tugas_siswa = document.getElementById('mod-link').value.trim();
