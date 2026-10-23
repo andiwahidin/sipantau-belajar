@@ -6,7 +6,7 @@
     <title>Portal Data & Profil Akademik Siswa — SiPantau Belajar</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=3.3">
 </head>
 <body class="min-h-screen flex flex-col bg-slate-50 text-slate-800 antialiased">
 
@@ -37,7 +37,7 @@
     <!-- TOAST NOTIFICATION -->
     <div id="toast" class="hidden"></div>
 
-    <!-- MODAL SETOR LINK TUGAS (DIAKSES DARI HALAMAN PROFIL SISWA) -->
+    <!-- MODAL SETOR LINK TUGAS -->
     <div id="modal-submit-link" class="hidden fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 modal-card border border-slate-100">
             <div class="flex justify-between items-center border-b pb-3">
@@ -70,9 +70,7 @@
     <!-- MAIN CONTENT CONTAINER -->
     <main class="flex-grow max-w-7xl w-full mx-auto px-4 py-6">
 
-        <!-- ===================================================================
-             VIEW 1: HALAMAN DATA UTAMA SISWA (DIREKTORI SISWA)
-             =================================================================== -->
+        <!-- VIEW 1: HALAMAN DATA UTAMA SISWA (DIREKTORI SISWA) -->
         <section id="view-directory" class="space-y-6">
 
             <!-- Hero Banner Direktori -->
@@ -88,7 +86,6 @@
                         </p>
                     </div>
 
-                    <!-- Statistik Singkat Direktori -->
                     <div class="flex gap-3 shrink-0">
                         <div class="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl px-5 py-3.5 text-center min-w-[110px]">
                             <span id="stat-total-classes" class="block text-2xl font-extrabold text-white">0</span>
@@ -143,7 +140,7 @@
                         </thead>
                         <tbody id="dir-tbody" class="divide-y divide-slate-200/80">
                             <tr>
-                                <td colspan="5" class="p-10 text-center text-slate-400">Memuat data siswa...</td>
+                                <td colspan="5" class="p-10 text-center text-slate-400">Memuat data siswa dari database...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -152,12 +149,9 @@
 
         </section>
 
-        <!-- ===================================================================
-             VIEW 2: HALAMAN PROFIL LENGKAP SISWA (FULL-PAGE VIEW)
-             =================================================================== -->
+        <!-- VIEW 2: HALAMAN PROFIL LENGKAP SISWA (FULL-PAGE VIEW) -->
         <section id="view-profile" class="hidden space-y-6">
 
-            <!-- Breadcrumb & Navigasi Atas -->
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <button onclick="backToDirectory()" class="inline-flex items-center gap-2 text-xs font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-4 py-2 rounded-xl hover:bg-indigo-100 transition">
                     <span>←</span> Kembali ke Halaman Data Utama Siswa
@@ -185,7 +179,6 @@
                         </div>
                     </div>
 
-                    <!-- Ringkasan Identitas Kanan -->
                     <div class="bg-slate-900/30 backdrop-blur-md border border-white/15 rounded-2xl p-4 flex items-center gap-4 shrink-0">
                         <div>
                             <span class="block text-[10px] font-bold uppercase tracking-wider text-indigo-200">Status Tanggungan Tugas</span>
@@ -222,61 +215,48 @@
                 </div>
             </div>
 
-            <!-- 4 KARTU RINGKASAN UTAMA (TUGAS BELUM SELESAI & KEHADIRAN S / I / A) -->
+            <!-- 4 KARTU RINGKASAN UTAMA -->
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <!-- Card 1: Tugas Belum Selesai -->
                 <div class="bg-white p-5 rounded-2xl shadow-sm border border-rose-200 flex items-center justify-between">
                     <div>
                         <span class="text-xs font-bold text-slate-500 block">Tugas Belum Selesai</span>
                         <span id="card-uncompleted-count" class="text-3xl font-extrabold text-rose-600 mt-1 block">0</span>
                         <span id="card-total-tasks-sub" class="text-[11px] font-semibold text-slate-400">dari 0 total tugas</span>
                     </div>
-                    <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl font-bold">
-                        📝
-                    </div>
+                    <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl font-bold">📝</div>
                 </div>
 
-                <!-- Card 2: Sakit (S) -->
                 <div class="bg-white p-5 rounded-2xl shadow-sm border border-amber-200 flex items-center justify-between">
                     <div>
                         <span class="text-xs font-bold text-slate-500 block">Total Sakit (S)</span>
                         <span id="card-sakit-count" class="text-3xl font-extrabold text-amber-500 mt-1 block">0</span>
                         <span class="text-[11px] font-semibold text-slate-400">pertemuan tercatat</span>
                     </div>
-                    <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center text-xl font-bold">
-                        🤒
-                    </div>
+                    <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center text-xl font-bold">🤒</div>
                 </div>
 
-                <!-- Card 3: Izin (I) -->
                 <div class="bg-white p-5 rounded-2xl shadow-sm border border-sky-200 flex items-center justify-between">
                     <div>
                         <span class="text-xs font-bold text-slate-500 block">Total Izin (I)</span>
                         <span id="card-izin-count" class="text-3xl font-extrabold text-sky-600 mt-1 block">0</span>
                         <span class="text-[11px] font-semibold text-slate-400">pertemuan tercatat</span>
                     </div>
-                    <div class="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center text-xl font-bold">
-                        📩
-                    </div>
+                    <div class="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center text-xl font-bold">📩</div>
                 </div>
 
-                <!-- Card 4: Alpa / Tanpa Keterangan (A) -->
                 <div class="bg-white p-5 rounded-2xl shadow-sm border border-rose-200 flex items-center justify-between">
                     <div>
                         <span class="text-xs font-bold text-slate-500 block">Total Alpa (A)</span>
                         <span id="card-alpa-count" class="text-3xl font-extrabold text-rose-600 mt-1 block">0</span>
                         <span class="text-[11px] font-semibold text-slate-400">tanpa keterangan</span>
                     </div>
-                    <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl font-bold">
-                        ⚠️
-                    </div>
+                    <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl font-bold">⚠️</div>
                 </div>
             </div>
 
-            <!-- GRID 2 KOLOM: DAFTAR TUGAS BELUM SELESAI & RINCIAN TANGGAL KEHADIRAN (S/I/A) -->
+            <!-- GRID 2 KOLOM: DAFTAR TUGAS BELUM SELESAI & RINCIAN TANGGAL KEHADIRAN -->
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-                <!-- KOLOM KIRI (7 KOLOM): DAFTAR TUGAS YANG BELUM DISELESAIKAN -->
                 <div class="lg:col-span-7 space-y-6">
                     <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
                         <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-rose-50/40">
@@ -290,11 +270,9 @@
                                 0 Tugas
                             </span>
                         </div>
-
                         <div id="prof-pending-tasks-list" class="p-6 space-y-3.5"></div>
                     </div>
 
-                    <!-- Riwayat Tugas yang Sudah Selesai (Opsional / Collapsible) -->
                     <details class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden group">
                         <summary class="px-6 py-4 cursor-pointer font-extrabold text-sm text-emerald-800 bg-emerald-50/40 flex items-center justify-between select-none">
                             <span class="flex items-center gap-2">
@@ -306,7 +284,6 @@
                     </details>
                 </div>
 
-                <!-- KOLOM KANAN (5 KOLOM): DATA KEHADIRAN (SAKIT, IZIN, ALPA) & TANGGAL (DD/MM/YYYY) -->
                 <div class="lg:col-span-5 space-y-6">
                     <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
                         <div class="px-6 py-4 border-b border-slate-200 bg-slate-50/60">
@@ -319,7 +296,6 @@
                         </div>
 
                         <div class="p-6 space-y-4">
-                            <!-- Tabel Rincian Tanggal S/I/A -->
                             <div class="overflow-x-auto rounded-xl border border-slate-200">
                                 <table class="w-full text-left border-collapse text-xs">
                                     <thead>
@@ -332,8 +308,6 @@
                                     <tbody id="prof-absence-logs-tbody" class="divide-y divide-slate-200"></tbody>
                                 </table>
                             </div>
-
-                            <!-- Info Tambahan Kehadiran -->
                             <div id="prof-attendance-note" class="text-[11px] text-slate-500 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80"></div>
                         </div>
                     </div>
@@ -345,16 +319,8 @@
 
     </main>
 
-    <!-- FOOTER -->
-    <footer class="bg-white border-t border-slate-200/80 py-4 mt-12">
-        <div class="max-w-7xl mx-auto px-4 flex flex-wrap justify-between items-center text-xs text-slate-400 gap-2">
-            <span>© SiPantau Belajar — Portal Transparansi Akademik Siswa</span>
-            <span>Data diperbarui secara real-time dari basis data sekolah</span>
-        </div>
-    </footer>
-
-    <!-- LOAD SCRIPTS -->
-    <script src="config.js"></script>
-    <script src="app-siswa.js"></script>
+    <!-- LOAD SCRIPTS DENGAN CACHE BUSTER -->
+    <script src="config.js?v=3.3"></script>
+    <script src="app-siswa.js?v=3.3"></script>
 </body>
 </html>
