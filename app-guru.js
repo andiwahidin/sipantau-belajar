@@ -1321,8 +1321,8 @@ function printStudentCardPDF(studentId) {
     doc.line(14, 25, 196, 25);
 
     doc.text(`Nama Siswa : ${d.nama}`, 14, 33);
-    doc.text(`NISN       : ${d.nisn}`, 14, 39);
-    doc.text(`Kelas      : ${d.kelas}`, 130, 33);
+    doc.text(`NISN           : ${d.nisn}`, 14, 39);
+    doc.text(`Kelas          : ${d.kelas}`, 130, 33);
     doc.text(`KKM Mapel  : ${d.kkm}`, 130, 39);
 
     doc.autoTable({
