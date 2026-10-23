@@ -3,115 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal Siswa — Pemantauan Tugas & Profil Belajar</title>
+    <title>Portal Data & Profil Akademik Siswa — SiPantau Belajar</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="min-h-screen flex flex-col bg-slate-50 text-slate-800">
+<body class="min-h-screen flex flex-col bg-slate-50 text-slate-800 antialiased">
 
-    <!-- HERO HEADER MODERN -->
-    <header class="bg-gradient-to-r from-indigo-700 via-indigo-600 to-violet-700 text-white shadow-lg">
-        <div class="max-w-7xl mx-auto px-4 py-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div class="space-y-1">
-                <span class="inline-block px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-white/15 backdrop-blur-sm">
-                    🎓 Portal Transparansi Akademik Siswa
-                </span>
-                <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight">Pemantauan Tugas & Profil Belajar Siswa</h1>
-                <p class="text-xs md:text-sm text-indigo-100 max-w-2xl">
-                    Klik pada <b>Nama Anda</b> di dalam tabel untuk membuka <b>Profil Siswa</b> dan melihat daftar tugas yang belum diselesaikan per mata pelajaran.
-                </p>
+    <!-- TOP NAVIGATION BAR -->
+    <nav class="glass-nav sticky top-0 z-40 border-b border-slate-200/80 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 py-3.5 flex flex-wrap justify-between items-center gap-3">
+            <div class="flex items-center space-x-3 cursor-pointer" onclick="backToDirectory()">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center text-white font-extrabold text-lg shadow-md shadow-indigo-200">
+                    SP
+                </div>
+                <div>
+                    <span class="font-extrabold text-lg tracking-tight text-slate-900">Portal Akademik Siswa</span>
+                    <span class="block text-[11px] font-medium text-slate-500 -mt-1">Sistem Informasi Pemantauan Tugas & Kehadiran</span>
+                </div>
             </div>
-            <div class="flex items-center gap-2 self-start md:self-center">
-                <button onclick="copyPublicLink()" class="px-4 py-2.5 bg-white text-indigo-700 rounded-xl text-xs font-extrabold shadow-md hover:bg-indigo-50 transition">
-                    🔗 Bagikan Link Kelas
+
+            <div class="flex items-center gap-2">
+                <button id="btn-nav-back" onclick="backToDirectory()" class="hidden px-3.5 py-2 rounded-xl text-xs font-extrabold bg-slate-100 text-slate-700 hover:bg-slate-200 transition items-center gap-1.5">
+                    <span>←</span> Kembali ke Daftar Siswa
+                </button>
+                <button onclick="copyCurrentPageLink()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition flex items-center gap-1.5">
+                    <span>🔗</span> Salin Tautan Halaman
                 </button>
             </div>
         </div>
-    </header>
+    </nav>
 
     <!-- TOAST NOTIFICATION -->
     <div id="toast" class="hidden"></div>
 
-    <!-- MODAL 1: PROFIL SISWA & DAFTAR TUGAS BELUM SELESAI -->
-    <div id="modal-student-profile" class="hidden fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col modal-card overflow-hidden border border-slate-100">
-            
-            <div class="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-6 flex items-center justify-between gap-4">
-                <div class="flex items-center gap-4">
-                    <div id="prof-avatar" class="w-14 h-14 rounded-2xl bg-indigo-500/30 border border-indigo-400/40 flex items-center justify-center text-xl font-extrabold text-white shrink-0">
-                        S
-                    </div>
-                    <div>
-                        <h3 id="prof-nama" class="font-extrabold text-lg md:text-xl leading-tight">Nama Siswa</h3>
-                        <p id="prof-meta" class="text-xs text-indigo-200 font-mono mt-0.5">NISN: - | Kelas: -</p>
-                    </div>
-                </div>
-                <button onclick="closeStudentProfileModal()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center font-bold">✕</button>
-            </div>
-
-            <div class="p-6 overflow-y-auto space-y-6">
-                <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
-                    <div class="flex justify-between items-center text-xs font-bold">
-                        <span class="text-slate-600">Progres Penyelesaian Tugas</span>
-                        <span id="prof-progress-text" class="text-indigo-700">0 / 0 Tugas Selesai (0%)</span>
-                    </div>
-                    <div class="w-full h-3 bg-slate-200 rounded-full overflow-hidden">
-                        <div id="prof-progress-bar" class="h-full bg-gradient-to-r from-indigo-600 to-emerald-500 transition-all duration-500" style="width: 0%"></div>
-                    </div>
-                </div>
-
-                <div class="space-y-3">
-                    <div class="flex items-center justify-between">
-                        <h4 class="font-extrabold text-sm text-rose-700 flex items-center gap-1.5">
-                            <span>🚨</span> Daftar Tugas / Ujian yang Belum Diselesaikan
-                        </h4>
-                        <span id="prof-pending-count" class="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-rose-100 text-rose-800">0</span>
-                    </div>
-                    <div id="prof-pending-list" class="space-y-2.5"></div>
-                </div>
-
-                <div class="space-y-3 pt-3 border-t border-slate-200">
-                    <div class="flex items-center justify-between">
-                        <h4 class="font-extrabold text-sm text-emerald-700 flex items-center gap-1.5">
-                            <span>✅</span> Riwayat Tugas yang Sudah Dikumpulkan
-                        </h4>
-                        <span id="prof-done-count" class="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800">0</span>
-                    </div>
-                    <div id="prof-done-list" class="space-y-2"></div>
-                </div>
-            </div>
-
-            <div class="px-6 py-3.5 bg-slate-50 border-t flex justify-end">
-                <button onclick="closeStudentProfileModal()" class="px-5 py-2 rounded-xl text-xs font-bold bg-slate-200 text-slate-700 hover:bg-slate-300">
-                    Tutup Profil
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODAL 2: KIRIM LINK BUKTI TUGAS SISWA -->
+    <!-- MODAL SETOR LINK TUGAS (DIAKSES DARI HALAMAN PROFIL SISWA) -->
     <div id="modal-submit-link" class="hidden fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 modal-card">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 modal-card border border-slate-100">
             <div class="flex justify-between items-center border-b pb-3">
                 <h3 class="font-extrabold text-lg text-slate-800">🔗 Setor Link Bukti Tugas</h3>
                 <button onclick="closeSubmitModal()" class="text-slate-400 hover:text-slate-600 font-bold">✕</button>
             </div>
             <form onsubmit="submitStudentTaskLink(event)" class="space-y-3.5">
                 <input type="hidden" id="mod-ass-id">
-                <div class="bg-indigo-50 p-3 rounded-xl border border-indigo-100">
-                    <span class="block text-[10px] font-bold uppercase text-indigo-500">Nama Tugas / Ujian</span>
-                    <p id="mod-ass-title" class="font-extrabold text-indigo-950 text-sm"></p>
+                <div class="bg-indigo-50 p-3.5 rounded-xl border border-indigo-100">
+                    <span class="block text-[10px] font-extrabold uppercase text-indigo-500">Nama Tugas / Ujian</span>
+                    <p id="mod-ass-title" class="font-extrabold text-indigo-950 text-sm mt-0.5"></p>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1">Verifikasi NISN Anda</label>
-                    <input type="text" id="mod-nisn" required placeholder="Ketik NISN Anda" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm font-mono outline-none">
+                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1">Konfirmasi NISN Siswa</label>
+                    <input type="text" id="mod-nisn" required placeholder="Ketik NISN Anda" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm font-mono outline-none focus:ring-2 focus:ring-indigo-500">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1">Link Tugas (Google Drive / OneDrive / Lainnya)</label>
-                    <input type="url" id="mod-link" required placeholder="https://drive.google.com/..." class="w-full border border-slate-300 rounded-xl p-2.5 text-sm outline-none">
+                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1">Tautan Tugas (Google Drive / OneDrive / Lainnya)</label>
+                    <input type="url" id="mod-link" required placeholder="https://drive.google.com/..." class="w-full border border-slate-300 rounded-xl p-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
                 </div>
-                <p class="text-[11px] text-slate-500">Status pengumpulan tugas Anda otomatis berubah menjadi <b>✅ Sudah Kumpul</b> setelah disimpan.</p>
+                <p class="text-[11px] text-slate-500">Setelah dikirim, tugas ini akan otomatis berpindah menjadi <b>Sudah Dikumpulkan</b>.</p>
                 <div class="flex justify-end gap-2 pt-2">
                     <button type="button" onclick="closeSubmitModal()" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200">Batal</button>
                     <button type="submit" class="px-5 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-md">Simpan & Tandai Selesai</button>
@@ -120,70 +67,293 @@
         </div>
     </div>
 
-    <!-- MAIN CONTAINER -->
-    <main class="flex-grow max-w-7xl w-full mx-auto px-4 py-6 space-y-6">
+    <!-- MAIN CONTENT CONTAINER -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 py-6">
 
-        <!-- BAR FILTER KELAS, GURU, MAPEL & PENCARIAN NAMA -->
-        <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-                <label class="block text-xs font-extrabold uppercase text-slate-500 mb-1">1. Pilih Kelas</label>
-                <select id="pub-class" onchange="onPublicClassChange()" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm font-bold bg-slate-50 outline-none"></select>
-            </div>
-            <div>
-                <label class="block text-xs font-extrabold uppercase text-slate-500 mb-1">2. Filter Guru Pengampu</label>
-                <select id="pub-teacher" onchange="onPublicTeacherChange()" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm bg-slate-50 outline-none">
-                    <option value="all">-- Semua Guru --</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-xs font-extrabold uppercase text-slate-500 mb-1">3. Filter Mata Pelajaran</label>
-                <select id="pub-mapel" onchange="loadPublicData()" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm bg-slate-50 outline-none">
-                    <option value="all">-- Semua Mata Pelajaran --</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-xs font-extrabold uppercase text-slate-500 mb-1">4. Cari Nama / NISN Siswa</label>
-                <input type="text" id="pub-search" oninput="renderPublicTable()" placeholder="Ketik nama Anda..." class="w-full border border-slate-300 rounded-xl p-2.5 text-sm outline-none">
-            </div>
-        </div>
+        <!-- ===================================================================
+             VIEW 1: HALAMAN DATA UTAMA SISWA (DIREKTORI SISWA)
+             =================================================================== -->
+        <section id="view-directory" class="space-y-6">
 
-        <!-- KARTU DAFTAR TUGAS & LINK PENGUMPULAN GURU -->
-        <div id="pub-links-box" class="hidden bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 space-y-3">
-            <div class="flex items-center justify-between">
-                <h2 class="font-extrabold text-sm text-slate-800">📂 Daftar Tugas & Link Pengumpulan Resmi Guru</h2>
-                <span class="text-xs text-slate-500">Klik tombol pada kartu tugas untuk membuka folder guru atau menyetor link bukti tugas</span>
-            </div>
-            <div id="pub-assessment-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5"></div>
-        </div>
+            <!-- Hero Banner Direktori -->
+            <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-violet-950 rounded-3xl p-6 md:p-8 text-white shadow-xl relative overflow-hidden">
+                <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div class="space-y-2 max-w-2xl">
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-indigo-500/20 border border-indigo-400/30 text-indigo-200">
+                            ✨ Direktori Data Utama Siswa
+                        </span>
+                        <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight">Data Induk & Profil Akademik Siswa</h1>
+                        <p class="text-xs md:text-sm text-slate-300 leading-relaxed">
+                            Pilih kelas atau cari nama Anda pada daftar di bawah ini, lalu <b>klik pada nama siswa</b> untuk membuka halaman profil lengkap berisi tanggungan tugas dan rincian kehadiran.
+                        </p>
+                    </div>
 
-        <!-- TABEL SISWA INTERAKTIF -->
-        <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
-            <div class="px-5 py-4 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2 bg-slate-50/50">
-                <div>
-                    <h2 class="font-extrabold text-sm text-slate-800">📋 Tabel Status Ketuntasan Pengumpulan Tugas Siswa</h2>
-                    <p class="text-xs text-indigo-600 font-semibold">👆 Klik pada Nama Siswa untuk membuka Profil & rincian tugas yang belum diselesaikan.</p>
+                    <!-- Statistik Singkat Direktori -->
+                    <div class="flex gap-3 shrink-0">
+                        <div class="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl px-5 py-3.5 text-center min-w-[110px]">
+                            <span id="stat-total-classes" class="block text-2xl font-extrabold text-white">0</span>
+                            <span class="text-[11px] font-semibold text-indigo-200">Total Kelas</span>
+                        </div>
+                        <div class="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl px-5 py-3.5 text-center min-w-[110px]">
+                            <span id="stat-total-students" class="block text-2xl font-extrabold text-emerald-400">0</span>
+                            <span class="text-[11px] font-semibold text-indigo-200">Siswa Ditampilkan</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse text-sm">
-                    <thead>
-                        <tr class="bg-slate-100/80 border-b border-slate-200 text-slate-600">
-                            <th class="p-3.5 w-14 text-center font-bold">No</th>
-                            <th class="p-3.5 w-36 font-bold">NISN</th>
-                            <th class="p-3.5 w-72 font-bold">Nama Siswa (Klik Profil)</th>
-                            <th class="p-3.5 font-bold">Ringkasan Status Tugas / Ujian</th>
-                        </tr>
-                    </thead>
-                    <tbody id="pub-tbody" class="divide-y divide-slate-200">
-                        <tr><td colspan="4" class="p-8 text-center text-slate-400">Silakan pilih kelas pada menu di atas terlebih dahulu.</td></tr>
-                    </tbody>
-                </table>
+            <!-- Bar Pencarian & Filter Kelas -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                <div class="md:col-span-4">
+                    <label class="block text-xs font-extrabold uppercase text-slate-500 mb-1.5">Pilih Kelas</label>
+                    <select id="dir-class" onchange="loadDirectoryStudents()" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm font-bold bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="all">-- Semua Kelas --</option>
+                    </select>
+                </div>
+                <div class="md:col-span-6">
+                    <label class="block text-xs font-extrabold uppercase text-slate-500 mb-1.5">Cari Nama Siswa atau NISN</label>
+                    <input type="text" id="dir-search" oninput="renderDirectoryTable()" placeholder="Ketik nama lengkap atau NISN siswa..." class="w-full border border-slate-300 rounded-xl p-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div class="md:col-span-2">
+                    <button onclick="loadDirectoryStudents()" class="w-full bg-indigo-600 text-white py-2.5 px-4 rounded-xl text-sm font-bold hover:bg-indigo-700 transition shadow-sm">
+                        🔄 Segarkan
+                    </button>
+                </div>
             </div>
-        </div>
+
+            <!-- Tabel Data Utama Siswa -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+                <div class="px-6 py-4 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2 bg-slate-50/60">
+                    <div>
+                        <h2 class="font-extrabold text-sm text-slate-800">📋 Daftar Data Utama Siswa</h2>
+                        <p class="text-xs text-slate-500">Klik pada baris atau nama siswa untuk membuka Halaman Profil Siswa.</p>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead>
+                            <tr class="bg-slate-100/80 border-b border-slate-200 text-slate-600 text-xs uppercase tracking-wider">
+                                <th class="p-4 w-16 text-center font-extrabold">No</th>
+                                <th class="p-4 w-44 font-extrabold">NISN</th>
+                                <th class="p-4 font-extrabold">Nama Lengkap Siswa</th>
+                                <th class="p-4 w-40 text-center font-extrabold">Kelas</th>
+                                <th class="p-4 w-44 text-right font-extrabold">Profil Akademik</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dir-tbody" class="divide-y divide-slate-200/80">
+                            <tr>
+                                <td colspan="5" class="p-10 text-center text-slate-400">Memuat data siswa...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- ===================================================================
+             VIEW 2: HALAMAN PROFIL LENGKAP SISWA (FULL-PAGE VIEW)
+             =================================================================== -->
+        <section id="view-profile" class="hidden space-y-6">
+
+            <!-- Breadcrumb & Navigasi Atas -->
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <button onclick="backToDirectory()" class="inline-flex items-center gap-2 text-xs font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-4 py-2 rounded-xl hover:bg-indigo-100 transition">
+                    <span>←</span> Kembali ke Halaman Data Utama Siswa
+                </button>
+                <span class="text-xs text-slate-400 font-medium">Halaman Profil & Pemantauan Akademik Individu</span>
+            </div>
+
+            <!-- Kartu Identitas Utama Siswa -->
+            <div class="bg-white rounded-3xl shadow-sm border border-slate-200/80 overflow-hidden">
+                <div class="bg-gradient-to-r from-indigo-700 via-indigo-600 to-violet-700 px-6 py-6 md:px-8 md:py-7 text-white flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div class="flex items-center gap-5">
+                        <div id="prof-avatar" class="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-white/15 backdrop-blur-md border-2 border-white/30 flex items-center justify-center text-2xl md:text-3xl font-extrabold text-white shadow-inner shrink-0">
+                            S
+                        </div>
+                        <div class="space-y-1.5">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span id="prof-kelas-badge" class="px-3 py-0.5 rounded-full text-xs font-extrabold bg-white text-indigo-700 shadow-sm">
+                                    Kelas -
+                                </span>
+                                <span class="px-3 py-0.5 rounded-full text-xs font-semibold bg-indigo-900/50 border border-indigo-400/30 text-indigo-100 font-mono" id="prof-nisn-badge">
+                                    NISN: -
+                                </span>
+                            </div>
+                            <h1 id="prof-nama" class="text-2xl md:text-3xl font-extrabold tracking-tight">Nama Lengkap Siswa</h1>
+                        </div>
+                    </div>
+
+                    <!-- Ringkasan Identitas Kanan -->
+                    <div class="bg-slate-900/30 backdrop-blur-md border border-white/15 rounded-2xl p-4 flex items-center gap-4 shrink-0">
+                        <div>
+                            <span class="block text-[10px] font-bold uppercase tracking-wider text-indigo-200">Status Tanggungan Tugas</span>
+                            <span id="prof-status-headline" class="text-sm font-extrabold text-white">Memuat data...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bar Filter Guru & Mata Pelajaran di Dalam Profil Siswa -->
+                <div class="p-5 bg-slate-50/70 border-t border-slate-200/80 flex flex-col md:flex-row md:items-end justify-between gap-4">
+                    <div class="space-y-1">
+                        <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                            <span>🔍</span> Filter Sumber Data Guru & Mata Pelajaran
+                        </h3>
+                        <p id="prof-filter-info" class="text-xs text-slate-500">
+                            Menampilkan akumulasi data dari seluruh guru dan mata pelajaran di kelas ini.
+                        </p>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full md:w-auto min-w-[320px] md:min-w-[460px]">
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Pilih Guru Pengampu</label>
+                            <select id="prof-filter-teacher" onchange="onProfileTeacherFilterChange()" class="w-full border border-slate-300 rounded-xl p-2 text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-indigo-500">
+                                <option value="all">-- Seluruh Guru --</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Pilih Mata Pelajaran</label>
+                            <select id="prof-filter-mapel" onchange="renderStudentProfileContent()" class="w-full border border-slate-300 rounded-xl p-2 text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-indigo-500">
+                                <option value="all">-- Semua Mata Pelajaran --</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4 KARTU RINGKASAN UTAMA (TUGAS BELUM SELESAI & KEHADIRAN S / I / A) -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- Card 1: Tugas Belum Selesai -->
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-rose-200 flex items-center justify-between">
+                    <div>
+                        <span class="text-xs font-bold text-slate-500 block">Tugas Belum Selesai</span>
+                        <span id="card-uncompleted-count" class="text-3xl font-extrabold text-rose-600 mt-1 block">0</span>
+                        <span id="card-total-tasks-sub" class="text-[11px] font-semibold text-slate-400">dari 0 total tugas</span>
+                    </div>
+                    <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl font-bold">
+                        📝
+                    </div>
+                </div>
+
+                <!-- Card 2: Sakit (S) -->
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-amber-200 flex items-center justify-between">
+                    <div>
+                        <span class="text-xs font-bold text-slate-500 block">Total Sakit (S)</span>
+                        <span id="card-sakit-count" class="text-3xl font-extrabold text-amber-500 mt-1 block">0</span>
+                        <span class="text-[11px] font-semibold text-slate-400">pertemuan tercatat</span>
+                    </div>
+                    <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center text-xl font-bold">
+                        🤒
+                    </div>
+                </div>
+
+                <!-- Card 3: Izin (I) -->
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-sky-200 flex items-center justify-between">
+                    <div>
+                        <span class="text-xs font-bold text-slate-500 block">Total Izin (I)</span>
+                        <span id="card-izin-count" class="text-3xl font-extrabold text-sky-600 mt-1 block">0</span>
+                        <span class="text-[11px] font-semibold text-slate-400">pertemuan tercatat</span>
+                    </div>
+                    <div class="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center text-xl font-bold">
+                        📩
+                    </div>
+                </div>
+
+                <!-- Card 4: Alpa / Tanpa Keterangan (A) -->
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-rose-200 flex items-center justify-between">
+                    <div>
+                        <span class="text-xs font-bold text-slate-500 block">Total Alpa (A)</span>
+                        <span id="card-alpa-count" class="text-3xl font-extrabold text-rose-600 mt-1 block">0</span>
+                        <span class="text-[11px] font-semibold text-slate-400">tanpa keterangan</span>
+                    </div>
+                    <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl font-bold">
+                        ⚠️
+                    </div>
+                </div>
+            </div>
+
+            <!-- GRID 2 KOLOM: DAFTAR TUGAS BELUM SELESAI & RINCIAN TANGGAL KEHADIRAN (S/I/A) -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+                <!-- KOLOM KIRI (7 KOLOM): DAFTAR TUGAS YANG BELUM DISELESAIKAN -->
+                <div class="lg:col-span-7 space-y-6">
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+                        <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-rose-50/40">
+                            <div>
+                                <h2 class="font-extrabold text-base text-slate-900 flex items-center gap-2">
+                                    <span>🚨</span> Daftar Tugas / Ujian yang Belum Dikumpulkan
+                                </h2>
+                                <p class="text-xs text-slate-500 mt-0.5">Segera kerjakan dan kumpulkan tugas berikut kepada guru pengampu.</p>
+                            </div>
+                            <span id="badge-pending-tasks" class="px-3 py-1 rounded-full text-xs font-extrabold bg-rose-100 text-rose-700">
+                                0 Tugas
+                            </span>
+                        </div>
+
+                        <div id="prof-pending-tasks-list" class="p-6 space-y-3.5"></div>
+                    </div>
+
+                    <!-- Riwayat Tugas yang Sudah Selesai (Opsional / Collapsible) -->
+                    <details class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden group">
+                        <summary class="px-6 py-4 cursor-pointer font-extrabold text-sm text-emerald-800 bg-emerald-50/40 flex items-center justify-between select-none">
+                            <span class="flex items-center gap-2">
+                                <span>✅</span> Lihat Riwayat Tugas yang Sudah Dikumpulkan
+                            </span>
+                            <span id="badge-done-tasks" class="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800">0 Selesai</span>
+                        </summary>
+                        <div id="prof-completed-tasks-list" class="p-6 border-t border-slate-100 space-y-2.5"></div>
+                    </details>
+                </div>
+
+                <!-- KOLOM KANAN (5 KOLOM): DATA KEHADIRAN (SAKIT, IZIN, ALPA) & TANGGAL (DD/MM/YYYY) -->
+                <div class="lg:col-span-5 space-y-6">
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+                        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50/60">
+                            <h2 class="font-extrabold text-base text-slate-900 flex items-center gap-2">
+                                <span>📅</span> Rincian Ketidakhadiran (Sakit, Izin, Alpa)
+                            </h2>
+                            <p class="text-xs text-slate-500 mt-0.5">
+                                Daftar tanggal pertemuan (<b>DD/MM/YYYY</b>) saat siswa tercatat Sakit, Izin, atau Alpa.
+                            </p>
+                        </div>
+
+                        <div class="p-6 space-y-4">
+                            <!-- Tabel Rincian Tanggal S/I/A -->
+                            <div class="overflow-x-auto rounded-xl border border-slate-200">
+                                <table class="w-full text-left border-collapse text-xs">
+                                    <thead>
+                                        <tr class="bg-slate-100 text-slate-600 border-b border-slate-200">
+                                            <th class="p-3 font-extrabold">Tanggal (DD/MM/YYYY)</th>
+                                            <th class="p-3 font-extrabold text-center">Keterangan</th>
+                                            <th class="p-3 font-extrabold">Mata Pelajaran & Guru</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="prof-absence-logs-tbody" class="divide-y divide-slate-200"></tbody>
+                                </table>
+                            </div>
+
+                            <!-- Info Tambahan Kehadiran -->
+                            <div id="prof-attendance-note" class="text-[11px] text-slate-500 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80"></div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </section>
 
     </main>
 
+    <!-- FOOTER -->
+    <footer class="bg-white border-t border-slate-200/80 py-4 mt-12">
+        <div class="max-w-7xl mx-auto px-4 flex flex-wrap justify-between items-center text-xs text-slate-400 gap-2">
+            <span>© SiPantau Belajar — Portal Transparansi Akademik Siswa</span>
+            <span>Data diperbarui secara real-time dari basis data sekolah</span>
+        </div>
+    </footer>
+
+    <!-- LOAD SCRIPTS -->
     <script src="config.js"></script>
     <script src="app-siswa.js"></script>
 </body>
