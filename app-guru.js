@@ -1,17 +1,22 @@
 // ============================================================================
-// FILE: app-guru.js (v3.1)
-// Logika Panel Admin, Multi-Kelas & Multi-Mapel Ampuan Guru, Anti-Reset Absen
+// FILE: app-guru.js (v3.4)
+// Fitur: Edit Guru oleh Admin, Hapus Massal Siswa, Konfirmasi 2x, & Kunci Kelas Bersama
 // ============================================================================
 
 let currentUser = null;
 let classesList = [];
-let teacherAmpuanList = []; // Daftar seluruh (Kelas + Mapel) yang diampu guru
+let teacherAmpuanList = [];
 let studentsList = [];
-let currentSettings = null; // Ampuan (Kelas + Mapel + Bobot) yang sedang aktif
+let currentSettings = null;
 let currentAssessments = [];
 let latestRekapData = [];
 
-// Helper Tanggal Lokal (WITA/WIB/WIT) agar tidak bergeser karena UTC
+// State Keamanan Kelas Bersama & Hapus Massal
+let isCurrentClassLockedForGuru = false;
+let otherTeachersInCurrentClass = [];
+let selectedStudentIds = new Set();
+let pendingDeleteStudentIds = [];
+
 function getLocalTodayString() {
     const d = new Date();
     const year = d.getFullYear();
@@ -39,7 +44,7 @@ function switchView(view) {
 }
 
 // ============================================================================
-// 1. AUTENTIKASI, UBAH PASSWORD & PANEL ADMIN
+// 1. AUTENTIKASI, UBAH PASSWORD & PANEL ADMIN (TERMASUK EDIT NAMA/USERNAME GURU)
 // ============================================================================
 async function handleLogin(e) {
     e.preventDefault();
@@ -70,12 +75,63 @@ function updateAuthUI() {
     badge.classList.add('flex');
     document.getElementById('user-display-name').innerText = `${currentUser.nama_lengkap} (${currentUser.role.toUpperCase()})`;
 
+    const adminSwitcher = document.getElementById('admin-nav-switcher');
     if (currentUser.role === 'admin') {
-        switchView('admin');
-        loadAdminUsers();
+        adminSwitcher.classList.remove('hidden');
+        adminSwitcher.classList.add('flex');
+        switchAdminMode('teachers');
     } else {
+        adminSwitcher.classList.add('hidden');
+        adminSwitcher.classList.remove('flex');
+        document.getElementById('guru-only-header').classList.remove('hidden');
+        document.getElementById('admin-student-mode-banner').classList.add('hidden');
+        document.getElementById('teacher-ampuan-cards').classList.remove('hidden');
+        document.getElementById('guru-mapel-selector-box').classList.remove('hidden');
+        document.getElementById('guru-tabs-nav').classList.remove('hidden');
+        document.getElementById('active-workspace-banner').classList.remove('hidden');
         switchView('guru');
         initGuruDashboard();
+    }
+}
+
+// Navigasi Mode Admin: Antara Kelola Akun Guru & Kelola Siswa (Akses Penuh)
+async function switchAdminMode(mode) {
+    if (!currentUser || currentUser.role !== 'admin') return;
+    const btnTch = document.getElementById('adm-tab-teachers');
+    const btnStu = document.getElementById('adm-tab-students');
+
+    if (mode === 'teachers') {
+        btnTch.className = 'px-3 py-1.5 rounded-lg text-xs font-extrabold bg-indigo-600 text-white transition';
+        btnStu.className = 'px-3 py-1.5 rounded-lg text-xs font-extrabold text-slate-600 hover:text-slate-900 transition';
+        switchView('admin');
+        await loadAdminUsers();
+    } else {
+        btnStu.className = 'px-3 py-1.5 rounded-lg text-xs font-extrabold bg-indigo-600 text-white transition';
+        btnTch.className = 'px-3 py-1.5 rounded-lg text-xs font-extrabold text-slate-600 hover:text-slate-900 transition';
+        
+        // Tampilkan View Kelas & Siswa dalam Mode Admin
+        switchView('guru');
+        document.getElementById('guru-only-header').classList.add('hidden');
+        document.getElementById('admin-student-mode-banner').classList.remove('hidden');
+        document.getElementById('teacher-ampuan-cards').classList.add('hidden');
+        document.getElementById('guru-mapel-selector-box').classList.add('hidden');
+        document.getElementById('guru-tabs-nav').classList.add('hidden');
+        document.getElementById('active-workspace-banner').classList.add('hidden');
+
+        switchGuruTab('kelas');
+        const { data: cls } = await db.from('classes').select('*').order('nama_kelas');
+        classesList = cls || [];
+        const selClass = document.getElementById('guru-active-class');
+        selClass.innerHTML = classesList.length ? '' : '<option value="">-- Belum Ada Kelas --</option>';
+        classesList.forEach(c => {
+            selClass.innerHTML += `<option value="${c.id}">${c.nama_kelas}</option>`;
+        });
+
+        if (classesList.length) {
+            await fetchStudentsByClass(selClass.value);
+        } else {
+            document.getElementById('stu-tbody').innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-400">Belum ada kelas.</td></tr>';
+        }
     }
 }
 
@@ -83,6 +139,7 @@ function logout() {
     localStorage.removeItem('sipantau_user');
     currentUser = null;
     document.getElementById('user-badge').classList.add('hidden');
+    document.getElementById('admin-nav-switcher').classList.add('hidden');
     switchView('login');
 }
 
@@ -135,6 +192,8 @@ async function loadAdminUsers() {
     const tbody = document.getElementById('adm-user-list');
     tbody.innerHTML = '';
     (data || []).forEach(u => {
+        const safeNama = u.nama_lengkap.replace(/'/g, "\\'");
+        const safeUser = u.username.replace(/'/g, "\\'");
         tbody.innerHTML += `
             <tr class="hover:bg-slate-50">
                 <td class="p-3.5 font-semibold text-slate-800">${u.nama_lengkap}</td>
@@ -145,19 +204,63 @@ async function loadAdminUsers() {
                     </span>
                 </td>
                 <td class="p-3.5 uppercase text-xs font-extrabold text-slate-500">${u.role}</td>
-                <td class="p-3.5 text-right space-x-2">
+                <td class="p-3.5 text-right space-x-1.5 whitespace-nowrap">
+                    <button onclick="openEditTeacherModal(${u.id}, '${safeNama}', '${safeUser}')" class="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-bold hover:bg-indigo-100">
+                        ✏️ Edit Nama/Username
+                    </button>
                     ${u.role !== 'admin' ? `
-                        <button onclick="resetTeacherPassword(${u.id}, '${u.username}')" class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold hover:bg-amber-100">
+                        <button onclick="resetTeacherPassword(${u.id}, '${safeUser}')" class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold hover:bg-amber-100">
                             🔄 Reset Password
                         </button>
                         <button onclick="deleteUser(${u.id})" class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 text-xs font-bold hover:bg-rose-100">
                             🗑️ Hapus
                         </button>
-                    ` : '<span class="text-xs text-slate-400">Akun Utama</span>'}
+                    ` : '<span class="text-xs text-slate-400 ml-2">Akun Utama</span>'}
                 </td>
             </tr>
         `;
     });
+}
+
+// Fitur Admin Mengedit Nama Lengkap & Username Guru
+function openEditTeacherModal(id, nama, username) {
+    document.getElementById('edit-tch-id').value = id;
+    document.getElementById('edit-tch-nama').value = nama;
+    document.getElementById('edit-tch-user').value = username;
+    document.getElementById('modal-edit-teacher').classList.remove('hidden');
+}
+
+function closeEditTeacherModal() {
+    document.getElementById('modal-edit-teacher').classList.add('hidden');
+}
+
+async function handleUpdateTeacher(e) {
+    e.preventDefault();
+    const id = Number(document.getElementById('edit-tch-id').value);
+    const nama_lengkap = document.getElementById('edit-tch-nama').value.trim();
+    const username = document.getElementById('edit-tch-user').value.trim();
+
+    if (!nama_lengkap || !username) return;
+
+    const { error } = await db.from('app_users')
+        .update({ nama_lengkap, username })
+        .eq('id', id);
+
+    if (error) {
+        return showToast('Gagal memperbarui guru (Username mungkin sudah digunakan): ' + error.message, 'error');
+    }
+
+    // Jika yang diedit adalah diri sendiri (Admin)
+    if (currentUser && currentUser.id === id) {
+        currentUser.nama_lengkap = nama_lengkap;
+        currentUser.username = username;
+        localStorage.setItem('sipantau_user', JSON.stringify(currentUser));
+        document.getElementById('user-display-name').innerText = `${currentUser.nama_lengkap} (${currentUser.role.toUpperCase()})`;
+    }
+
+    closeEditTeacherModal();
+    showToast(`Data akun ${nama_lengkap} (${username}) berhasil diperbarui!`);
+    await loadAdminUsers();
 }
 
 async function addTeacher(e) {
@@ -167,7 +270,7 @@ async function addTeacher(e) {
     const password = username;
 
     const { error } = await db.from('app_users').insert([{ nama_lengkap, username, password, role: 'guru' }]);
-    if (error) return showToast('Gagal menambah guru: ' + error.message, 'error');
+    if (error) return showToast('Gagal menambah guru (Username mungkin sudah terpakai): ' + error.message, 'error');
 
     e.target.reset();
     showToast(`Akun ${nama_lengkap} dibuat! Password awal: ${username}`);
@@ -194,10 +297,11 @@ function switchGuruTab(tab) {
     ['kelas', 'bobot', 'absen', 'nilai', 'rekap'].forEach(t => {
         document.getElementById('gcontent-' + t).classList.add('hidden');
         const btn = document.getElementById('gtab-' + t);
-        btn.className = 'px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900 transition';
+        if (btn) btn.className = 'px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900 transition';
     });
     document.getElementById('gcontent-' + tab).classList.remove('hidden');
-    document.getElementById('gtab-' + tab).className = 'px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white shadow-sm transition';
+    const activeBtn = document.getElementById('gtab-' + tab);
+    if (activeBtn) activeBtn.className = 'px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white shadow-sm transition';
 
     if (tab === 'bobot') loadSettingsForm();
     if (tab === 'absen') loadAttendanceTab();
@@ -211,18 +315,15 @@ async function initGuruDashboard() {
 }
 
 async function fetchClassesAndAmpuan(preferredSettingId = null) {
-    // 1. Ambil seluruh kelas di sekolah
     const { data: cls } = await db.from('classes').select('*').order('nama_kelas');
     classesList = cls || [];
 
-    // 2. Ambil seluruh daftar (Kelas + Mapel) yang diampu oleh guru ini
     const { data: amp } = await db.from('teacher_settings')
         .select('*')
         .eq('teacher_id', currentUser.id)
         .order('id');
     teacherAmpuanList = amp || [];
 
-    // Isi dropdown Kelas
     const selClass = document.getElementById('guru-active-class');
     selClass.innerHTML = classesList.length ? '' : '<option value="">-- Belum Ada Kelas --</option>';
     classesList.forEach(c => {
@@ -232,11 +333,10 @@ async function fetchClassesAndAmpuan(preferredSettingId = null) {
     if (!classesList.length) {
         renderAmpuanCards();
         updateWorkspaceBanner();
-        document.getElementById('stu-tbody').innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Silakan buat kelas terlebih dahulu.</td></tr>';
+        document.getElementById('stu-tbody').innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-400">Silakan buat kelas terlebih dahulu.</td></tr>';
         return;
     }
 
-    // Tentukan Ampuan (Kelas + Mapel) mana yang aktif
     let targetSetting = null;
     if (preferredSettingId) {
         targetSetting = teacherAmpuanList.find(a => a.id == preferredSettingId);
@@ -252,7 +352,6 @@ async function fetchClassesAndAmpuan(preferredSettingId = null) {
         selClass.value = targetSetting.class_id;
         await populateMapelDropdownForClass(targetSetting.class_id, targetSetting.id);
     } else {
-        // Jika guru belum punya ampuan sama sekali tapi kelas sudah ada, buatkan default di kelas pertama
         const firstClassId = classesList[0].id;
         selClass.value = firstClassId;
         await populateMapelDropdownForClass(firstClassId);
@@ -260,14 +359,18 @@ async function fetchClassesAndAmpuan(preferredSettingId = null) {
 }
 
 async function populateMapelDropdownForClass(classId, selectedSettingId = null) {
+    if (currentUser.role === 'admin') {
+        await fetchStudentsByClass(classId);
+        return;
+    }
+
     const selMapel = document.getElementById('guru-active-mapel');
     let mapelsInClass = teacherAmpuanList.filter(a => a.class_id == classId);
 
-    // Jika guru memilih kelas yang belum pernah ia atur mapelnya, buatkan 1 ampuan default
-    if (mapelsInClass.length === 0 && classId) {
-        const defaultMapelName = teacherAmpuanList.length > 0 ? teacherAmpuanList[0].mapel : 'Mata Pelajaran';
+    // Jika guru sama sekali belum memiliki ampuan di kelas mana pun, buatkan 1 ampuan awal
+    if (teacherAmpuanList.length === 0 && classId) {
         const { data: created } = await db.from('teacher_settings')
-            .insert([{ teacher_id: currentUser.id, class_id: Number(classId), mapel: defaultMapelName }])
+            .insert([{ teacher_id: currentUser.id, class_id: Number(classId), mapel: 'Mata Pelajaran' }])
             .select().single();
         if (created) {
             teacherAmpuanList.push(created);
@@ -276,17 +379,21 @@ async function populateMapelDropdownForClass(classId, selectedSettingId = null) 
     }
 
     selMapel.innerHTML = '';
-    mapelsInClass.forEach(m => {
-        selMapel.innerHTML += `<option value="${m.id}">${m.mapel}</option>`;
-    });
-
-    if (selectedSettingId && mapelsInClass.some(m => m.id == selectedSettingId)) {
-        selMapel.value = selectedSettingId;
-    } else if (mapelsInClass.length > 0) {
-        selMapel.value = mapelsInClass[0].id;
+    if (mapelsInClass.length === 0) {
+        selMapel.innerHTML = `<option value="">-- Belum Diampu (Klik + Tambah Ampuan) --</option>`;
+        currentSettings = null;
+    } else {
+        mapelsInClass.forEach(m => {
+            selMapel.innerHTML += `<option value="${m.id}">${m.mapel}</option>`;
+        });
+        if (selectedSettingId && mapelsInClass.some(m => m.id == selectedSettingId)) {
+            selMapel.value = selectedSettingId;
+        } else {
+            selMapel.value = mapelsInClass[0].id;
+        }
+        currentSettings = teacherAmpuanList.find(a => a.id == selMapel.value) || null;
     }
 
-    currentSettings = teacherAmpuanList.find(a => a.id == selMapel.value) || null;
     renderAmpuanCards();
     updateWorkspaceBanner();
 
@@ -327,7 +434,7 @@ function updateWorkspaceBanner() {
     const label = document.getElementById('workspace-label');
     const kkmLabel = document.getElementById('workspace-kkm-label');
     if (!currentSettings) {
-        label.innerText = 'Belum Ada Kelas / Mata Pelajaran Aktif';
+        label.innerText = 'Kelas Ini Belum Anda Ampu (Klik "+ Tambah Kelas & Mapel Ampuan" di atas)';
         kkmLabel.innerText = 'KKM: -';
         return;
     }
@@ -363,7 +470,6 @@ function refreshActiveGuruTab() {
     if (activeTab) switchGuruTab(activeTab);
 }
 
-// Modal Tambah Kelas & Mapel Ampuan Baru
 function openAddAmpuanModal() {
     if (!classesList.length) {
         return showToast('Buat master kelas terlebih dahulu di Tab 1!', 'error');
@@ -422,12 +528,56 @@ function copyStudentPortalLink() {
     const baseUrl = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
     const url = `${baseUrl}siswa.html?kelas=${classId}&guru=${currentUser.id}&mapel=${mapel}`;
     navigator.clipboard.writeText(url);
-    showToast('Link Halaman Siswa untuk Kelas & Mapel ini berhasil disalin!');
+    showToast('Link Halaman Siswa berhasil disalin!');
 }
 
 // ============================================================================
-// 3. KELOLA KELAS & DATA SISWA (TAB 1)
+// 3. DETEKSI KELAS BERSAMA, PILIH BANYAK SISWA & KONFIRMASI 2X HAPUS (TAB 1)
 // ============================================================================
+async function checkSharedClassPermission(classId) {
+    isCurrentClassLockedForGuru = false;
+    otherTeachersInCurrentClass = [];
+
+    if (!classId || !currentUser) return;
+
+    // Jika yang login adalah Admin, Admin selalu bebas mengedit & menghapus siswa di kelas mana pun
+    if (currentUser.role === 'admin') {
+        document.getElementById('shared-class-lock-banner').classList.add('hidden');
+        return;
+    }
+
+    // Cari apakah ada guru lain (teacher_id != currentUser.id) yang mengampu kelas ini
+    const { data: settingsOther } = await db.from('teacher_settings')
+        .select('teacher_id, mapel')
+        .eq('class_id', classId)
+        .neq('teacher_id', currentUser.id);
+
+    const { data: assOther } = await db.from('assessments')
+        .select('teacher_id, mapel')
+        .eq('class_id', classId)
+        .neq('teacher_id', currentUser.id);
+
+    const otherTeacherIds = [...new Set([
+        ...(settingsOther || []).map(s => s.teacher_id),
+        ...(assOther || []).map(a => a.teacher_id)
+    ])];
+
+    if (otherTeacherIds.length > 0) {
+        isCurrentClassLockedForGuru = true;
+        const { data: tchUsers } = await db.from('app_users')
+            .select('id, nama_lengkap')
+            .in('id', otherTeacherIds);
+
+        otherTeachersInCurrentClass = (tchUsers || []).map(u => u.nama_lengkap);
+        const banner = document.getElementById('shared-class-lock-banner');
+        const info = document.getElementById('shared-class-teachers-info');
+        banner.classList.remove('hidden');
+        info.innerHTML = `Kelas ini juga diampu oleh: <b>${otherTeachersInCurrentClass.join(', ')}</b>.`;
+    } else {
+        document.getElementById('shared-class-lock-banner').classList.add('hidden');
+    }
+}
+
 async function createClass(e) {
     e.preventDefault();
     const nama_kelas = document.getElementById('new-class-name').value.trim();
@@ -436,42 +586,218 @@ async function createClass(e) {
     document.getElementById('new-class-name').value = '';
     showToast(`Kelas ${nama_kelas} berhasil dibuat!`);
 
-    await fetchClassesAndAmpuan();
-    document.getElementById('guru-active-class').value = data.id;
-    await populateMapelDropdownForClass(data.id);
+    if (currentUser.role === 'admin') {
+        await switchAdminMode('students');
+        document.getElementById('guru-active-class').value = data.id;
+        await fetchStudentsByClass(data.id);
+    } else {
+        await fetchClassesAndAmpuan();
+        document.getElementById('guru-active-class').value = data.id;
+        await populateMapelDropdownForClass(data.id);
+    }
 }
 
 async function fetchStudentsByClass(classId) {
+    selectedStudentIds.clear();
+    await checkSharedClassPermission(classId);
+
     const { data } = await db.from('students').select('*').eq('class_id', classId).order('nama');
     studentsList = data || [];
     document.getElementById('stu-count-badge').innerText = `${studentsList.length} Siswa`;
 
+    updateBulkDeleteToolbarUI();
+
     const tbody = document.getElementById('stu-tbody');
     tbody.innerHTML = '';
     if (!studentsList.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Belum ada siswa di kelas ini.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-slate-400">Belum ada siswa di kelas ini.</td></tr>';
         return;
     }
 
     studentsList.forEach((s, idx) => {
+        const isChecked = selectedStudentIds.has(s.id);
         tbody.innerHTML += `
-            <tr class="hover:bg-slate-50">
+            <tr class="hover:bg-slate-50 transition">
+                <td class="p-3 text-center">
+                    <input type="checkbox" value="${s.id}" 
+                        ${isChecked ? 'checked' : ''} 
+                        ${isCurrentClassLockedForGuru ? 'disabled title="Dikunci karena kelas diampu bersama guru lain"' : ''}
+                        onchange="onStudentCheckboxChange(${s.id}, this.checked)"
+                        class="stu-row-check w-4 h-4 accent-indigo-600 rounded cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                </td>
                 <td class="p-3 text-center text-slate-500">${idx + 1}</td>
                 <td class="p-3 font-mono font-semibold text-slate-700">${s.nisn}</td>
                 <td class="p-3 font-semibold text-slate-900">${s.nama}</td>
-                <td class="p-3 text-center space-x-1.5">
-                    <button onclick="openEditStudentModal(${s.id})" class="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-bold hover:bg-indigo-100">
-                        ✏️ Edit
-                    </button>
-                    <button onclick="deleteStudent(${s.id})" class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 text-xs font-bold hover:bg-rose-100">
-                        🗑️ Hapus
-                    </button>
+                <td class="p-3 text-center space-x-1.5 whitespace-nowrap">
+                    ${isCurrentClassLockedForGuru ? `
+                        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500 border border-slate-200 text-[11px] font-bold" title="Hanya Admin yang dapat mengedit/menghapus siswa di kelas bersama">
+                            🔒 Hanya Admin
+                        </span>
+                    ` : `
+                        <button onclick="openEditStudentModal(${s.id})" class="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-bold hover:bg-indigo-100">
+                            ✏️ Edit
+                        </button>
+                        <button onclick="initiateSingleStudentDelete(${s.id})" class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 text-xs font-bold hover:bg-rose-100">
+                            🗑️ Hapus
+                        </button>
+                    `}
                 </td>
             </tr>
         `;
     });
 }
 
+// Logika Checkbox Pilih Beberapa / Pilih Semua Siswa
+function onStudentCheckboxChange(studentId, checked) {
+    if (isCurrentClassLockedForGuru) return;
+    if (checked) {
+        selectedStudentIds.add(studentId);
+    } else {
+        selectedStudentIds.delete(studentId);
+    }
+    updateBulkDeleteToolbarUI();
+}
+
+function toggleSelectAllStudents(checked) {
+    if (isCurrentClassLockedForGuru) {
+        showToast('Kelas ini diampu bersama guru lain. Hanya Admin yang dapat menghapus siswa!', 'error');
+        return;
+    }
+    selectedStudentIds.clear();
+    if (checked) {
+        studentsList.forEach(s => selectedStudentIds.add(s.id));
+    }
+    document.querySelectorAll('.stu-row-check').forEach(cb => {
+        cb.checked = checked;
+    });
+    updateBulkDeleteToolbarUI();
+}
+
+function updateBulkDeleteToolbarUI() {
+    const count = selectedStudentIds.size;
+    const total = studentsList.length;
+    const allSelected = total > 0 && count === total;
+
+    const topCheck = document.getElementById('stu-select-all-top');
+    const thCheck = document.getElementById('stu-select-all-th');
+    const btnSelected = document.getElementById('btn-bulk-delete-selected');
+    const btnAll = document.getElementById('btn-bulk-delete-all');
+
+    if (topCheck) {
+        topCheck.checked = allSelected;
+        topCheck.disabled = isCurrentClassLockedForGuru || total === 0;
+    }
+    if (thCheck) {
+        thCheck.checked = allSelected;
+        thCheck.disabled = isCurrentClassLockedForGuru || total === 0;
+    }
+
+    document.getElementById('selected-students-badge').innerText = `${count} dipilih`;
+    document.getElementById('btn-selected-count').innerText = count;
+
+    if (btnSelected) {
+        btnSelected.disabled = isCurrentClassLockedForGuru || count === 0;
+    }
+    if (btnAll) {
+        btnAll.disabled = isCurrentClassLockedForGuru || total === 0;
+    }
+}
+
+// ============================================================================
+// SISTEM KONFIRMASI 2 KALI (DOUBLE CONFIRMATION) UNTUK HAPUS SISWA
+// ============================================================================
+function initiateSingleStudentDelete(studentId) {
+    if (isCurrentClassLockedForGuru) {
+        return showToast('Akses ditolak: Kelas ini diampu bersama guru lain. Hanya Admin yang dapat menghapus siswa!', 'error');
+    }
+    const stu = studentsList.find(s => s.id === studentId);
+    if (!stu) return;
+    openDoubleConfirmDeleteModal([stu]);
+}
+
+function initiateBulkDeleteSelected() {
+    if (isCurrentClassLockedForGuru) {
+        return showToast('Akses ditolak: Hanya Admin yang dapat menghapus siswa di kelas bersama!', 'error');
+    }
+    const selectedList = studentsList.filter(s => selectedStudentIds.has(s.id));
+    if (!selectedList.length) return showToast('Pilih minimal 1 siswa terlebih dahulu!', 'error');
+    openDoubleConfirmDeleteModal(selectedList);
+}
+
+function initiateDeleteAllInClass() {
+    if (isCurrentClassLockedForGuru) {
+        return showToast('Akses ditolak: Hanya Admin yang dapat menghapus siswa di kelas bersama!', 'error');
+    }
+    if (!studentsList.length) return showToast('Tidak ada siswa di kelas ini!', 'error');
+    openDoubleConfirmDeleteModal([...studentsList], true);
+}
+
+function openDoubleConfirmDeleteModal(targetStudents, isFullClass = false) {
+    pendingDeleteStudentIds = targetStudents.map(s => s.id);
+    const classId = document.getElementById('guru-active-class').value;
+    const clsObj = classesList.find(c => c.id == classId);
+    const namaKelas = clsObj ? clsObj.nama_kelas : '-';
+
+    // Siapkan tampilan Tahap 1
+    document.getElementById('del-step-1').classList.remove('hidden');
+    document.getElementById('del-step-2').classList.add('hidden');
+
+    const desc1 = isFullClass
+        ? `Anda memilih untuk menghapus SELURUH SISWA (${targetStudents.length} orang) di Kelas ${namaKelas}:`
+        : `Anda akan menghapus ${targetStudents.length} siswa dari Kelas ${namaKelas}:`;
+    document.getElementById('del-step1-desc').innerText = desc1;
+
+    const previewBox = document.getElementById('del-names-preview');
+    previewBox.innerHTML = targetStudents.map((s, idx) => `<div>${idx + 1}. [${s.nisn}] ${s.nama}</div>`).join('');
+
+    // Siapkan teks Tahap 2
+    document.getElementById('del-step2-desc').innerText = 
+        `KONFIRMASI KE-2 (TERAKHIR): Sebanyak ${targetStudents.length} data siswa di Kelas ${namaKelas} akan dihapus secara permanen sekarang.`;
+
+    const finalCheck = document.getElementById('del-final-check');
+    finalCheck.checked = false;
+    document.getElementById('btn-execute-delete').disabled = true;
+
+    document.getElementById('modal-delete-confirm').classList.remove('hidden');
+}
+
+function proceedToDeleteStep2() {
+    document.getElementById('del-step-1').classList.add('hidden');
+    document.getElementById('del-step-2').classList.remove('hidden');
+}
+
+function toggleFinalDeleteButton() {
+    const checked = document.getElementById('del-final-check').checked;
+    document.getElementById('btn-execute-delete').disabled = !checked;
+}
+
+function closeDeleteConfirmModal() {
+    pendingDeleteStudentIds = [];
+    document.getElementById('modal-delete-confirm').classList.add('hidden');
+}
+
+async function executeConfirmedStudentDelete() {
+    if (!pendingDeleteStudentIds.length) return;
+    if (isCurrentClassLockedForGuru && currentUser.role !== 'admin') {
+        closeDeleteConfirmModal();
+        return showToast('Akses ditolak: Hanya Admin yang dapat menghapus siswa di kelas bersama!', 'error');
+    }
+
+    const { error } = await db.from('students')
+        .delete()
+        .in('id', pendingDeleteStudentIds);
+
+    if (error) {
+        return showToast('Gagal menghapus siswa: ' + error.message, 'error');
+    }
+
+    const deletedCount = pendingDeleteStudentIds.length;
+    closeDeleteConfirmModal();
+    showToast(`${deletedCount} data siswa berhasil dihapus secara permanen.`);
+    await fetchStudentsByClass(document.getElementById('guru-active-class').value);
+}
+
+// Tambah & Edit Siswa
 async function addStudentManual(e) {
     e.preventDefault();
     const class_id = document.getElementById('guru-active-class').value;
@@ -487,6 +813,9 @@ async function addStudentManual(e) {
 }
 
 function openEditStudentModal(studentId) {
+    if (isCurrentClassLockedForGuru && currentUser.role !== 'admin') {
+        return showToast('Kelas ini diampu bersama guru lain. Hanya Admin yang dapat mengedit data siswa!', 'error');
+    }
     const stu = studentsList.find(s => s.id === studentId);
     if (!stu) return;
 
@@ -509,6 +838,11 @@ function closeEditStudentModal() {
 
 async function handleUpdateStudent(e) {
     e.preventDefault();
+    if (isCurrentClassLockedForGuru && currentUser.role !== 'admin') {
+        closeEditStudentModal();
+        return showToast('Akses ditolak: Hanya Admin yang dapat mengedit siswa di kelas bersama!', 'error');
+    }
+
     const id = Number(document.getElementById('edit-stu-id').value);
     const nisn = document.getElementById('edit-stu-nisn').value.trim();
     const nama = document.getElementById('edit-stu-nama').value.trim();
@@ -522,13 +856,6 @@ async function handleUpdateStudent(e) {
 
     closeEditStudentModal();
     showToast('Data siswa berhasil diperbarui!');
-    await fetchStudentsByClass(document.getElementById('guru-active-class').value);
-}
-
-async function deleteStudent(id) {
-    if (!confirm('Hapus siswa ini dari kelas?')) return;
-    await db.from('students').delete().eq('id', id);
-    showToast('Siswa dihapus.');
     await fetchStudentsByClass(document.getElementById('guru-active-class').value);
 }
 
@@ -570,7 +897,11 @@ async function importStudentsExcel() {
             }
         }
         showToast('Import Excel Siswa selesai!');
-        await fetchClassesAndAmpuan();
+        if (currentUser.role === 'admin') {
+            await switchAdminMode('students');
+        } else {
+            await fetchClassesAndAmpuan();
+        }
     };
     reader.readAsArrayBuffer(fileInput.files[0]);
 }
@@ -594,7 +925,7 @@ function loadSettingsForm() {
 
 async function saveSettings(e) {
     e.preventDefault();
-    if (!currentSettings) return;
+    if (!currentSettings) return showToast('Tambahkan kelas & mapel ampuan terlebih dahulu!', 'error');
     const oldMapel = currentSettings.mapel;
     const newMapel = document.getElementById('set-mapel').value.trim();
 
@@ -614,7 +945,6 @@ async function saveSettings(e) {
     const { error } = await db.from('teacher_settings').update(payload).eq('id', currentSettings.id);
     if (error) return showToast('Gagal menyimpan pengaturan: ' + error.message, 'error');
 
-    // Jika guru mengubah nama mapel, perbarui juga label mapel pada presensi dan tugas di kelas tersebut
     if (oldMapel !== newMapel) {
         const stuIds = studentsList.map(s => s.id);
         if (stuIds.length) {
@@ -673,7 +1003,7 @@ async function loadRecordedDates() {
 
     if (error) {
         sel.innerHTML = `<option value="">-- Error Memuat Riwayat --</option>`;
-        chipsContainer.innerHTML = `<span class="text-xs text-rose-600 font-bold">⚠️ Tabel attendance_logs belum diperbarui di Supabase. Jalankan SQL pembaruan terlebih dahulu.</span>`;
+        chipsContainer.innerHTML = `<span class="text-xs text-rose-600 font-bold">⚠️ Gagal memuat riwayat tanggal.</span>`;
         return;
     }
 
@@ -771,7 +1101,7 @@ function markAllPresentDaily() {
 async function saveDailyAttendance() {
     const class_id = Number(document.getElementById('guru-active-class').value);
     const tanggal = document.getElementById('abs-date-picker').value;
-    if (!class_id || !tanggal || !currentSettings) return showToast('Pilih kelas dan tanggal!', 'error');
+    if (!class_id || !tanggal || !currentSettings) return showToast('Pilih kelas, mapel, dan tanggal!', 'error');
 
     const upserts = studentsList.map(stu => {
         const checked = document.querySelector(`input[name="dabs_${stu.id}"]:checked`);
@@ -788,7 +1118,7 @@ async function saveDailyAttendance() {
     if (upserts.length) {
         const { error } = await db.from('attendance_logs').upsert(upserts, { onConflict: 'teacher_id,student_id,tanggal,mapel' });
         if (error) {
-            return showToast('Gagal menyimpan log harian (Pastikan SQL pembaruan sudah dijalankan): ' + error.message, 'error');
+            return showToast('Gagal menyimpan log harian: ' + error.message, 'error');
         }
     }
 
@@ -821,7 +1151,6 @@ async function deleteDailyAttendanceDate() {
     showToast(`Absensi tanggal ${tanggal} dihapus.`);
 }
 
-// Proteksi Anti-Reset: Hanya mengupdate rekap jika query ke attendance_logs berhasil
 async function recalculateAttendanceSummaryFromLogs(classId, mapelName) {
     const { data: logs, error } = await db.from('attendance_logs')
         .select('*')
@@ -829,10 +1158,7 @@ async function recalculateAttendanceSummaryFromLogs(classId, mapelName) {
         .eq('class_id', classId)
         .eq('mapel', mapelName);
 
-    if (error || !logs) {
-        console.error('Batal menghitung ulang rekap karena error log:', error);
-        return;
-    }
+    if (error || !logs) return;
 
     const upserts = studentsList.map(stu => {
         const stuLogs = logs.filter(l => l.student_id === stu.id);
@@ -1321,8 +1647,8 @@ function printStudentCardPDF(studentId) {
     doc.line(14, 25, 196, 25);
 
     doc.text(`Nama Siswa : ${d.nama}`, 14, 33);
-    doc.text(`NISN           : ${d.nisn}`, 14, 39);
-    doc.text(`Kelas          : ${d.kelas}`, 130, 33);
+    doc.text(`NISN       : ${d.nisn}`, 14, 39);
+    doc.text(`Kelas      : ${d.kelas}`, 130, 33);
     doc.text(`KKM Mapel  : ${d.kkm}`, 130, 39);
 
     doc.autoTable({
@@ -1415,4 +1741,4 @@ function exportRekapExcel() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Rekap_Nilai");
     XLSX.writeFile(wb, `Rekap_Nilai_${currentSettings ? currentSettings.mapel : 'Siswa'}.xlsx`);
-}
+    }
