@@ -6,7 +6,7 @@
     <title>Portal Data & Profil Akademik Siswa — SiPantau Belajar</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <link rel="stylesheet" href="style.css?v=3.3">
+    <link rel="stylesheet" href="style.css?v=3.5">
 </head>
 <body class="min-h-screen flex flex-col bg-slate-50 text-slate-800 antialiased">
 
@@ -70,7 +70,9 @@
     <!-- MAIN CONTENT CONTAINER -->
     <main class="flex-grow max-w-7xl w-full mx-auto px-4 py-6">
 
-        <!-- VIEW 1: HALAMAN DATA UTAMA SISWA (DIREKTORI SISWA) -->
+        <!-- ===================================================================
+             VIEW 1: HALAMAN DATA UTAMA SISWA (DIREKTORI SISWA)
+             =================================================================== -->
         <section id="view-directory" class="space-y-6">
 
             <!-- Hero Banner Direktori -->
@@ -112,11 +114,14 @@
                     <input type="text" id="dir-search" oninput="renderDirectoryTable()" placeholder="Ketik nama lengkap atau NISN siswa..." class="w-full border border-slate-300 rounded-xl p-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
                 </div>
                 <div class="md:col-span-2">
-                    <button onclick="loadDirectoryStudents()" class="w-full bg-indigo-600 text-white py-2.5 px-4 rounded-xl text-sm font-bold hover:bg-indigo-700 transition shadow-sm">
+                    <button onclick="loadDirectoryStudents(true)" class="w-full bg-indigo-600 text-white py-2.5 px-4 rounded-xl text-sm font-bold hover:bg-indigo-700 transition shadow-sm">
                         🔄 Segarkan
                     </button>
                 </div>
             </div>
+
+            <!-- Kotak Diagnostik (Hanya muncul jika ada masalah koneksi / data kosong) -->
+            <div id="diagnostic-box" class="hidden p-4 rounded-2xl border text-xs space-y-1"></div>
 
             <!-- Tabel Data Utama Siswa -->
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
@@ -140,7 +145,7 @@
                         </thead>
                         <tbody id="dir-tbody" class="divide-y divide-slate-200/80">
                             <tr>
-                                <td colspan="5" class="p-10 text-center text-slate-400">Memuat data siswa dari database...</td>
+                                <td colspan="5" class="p-10 text-center text-slate-400">Sedang memuat data siswa dari database...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -149,7 +154,9 @@
 
         </section>
 
-        <!-- VIEW 2: HALAMAN PROFIL LENGKAP SISWA (FULL-PAGE VIEW) -->
+        <!-- ===================================================================
+             VIEW 2: HALAMAN PROFIL LENGKAP SISWA (FULL-PAGE VIEW)
+             =================================================================== -->
         <section id="view-profile" class="hidden space-y-6">
 
             <div class="flex flex-wrap items-center justify-between gap-3">
@@ -319,8 +326,8 @@
 
     </main>
 
-    <!-- LOAD SCRIPTS DENGAN CACHE BUSTER -->
-    <script src="config.js?v=3.3"></script>
-    <script src="app-siswa.js?v=3.3"></script>
+    <!-- LOAD SCRIPTS DENGAN CACHE BUSTER BARU -->
+    <script src="config.js?v=3.5"></script>
+    <script src="app-siswa.js?v=3.5"></script>
 </body>
 </html>
