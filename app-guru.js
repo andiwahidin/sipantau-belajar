@@ -1,19 +1,28 @@
 // ============================================================================
-// FILE: app-guru.js
-// Logika Panel Admin & Dashboard Guru
+// FILE: app-guru.js (v3.1)
+// Logika Panel Admin, Multi-Kelas & Multi-Mapel Ampuan Guru, Anti-Reset Absen
 // ============================================================================
 
 let currentUser = null;
 let classesList = [];
+let teacherAmpuanList = []; // Daftar seluruh (Kelas + Mapel) yang diampu guru
 let studentsList = [];
-let currentSettings = null;
+let currentSettings = null; // Ampuan (Kelas + Mapel + Bobot) yang sedang aktif
 let currentAssessments = [];
 let latestRekapData = [];
 
+// Helper Tanggal Lokal (WITA/WIB/WIT) agar tidak bergeser karena UTC
+function getLocalTodayString() {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 window.onload = async () => {
-    const today = new Date().toISOString().split('T')[0];
     const dp = document.getElementById('abs-date-picker');
-    if (dp) dp.value = today;
+    if (dp) dp.value = getLocalTodayString();
 
     const savedUser = localStorage.getItem('sipantau_user');
     if (savedUser) {
@@ -30,7 +39,7 @@ function switchView(view) {
 }
 
 // ============================================================================
-// 1. AUTENTIKASI, UBAH PASSWORD & PANEL ADMIN (PASSWORD DISEMBUNYIKAN)
+// 1. AUTENTIKASI, UBAH PASSWORD & PANEL ADMIN
 // ============================================================================
 async function handleLogin(e) {
     e.preventDefault();
@@ -77,7 +86,6 @@ function logout() {
     switchView('login');
 }
 
-// Fitur Ubah Password Mandiri oleh Guru / Admin
 function openPasswordModal() {
     document.getElementById('cp-old').value = '';
     document.getElementById('cp-new').value = '';
@@ -99,16 +107,13 @@ async function handleChangePassword(e) {
         return showToast('Konfirmasi password baru tidak cocok!', 'error');
     }
 
-    // Verifikasi password lama ke database
     const { data: verify } = await db.from('app_users')
         .select('id')
         .eq('id', currentUser.id)
         .eq('password', oldPass)
         .single();
 
-    if (!verify) {
-        return showToast('Password saat ini salah!', 'error');
-    }
+    if (!verify) return showToast('Password saat ini salah!', 'error');
 
     const { error } = await db.from('app_users')
         .update({ password: newPass })
@@ -122,7 +127,6 @@ async function handleChangePassword(e) {
     showToast('Password Anda berhasil diperbarui!');
 }
 
-// Panel Admin: Hanya mengambil id, nama_lengkap, username, role (TIDAK mengambil kolom password)
 async function loadAdminUsers() {
     const { data } = await db.from('app_users')
         .select('id, nama_lengkap, username, role')
@@ -143,7 +147,7 @@ async function loadAdminUsers() {
                 <td class="p-3.5 uppercase text-xs font-extrabold text-slate-500">${u.role}</td>
                 <td class="p-3.5 text-right space-x-2">
                     ${u.role !== 'admin' ? `
-                        <button onclick="resetTeacherPassword(${u.id}, '${u.username}')" class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold hover:bg-amber-100" title="Kembalikan password sama dengan username">
+                        <button onclick="resetTeacherPassword(${u.id}, '${u.username}')" class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold hover:bg-amber-100">
                             🔄 Reset Password
                         </button>
                         <button onclick="deleteUser(${u.id})" class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 text-xs font-bold hover:bg-rose-100">
@@ -156,25 +160,24 @@ async function loadAdminUsers() {
     });
 }
 
-// Tambah Guru: Otomatis Password = Username
 async function addTeacher(e) {
     e.preventDefault();
     const nama_lengkap = document.getElementById('adm-nama').value.trim();
     const username = document.getElementById('adm-user').value.trim();
-    const password = username; // Otomatis sama dengan username
+    const password = username;
 
     const { error } = await db.from('app_users').insert([{ nama_lengkap, username, password, role: 'guru' }]);
-    if (error) return showToast('Gagal menambah guru (Username mungkin sudah dipakai): ' + error.message, 'error');
+    if (error) return showToast('Gagal menambah guru: ' + error.message, 'error');
 
     e.target.reset();
-    showToast(`Akun ${nama_lengkap} dibuat! Password awal otomatis: ${username}`);
+    showToast(`Akun ${nama_lengkap} dibuat! Password awal: ${username}`);
     loadAdminUsers();
 }
 
 async function resetTeacherPassword(id, username) {
     if (!confirm(`Reset password guru ini kembali menjadi sama dengan username (${username})?`)) return;
     await db.from('app_users').update({ password: username }).eq('id', id);
-    showToast(`Password berhasil direset ke: ${username}`);
+    showToast(`Password direset menjadi: ${username}`);
 }
 
 async function deleteUser(id) {
@@ -185,7 +188,7 @@ async function deleteUser(id) {
 }
 
 // ============================================================================
-// 2. DASHBOARD GURU: KELAS & EDIT DATA SISWA
+// 2. MANAJEMEN KELAS & MATA PELAJARAN YANG DIAMPU GURU
 // ============================================================================
 function switchGuruTab(tab) {
     ['kelas', 'bobot', 'absen', 'nilai', 'rekap'].forEach(t => {
@@ -204,40 +207,227 @@ function switchGuruTab(tab) {
 
 async function initGuruDashboard() {
     switchGuruTab('kelas');
-    await fetchClasses();
-    await onGuruClassChange();
+    await fetchClassesAndAmpuan();
 }
 
-function copyStudentPortalLink() {
-    const classId = document.getElementById('guru-active-class').value;
-    const baseUrl = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
-    const url = `${baseUrl}siswa.html?kelas=${classId}&guru=${currentUser.id}`;
-    navigator.clipboard.writeText(url);
-    showToast('Link Halaman Siswa berhasil disalin!');
-}
+async function fetchClassesAndAmpuan(preferredSettingId = null) {
+    // 1. Ambil seluruh kelas di sekolah
+    const { data: cls } = await db.from('classes').select('*').order('nama_kelas');
+    classesList = cls || [];
 
-async function fetchClasses() {
-    const { data } = await db.from('classes').select('*').order('nama_kelas');
-    classesList = data || [];
-    const sel = document.getElementById('guru-active-class');
-    sel.innerHTML = classesList.length ? '' : '<option value="">-- Belum Ada Kelas --</option>';
+    // 2. Ambil seluruh daftar (Kelas + Mapel) yang diampu oleh guru ini
+    const { data: amp } = await db.from('teacher_settings')
+        .select('*')
+        .eq('teacher_id', currentUser.id)
+        .order('id');
+    teacherAmpuanList = amp || [];
+
+    // Isi dropdown Kelas
+    const selClass = document.getElementById('guru-active-class');
+    selClass.innerHTML = classesList.length ? '' : '<option value="">-- Belum Ada Kelas --</option>';
     classesList.forEach(c => {
-        sel.innerHTML += `<option value="${c.id}">${c.nama_kelas}</option>`;
+        selClass.innerHTML += `<option value="${c.id}">${c.nama_kelas}</option>`;
     });
-}
 
-async function onGuruClassChange() {
-    const classId = document.getElementById('guru-active-class').value;
-    if (!classId) {
+    if (!classesList.length) {
+        renderAmpuanCards();
+        updateWorkspaceBanner();
         document.getElementById('stu-tbody').innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Silakan buat kelas terlebih dahulu.</td></tr>';
         return;
     }
+
+    // Tentukan Ampuan (Kelas + Mapel) mana yang aktif
+    let targetSetting = null;
+    if (preferredSettingId) {
+        targetSetting = teacherAmpuanList.find(a => a.id == preferredSettingId);
+    }
+    if (!targetSetting && currentSettings) {
+        targetSetting = teacherAmpuanList.find(a => a.id == currentSettings.id);
+    }
+    if (!targetSetting && teacherAmpuanList.length > 0) {
+        targetSetting = teacherAmpuanList[0];
+    }
+
+    if (targetSetting) {
+        selClass.value = targetSetting.class_id;
+        await populateMapelDropdownForClass(targetSetting.class_id, targetSetting.id);
+    } else {
+        // Jika guru belum punya ampuan sama sekali tapi kelas sudah ada, buatkan default di kelas pertama
+        const firstClassId = classesList[0].id;
+        selClass.value = firstClassId;
+        await populateMapelDropdownForClass(firstClassId);
+    }
+}
+
+async function populateMapelDropdownForClass(classId, selectedSettingId = null) {
+    const selMapel = document.getElementById('guru-active-mapel');
+    let mapelsInClass = teacherAmpuanList.filter(a => a.class_id == classId);
+
+    // Jika guru memilih kelas yang belum pernah ia atur mapelnya, buatkan 1 ampuan default
+    if (mapelsInClass.length === 0 && classId) {
+        const defaultMapelName = teacherAmpuanList.length > 0 ? teacherAmpuanList[0].mapel : 'Mata Pelajaran';
+        const { data: created } = await db.from('teacher_settings')
+            .insert([{ teacher_id: currentUser.id, class_id: Number(classId), mapel: defaultMapelName }])
+            .select().single();
+        if (created) {
+            teacherAmpuanList.push(created);
+            mapelsInClass = [created];
+        }
+    }
+
+    selMapel.innerHTML = '';
+    mapelsInClass.forEach(m => {
+        selMapel.innerHTML += `<option value="${m.id}">${m.mapel}</option>`;
+    });
+
+    if (selectedSettingId && mapelsInClass.some(m => m.id == selectedSettingId)) {
+        selMapel.value = selectedSettingId;
+    } else if (mapelsInClass.length > 0) {
+        selMapel.value = mapelsInClass[0].id;
+    }
+
+    currentSettings = teacherAmpuanList.find(a => a.id == selMapel.value) || null;
+    renderAmpuanCards();
+    updateWorkspaceBanner();
+
     await fetchStudentsByClass(classId);
-    await ensureTeacherSettings(classId);
+    refreshActiveGuruTab();
+}
+
+function renderAmpuanCards() {
+    const container = document.getElementById('teacher-ampuan-cards');
+    if (!container) return;
+
+    if (!teacherAmpuanList.length) {
+        container.innerHTML = `<span class="text-xs text-slate-400 italic">Belum ada kelas & mata pelajaran yang ditambahkan.</span>`;
+        return;
+    }
+
+    container.innerHTML = '';
+    teacherAmpuanList.forEach(amp => {
+        const clsObj = classesList.find(c => c.id == amp.class_id);
+        if (!clsObj) return;
+        const isActive = currentSettings && currentSettings.id == amp.id;
+
+        container.innerHTML += `
+            <button onclick="selectAmpuanCard(${amp.id})" class="px-3.5 py-2 rounded-xl text-xs font-bold border transition flex items-center gap-2 ${
+                isActive 
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100' 
+                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:border-indigo-200'
+            }">
+                <span>🏫 ${clsObj.nama_kelas}</span>
+                <span class="${isActive ? 'text-indigo-200' : 'text-slate-300'}">•</span>
+                <span>📘 ${amp.mapel}</span>
+            </button>
+        `;
+    });
+}
+
+function updateWorkspaceBanner() {
+    const label = document.getElementById('workspace-label');
+    const kkmLabel = document.getElementById('workspace-kkm-label');
+    if (!currentSettings) {
+        label.innerText = 'Belum Ada Kelas / Mata Pelajaran Aktif';
+        kkmLabel.innerText = 'KKM: -';
+        return;
+    }
+    const clsObj = classesList.find(c => c.id == currentSettings.class_id);
+    const namaKelas = clsObj ? clsObj.nama_kelas : '-';
+    label.innerText = `Kelas ${namaKelas} — Mata Pelajaran: ${currentSettings.mapel}`;
+    kkmLabel.innerText = `KKM: ${currentSettings.kkm}`;
+}
+
+async function selectAmpuanCard(settingId) {
+    const target = teacherAmpuanList.find(a => a.id == settingId);
+    if (!target) return;
+    document.getElementById('guru-active-class').value = target.class_id;
+    await populateMapelDropdownForClass(target.class_id, target.id);
+}
+
+async function onGuruClassDropdownChange() {
+    const classId = document.getElementById('guru-active-class').value;
+    if (!classId) return;
+    await populateMapelDropdownForClass(classId);
+}
+
+async function onGuruMapelDropdownChange() {
+    const settingId = document.getElementById('guru-active-mapel').value;
+    currentSettings = teacherAmpuanList.find(a => a.id == settingId) || null;
+    renderAmpuanCards();
+    updateWorkspaceBanner();
+    refreshActiveGuruTab();
+}
+
+function refreshActiveGuruTab() {
     const activeTab = ['kelas', 'bobot', 'absen', 'nilai', 'rekap'].find(t => !document.getElementById('gcontent-' + t).classList.contains('hidden'));
     if (activeTab) switchGuruTab(activeTab);
 }
 
+// Modal Tambah Kelas & Mapel Ampuan Baru
+function openAddAmpuanModal() {
+    if (!classesList.length) {
+        return showToast('Buat master kelas terlebih dahulu di Tab 1!', 'error');
+    }
+    const sel = document.getElementById('amp-kelas');
+    sel.innerHTML = '';
+    const activeClassId = document.getElementById('guru-active-class').value;
+    classesList.forEach(c => {
+        sel.innerHTML += `<option value="${c.id}" ${c.id == activeClassId ? 'selected' : ''}>${c.nama_kelas}</option>`;
+    });
+    document.getElementById('amp-mapel').value = '';
+    document.getElementById('amp-kkm').value = '75';
+    document.getElementById('modal-add-ampuan').classList.remove('hidden');
+}
+
+function closeAddAmpuanModal() {
+    document.getElementById('modal-add-ampuan').classList.add('hidden');
+}
+
+async function handleAddAmpuan(e) {
+    e.preventDefault();
+    const class_id = Number(document.getElementById('amp-kelas').value);
+    const mapel = document.getElementById('amp-mapel').value.trim();
+    const kkm = Number(document.getElementById('amp-kkm').value) || 75;
+
+    const { data, error } = await db.from('teacher_settings')
+        .insert([{ teacher_id: currentUser.id, class_id, mapel, kkm }])
+        .select().single();
+
+    if (error) {
+        return showToast('Mata pelajaran tersebut sudah ada di kelas ini!', 'error');
+    }
+
+    closeAddAmpuanModal();
+    showToast(`Mata pelajaran ${mapel} berhasil ditambahkan!`);
+    await fetchClassesAndAmpuan(data.id);
+}
+
+async function deleteCurrentAmpuan() {
+    if (!currentSettings) return;
+    if (teacherAmpuanList.length <= 1) {
+        return showToast('Minimal harus ada 1 Kelas & Mata Pelajaran yang diampu!', 'error');
+    }
+    const clsObj = classesList.find(c => c.id == currentSettings.class_id);
+    if (!confirm(`Hapus mata pelajaran "${currentSettings.mapel}" di kelas "${clsObj?.nama_kelas || ''}" dari daftar ampuan Anda?`)) return;
+
+    await db.from('teacher_settings').delete().eq('id', currentSettings.id);
+    currentSettings = null;
+    showToast('Mata pelajaran ampuan dihapus.');
+    await fetchClassesAndAmpuan();
+}
+
+function copyStudentPortalLink() {
+    const classId = document.getElementById('guru-active-class').value;
+    const mapel = currentSettings ? encodeURIComponent(currentSettings.mapel) : '';
+    const baseUrl = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
+    const url = `${baseUrl}siswa.html?kelas=${classId}&guru=${currentUser.id}&mapel=${mapel}`;
+    navigator.clipboard.writeText(url);
+    showToast('Link Halaman Siswa untuk Kelas & Mapel ini berhasil disalin!');
+}
+
+// ============================================================================
+// 3. KELOLA KELAS & DATA SISWA (TAB 1)
+// ============================================================================
 async function createClass(e) {
     e.preventDefault();
     const nama_kelas = document.getElementById('new-class-name').value.trim();
@@ -245,9 +435,10 @@ async function createClass(e) {
     if (error) return showToast('Kelas sudah ada atau gagal dibuat!', 'error');
     document.getElementById('new-class-name').value = '';
     showToast(`Kelas ${nama_kelas} berhasil dibuat!`);
-    await fetchClasses();
+
+    await fetchClassesAndAmpuan();
     document.getElementById('guru-active-class').value = data.id;
-    await onGuruClassChange();
+    await populateMapelDropdownForClass(data.id);
 }
 
 async function fetchStudentsByClass(classId) {
@@ -295,7 +486,6 @@ async function addStudentManual(e) {
     await fetchStudentsByClass(class_id);
 }
 
-// Fitur Edit Siswa (Nama, NISN, Kelas)
 function openEditStudentModal(studentId) {
     const stu = studentsList.find(s => s.id === studentId);
     if (!stu) return;
@@ -328,7 +518,7 @@ async function handleUpdateStudent(e) {
         .update({ nisn, nama, class_id })
         .eq('id', id);
 
-    if (error) return showToast('Gagal memperbarui data siswa (NISN mungkin bentrok): ' + error.message, 'error');
+    if (error) return showToast('Gagal memperbarui data siswa: ' + error.message, 'error');
 
     closeEditStudentModal();
     showToast('Data siswa berhasil diperbarui!');
@@ -380,32 +570,14 @@ async function importStudentsExcel() {
             }
         }
         showToast('Import Excel Siswa selesai!');
-        await fetchClasses();
-        await onGuruClassChange();
+        await fetchClassesAndAmpuan();
     };
     reader.readAsArrayBuffer(fileInput.files[0]);
 }
 
 // ============================================================================
-// 3. PENGATURAN BOBOT & KKM
+// 4. PENGATURAN BOBOT & KKM PER MAPEL (TAB 2)
 // ============================================================================
-async function ensureTeacherSettings(classId) {
-    const { data } = await db.from('teacher_settings')
-        .select('*')
-        .eq('teacher_id', currentUser.id)
-        .eq('class_id', classId)
-        .single();
-
-    if (data) {
-        currentSettings = data;
-    } else {
-        const { data: created } = await db.from('teacher_settings')
-            .insert([{ teacher_id: currentUser.id, class_id: classId }])
-            .select().single();
-        currentSettings = created;
-    }
-}
-
 function loadSettingsForm() {
     if (!currentSettings) return;
     document.getElementById('set-mapel').value = currentSettings.mapel || 'Mata Pelajaran';
@@ -422,8 +594,12 @@ function loadSettingsForm() {
 
 async function saveSettings(e) {
     e.preventDefault();
+    if (!currentSettings) return;
+    const oldMapel = currentSettings.mapel;
+    const newMapel = document.getElementById('set-mapel').value.trim();
+
     const payload = {
-        mapel: document.getElementById('set-mapel').value.trim(),
+        mapel: newMapel,
         kkm: Number(document.getElementById('set-kkm').value),
         w_tugas: Number(document.getElementById('set-wtugas').value),
         w_bab: Number(document.getElementById('set-wbab').value),
@@ -434,13 +610,39 @@ async function saveSettings(e) {
         p_izin: Number(document.getElementById('set-pizin').value),
         p_alpa: Number(document.getElementById('set-palpa').value),
     };
-    await db.from('teacher_settings').update(payload).eq('id', currentSettings.id);
-    currentSettings = { ...currentSettings, ...payload };
-    showToast('Pengaturan bobot & KKM disimpan!');
+
+    const { error } = await db.from('teacher_settings').update(payload).eq('id', currentSettings.id);
+    if (error) return showToast('Gagal menyimpan pengaturan: ' + error.message, 'error');
+
+    // Jika guru mengubah nama mapel, perbarui juga label mapel pada presensi dan tugas di kelas tersebut
+    if (oldMapel !== newMapel) {
+        const stuIds = studentsList.map(s => s.id);
+        if (stuIds.length) {
+            await db.from('attendance')
+                .update({ mapel: newMapel })
+                .eq('teacher_id', currentUser.id)
+                .eq('mapel', oldMapel)
+                .in('student_id', stuIds);
+        }
+        await db.from('attendance_logs')
+            .update({ mapel: newMapel })
+            .eq('teacher_id', currentUser.id)
+            .eq('class_id', currentSettings.class_id)
+            .eq('mapel', oldMapel);
+
+        await db.from('assessments')
+            .update({ mapel: newMapel })
+            .eq('teacher_id', currentUser.id)
+            .eq('class_id', currentSettings.class_id)
+            .eq('mapel', oldMapel);
+    }
+
+    showToast('Pengaturan bobot & KKM berhasil disimpan!');
+    await fetchClassesAndAmpuan(currentSettings.id);
 }
 
 // ============================================================================
-// 4. KEHADIRAN HARIAN PER TANGGAL & REKAP TOTAL
+// 5. KEHADIRAN HARIAN PER TANGGAL & REKAP ANTI-RESET (TAB 3)
 // ============================================================================
 function calcAttendanceScore(h, s, i, a) {
     const total = h + s + i + a;
@@ -457,37 +659,70 @@ async function loadAttendanceTab() {
 
 async function loadRecordedDates() {
     const classId = document.getElementById('guru-active-class').value;
-    if (!classId) return;
-    const { data } = await db.from('attendance_logs')
-        .select('tanggal')
+    if (!classId || !currentSettings) return;
+
+    const { data, error } = await db.from('attendance_logs')
+        .select('tanggal, status')
         .eq('teacher_id', currentUser.id)
         .eq('class_id', classId)
+        .eq('mapel', currentSettings.mapel)
         .order('tanggal', { ascending: false });
 
-    const uniqueDates = [...new Set((data || []).map(d => d.tanggal))];
     const sel = document.getElementById('abs-recorded-dates');
-    sel.innerHTML = `<option value="">-- ${uniqueDates.length} Tanggal Tersimpan --</option>`;
-    uniqueDates.forEach(tgl => {
-        sel.innerHTML += `<option value="${tgl}">${tgl}</option>`;
-    });
+    const chipsContainer = document.getElementById('abs-date-chips');
+
+    if (error) {
+        sel.innerHTML = `<option value="">-- Error Memuat Riwayat --</option>`;
+        chipsContainer.innerHTML = `<span class="text-xs text-rose-600 font-bold">⚠️ Tabel attendance_logs belum diperbarui di Supabase. Jalankan SQL pembaruan terlebih dahulu.</span>`;
+        return;
+    }
+
+    const uniqueDates = [...new Set((data || []).map(d => d.tanggal))];
+    sel.innerHTML = `<option value="">-- ${uniqueDates.length} Pertemuan Tercatat --</option>`;
+    chipsContainer.innerHTML = '';
+
+    if (uniqueDates.length === 0) {
+        chipsContainer.innerHTML = `<span class="text-xs text-slate-400 italic">Belum ada tanggal pertemuan yang disimpan pada mata pelajaran ini.</span>`;
+    } else {
+        const currentPicked = document.getElementById('abs-date-picker').value;
+        uniqueDates.forEach(tgl => {
+            sel.innerHTML += `<option value="${tgl}" ${tgl === currentPicked ? 'selected' : ''}>${tgl}</option>`;
+            const logsOnDate = (data || []).filter(d => d.tanggal === tgl);
+            const hCount = logsOnDate.filter(d => d.status === 'H').length;
+            const isSelected = tgl === currentPicked;
+
+            chipsContainer.innerHTML += `
+                <button onclick="selectRecordedDate('${tgl}')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${
+                    isSelected 
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-indigo-50 hover:border-indigo-300'
+                }">
+                    <span>📅 ${tgl}</span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] ${isSelected ? 'bg-indigo-800 text-indigo-100' : 'bg-emerald-50 text-emerald-700'}">H:${hCount}</span>
+                </button>
+            `;
+        });
+    }
 }
 
 function selectRecordedDate(val) {
     if (!val) return;
     document.getElementById('abs-date-picker').value = val;
     loadDailyAttendanceForDate();
+    loadRecordedDates();
 }
 
 async function loadDailyAttendanceForDate() {
     const classId = document.getElementById('guru-active-class').value;
     const tanggal = document.getElementById('abs-date-picker').value;
     const tbody = document.getElementById('daily-absen-tbody');
-    if (!classId || !tanggal) return;
+    if (!classId || !tanggal || !currentSettings) return;
 
     const { data } = await db.from('attendance_logs')
         .select('*')
         .eq('teacher_id', currentUser.id)
         .eq('class_id', classId)
+        .eq('mapel', currentSettings.mapel)
         .eq('tanggal', tanggal);
 
     const logMap = {};
@@ -496,11 +731,15 @@ async function loadDailyAttendanceForDate() {
     tbody.innerHTML = '';
     studentsList.forEach((stu, idx) => {
         const st = logMap[stu.id] || 'H';
+        const isSaved = logMap[stu.id] !== undefined;
         tbody.innerHTML += `
             <tr class="hover:bg-slate-50" data-stuid="${stu.id}">
                 <td class="p-3 text-center text-slate-500">${idx + 1}</td>
                 <td class="p-3 font-mono">${stu.nisn}</td>
-                <td class="p-3 font-semibold">${stu.nama}</td>
+                <td class="p-3 font-semibold">
+                    ${stu.nama}
+                    ${isSaved ? '<span class="ml-1.5 text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">Tersimpan</span>' : ''}
+                </td>
                 <td class="p-3 text-center">
                     <div class="inline-flex rounded-xl border border-slate-300 overflow-hidden text-xs font-bold">
                         <label class="px-3 py-1.5 cursor-pointer has-[:checked]:bg-emerald-600 has-[:checked]:text-white">
@@ -532,7 +771,7 @@ function markAllPresentDaily() {
 async function saveDailyAttendance() {
     const class_id = Number(document.getElementById('guru-active-class').value);
     const tanggal = document.getElementById('abs-date-picker').value;
-    if (!class_id || !tanggal) return showToast('Pilih kelas dan tanggal!', 'error');
+    if (!class_id || !tanggal || !currentSettings) return showToast('Pilih kelas dan tanggal!', 'error');
 
     const upserts = studentsList.map(stu => {
         const checked = document.querySelector(`input[name="dabs_${stu.id}"]:checked`);
@@ -541,49 +780,66 @@ async function saveDailyAttendance() {
             class_id,
             student_id: stu.id,
             tanggal,
-            status: checked ? checked.value : 'H'
+            status: checked ? checked.value : 'H',
+            mapel: currentSettings.mapel
         };
     });
 
     if (upserts.length) {
-        await db.from('attendance_logs').upsert(upserts, { onConflict: 'teacher_id,student_id,tanggal' });
+        const { error } = await db.from('attendance_logs').upsert(upserts, { onConflict: 'teacher_id,student_id,tanggal,mapel' });
+        if (error) {
+            return showToast('Gagal menyimpan log harian (Pastikan SQL pembaruan sudah dijalankan): ' + error.message, 'error');
+        }
     }
 
-    await recalculateAttendanceSummaryFromLogs(class_id);
+    await recalculateAttendanceSummaryFromLogs(class_id, currentSettings.mapel);
     await loadRecordedDates();
+    await loadDailyAttendanceForDate();
     await loadAttendanceTable();
-    showToast(`Absensi tanggal ${tanggal} disimpan!`);
+    showToast(`Absensi tanggal ${tanggal} (${currentSettings.mapel}) berhasil disimpan!`);
 }
 
 async function deleteDailyAttendanceDate() {
     const class_id = Number(document.getElementById('guru-active-class').value);
     const tanggal = document.getElementById('abs-date-picker').value;
-    if (!class_id || !tanggal || !confirm(`Hapus catatan kehadiran tanggal ${tanggal}?`)) return;
+    if (!class_id || !tanggal || !currentSettings) return;
+    if (!confirm(`Hapus catatan kehadiran tanggal ${tanggal} untuk mapel ${currentSettings.mapel}?`)) return;
 
-    await db.from('attendance_logs')
+    const { error } = await db.from('attendance_logs')
         .delete()
         .eq('teacher_id', currentUser.id)
         .eq('class_id', class_id)
+        .eq('mapel', currentSettings.mapel)
         .eq('tanggal', tanggal);
 
-    await recalculateAttendanceSummaryFromLogs(class_id);
+    if (error) return showToast('Gagal menghapus tanggal: ' + error.message, 'error');
+
+    await recalculateAttendanceSummaryFromLogs(class_id, currentSettings.mapel);
     await loadRecordedDates();
     await loadDailyAttendanceForDate();
     await loadAttendanceTable();
     showToast(`Absensi tanggal ${tanggal} dihapus.`);
 }
 
-async function recalculateAttendanceSummaryFromLogs(classId) {
-    const { data: logs } = await db.from('attendance_logs')
+// Proteksi Anti-Reset: Hanya mengupdate rekap jika query ke attendance_logs berhasil
+async function recalculateAttendanceSummaryFromLogs(classId, mapelName) {
+    const { data: logs, error } = await db.from('attendance_logs')
         .select('*')
         .eq('teacher_id', currentUser.id)
-        .eq('class_id', classId);
+        .eq('class_id', classId)
+        .eq('mapel', mapelName);
+
+    if (error || !logs) {
+        console.error('Batal menghitung ulang rekap karena error log:', error);
+        return;
+    }
 
     const upserts = studentsList.map(stu => {
-        const stuLogs = (logs || []).filter(l => l.student_id === stu.id);
+        const stuLogs = logs.filter(l => l.student_id === stu.id);
         return {
             teacher_id: currentUser.id,
             student_id: stu.id,
+            mapel: mapelName,
             hadir: stuLogs.filter(l => l.status === 'H').length,
             sakit: stuLogs.filter(l => l.status === 'S').length,
             izin: stuLogs.filter(l => l.status === 'I').length,
@@ -592,22 +848,23 @@ async function recalculateAttendanceSummaryFromLogs(classId) {
     });
 
     if (upserts.length) {
-        await db.from('attendance').upsert(upserts, { onConflict: 'teacher_id,student_id' });
+        await db.from('attendance').upsert(upserts, { onConflict: 'teacher_id,student_id,mapel' });
     }
 }
 
 async function exportDailyAttendanceExcel() {
     const classId = document.getElementById('guru-active-class').value;
-    if (!classId) return;
+    if (!classId || !currentSettings) return;
     const { data: logs } = await db.from('attendance_logs')
         .select('*')
         .eq('teacher_id', currentUser.id)
         .eq('class_id', classId)
+        .eq('mapel', currentSettings.mapel)
         .order('tanggal', { ascending: true });
 
     const dates = [...new Set((logs || []).map(l => l.tanggal))];
     const rows = studentsList.map((stu, idx) => {
-        const rowObj = { No: idx + 1, NISN: stu.nisn, Nama: stu.nama };
+        const rowObj = { No: idx + 1, NISN: stu.nisn, Nama: stu.nama, Mapel: currentSettings.mapel };
         let h = 0, s = 0, i = 0, a = 0;
         dates.forEach(d => {
             const found = (logs || []).find(l => l.student_id === stu.id && l.tanggal === d);
@@ -628,13 +885,24 @@ async function exportDailyAttendanceExcel() {
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Absensi_Harian");
-    XLSX.writeFile(wb, `Matriks_Absensi_Harian_${currentSettings ? currentSettings.mapel : 'Kelas'}.xlsx`);
+    XLSX.writeFile(wb, `Matriks_Absensi_${currentSettings.mapel}.xlsx`);
 }
 
 async function loadAttendanceTable() {
-    const { data } = await db.from('attendance').select('*').eq('teacher_id', currentUser.id);
+    if (!currentSettings) return;
+    const stuIds = studentsList.map(s => s.id);
+    let data = [];
+    if (stuIds.length) {
+        const res = await db.from('attendance')
+            .select('*')
+            .eq('teacher_id', currentUser.id)
+            .eq('mapel', currentSettings.mapel)
+            .in('student_id', stuIds);
+        data = res.data || [];
+    }
+
     const mapAbsen = {};
-    (data || []).forEach(a => mapAbsen[a.student_id] = a);
+    data.forEach(a => mapAbsen[a.student_id] = a);
 
     const tbody = document.getElementById('absen-tbody');
     tbody.innerHTML = '';
@@ -656,6 +924,7 @@ async function loadAttendanceTable() {
 }
 
 async function saveAttendanceManual() {
+    if (!currentSettings) return;
     const rows = document.querySelectorAll('#absen-tbody tr');
     const upserts = [];
     rows.forEach(r => {
@@ -663,6 +932,7 @@ async function saveAttendanceManual() {
         upserts.push({
             teacher_id: currentUser.id,
             student_id,
+            mapel: currentSettings.mapel,
             hadir: Number(r.querySelector('.abs-h').value) || 0,
             sakit: Number(r.querySelector('.abs-s').value) || 0,
             izin: Number(r.querySelector('.abs-i').value) || 0,
@@ -670,9 +940,10 @@ async function saveAttendanceManual() {
         });
     });
     if (upserts.length) {
-        await db.from('attendance').upsert(upserts, { onConflict: 'teacher_id,student_id' });
+        const { error } = await db.from('attendance').upsert(upserts, { onConflict: 'teacher_id,student_id,mapel' });
+        if (error) return showToast('Gagal menyimpan rekap: ' + error.message, 'error');
     }
-    showToast('Rekap kehadiran disimpan!');
+    showToast('Rekap kehadiran manual disimpan!');
     loadAttendanceTable();
 }
 
@@ -685,6 +956,7 @@ function downloadTemplateAbsen() {
 }
 
 async function importAbsenExcel() {
+    if (!currentSettings) return;
     const fileInput = document.getElementById('excel-absen');
     if (!fileInput.files.length) return showToast('Pilih file Excel kehadiran!', 'error');
     const reader = new FileReader();
@@ -699,6 +971,7 @@ async function importAbsenExcel() {
                 upserts.push({
                     teacher_id: currentUser.id,
                     student_id: stu.id,
+                    mapel: currentSettings.mapel,
                     hadir: Number(r.Hadir || r.hadir || 0),
                     sakit: Number(r.Sakit || r.sakit || 0),
                     izin: Number(r.Izin || r.izin || 0),
@@ -707,7 +980,7 @@ async function importAbsenExcel() {
             }
         });
         if (upserts.length) {
-            await db.from('attendance').upsert(upserts, { onConflict: 'teacher_id,student_id' });
+            await db.from('attendance').upsert(upserts, { onConflict: 'teacher_id,student_id,mapel' });
         }
         showToast('Import kehadiran selesai!');
         loadAttendanceTable();
@@ -716,18 +989,22 @@ async function importAbsenExcel() {
 }
 
 // ============================================================================
-// 5. TUGAS, LINK PENGUMPULAN & PENILAIAN (INDIVIDU & KELOMPOK)
+// 6. TUGAS, LINK PENGUMPULAN & PENILAIAN PER MAPEL (TAB 4)
 // ============================================================================
 async function loadAssessmentsDropdown() {
     const classId = document.getElementById('guru-active-class').value;
+    if (!classId || !currentSettings) return;
+
     const { data } = await db.from('assessments')
         .select('*')
         .eq('teacher_id', currentUser.id)
         .eq('class_id', classId)
+        .eq('mapel', currentSettings.mapel)
         .order('id');
+
     currentAssessments = data || [];
     const sel = document.getElementById('active-assessment');
-    sel.innerHTML = currentAssessments.length ? '' : '<option value="">-- Belum Ada Penilaian --</option>';
+    sel.innerHTML = currentAssessments.length ? '' : '<option value="">-- Belum Ada Penilaian di Mapel Ini --</option>';
     currentAssessments.forEach(a => {
         const labelKat = a.kategori === 'tugas' ? 'Tugas' : (a.kategori === 'ujian_bab' ? 'Ujian Bab' : 'Ujian Semester');
         sel.innerHTML += `<option value="${a.id}">[${labelKat} - ${a.tipe_kerja.toUpperCase()}] ${a.judul}</option>`;
@@ -738,20 +1015,29 @@ async function loadAssessmentsDropdown() {
 async function createAssessment(e) {
     e.preventDefault();
     const class_id = document.getElementById('guru-active-class').value;
-    if (!class_id) return showToast('Pilih kelas terlebih dahulu!', 'error');
+    if (!class_id || !currentSettings) return showToast('Pilih kelas & mapel terlebih dahulu!', 'error');
     const judul = document.getElementById('ass-judul').value.trim();
     const kategori = document.getElementById('ass-kategori').value;
     const tipe_kerja = document.getElementById('ass-tipe').value;
     const link_pengumpulan = document.getElementById('ass-link').value.trim();
 
     const { data, error } = await db.from('assessments')
-        .insert([{ teacher_id: currentUser.id, class_id, judul, kategori, tipe_kerja, link_pengumpulan }])
+        .insert([{
+            teacher_id: currentUser.id,
+            class_id: Number(class_id),
+            mapel: currentSettings.mapel,
+            judul,
+            kategori,
+            tipe_kerja,
+            link_pengumpulan
+        }])
         .select().single();
+
     if (error) return showToast('Gagal membuat penilaian: ' + error.message, 'error');
 
     document.getElementById('ass-judul').value = '';
     document.getElementById('ass-link').value = '';
-    showToast('Penilaian baru berhasil dibuat!');
+    showToast(`Penilaian "${judul}" (${currentSettings.mapel}) berhasil dibuat!`);
     await loadAssessmentsDropdown();
     document.getElementById('active-assessment').value = data.id;
     await loadAssessmentScores();
@@ -904,7 +1190,7 @@ async function saveAssessmentScores() {
 }
 
 // ============================================================================
-// 6. REKAP NILAI AKHIR, EKSPOR EXCEL & CETAK KARTU PDF
+// 7. REKAP NILAI AKHIR, EKSPOR EXCEL & CETAK KARTU PDF (TAB 5)
 // ============================================================================
 async function calculateAndRenderRekap() {
     if (!currentSettings) return;
@@ -915,14 +1201,24 @@ async function calculateAndRenderRekap() {
     document.getElementById('rekap-info-bobot').innerText = 
         `Mapel: ${currentSettings.mapel} | Kelas: ${namaKelas} | KKM: ${currentSettings.kkm} | Bobot: Absen (${currentSettings.w_absen}%), Tugas (${currentSettings.w_tugas}%), Ujian Bab (${currentSettings.w_bab}%), Ujian Smt (${currentSettings.w_uas}%)`;
 
-    const { data: absData } = await db.from('attendance').select('*').eq('teacher_id', currentUser.id);
+    const stuIds = studentsList.map(s => s.id);
+    let absData = [];
+    if (stuIds.length) {
+        const resAbs = await db.from('attendance')
+            .select('*')
+            .eq('teacher_id', currentUser.id)
+            .eq('mapel', currentSettings.mapel)
+            .in('student_id', stuIds);
+        absData = resAbs.data || [];
+    }
     const absMap = {};
-    (absData || []).forEach(a => absMap[a.student_id] = a);
+    absData.forEach(a => absMap[a.student_id] = a);
 
     const { data: assList } = await db.from('assessments')
         .select('*')
         .eq('teacher_id', currentUser.id)
         .eq('class_id', classId)
+        .eq('mapel', currentSettings.mapel)
         .order('id');
 
     const assIds = (assList || []).map(a => a.id);
@@ -1067,7 +1363,7 @@ function printStudentCardPDF(studentId) {
     doc.setFont("helvetica", "bold");
     doc.text(currentUser.nama_lengkap, 140, finalY + 26);
 
-    doc.save(`Kartu_Hasil_Belajar_${d.nama.replace(/\s+/g, '_')}.pdf`);
+    doc.save(`Kartu_${currentSettings.mapel}_${d.nama.replace(/\s+/g, '_')}.pdf`);
 }
 
 function printClassRekapPDF() {
@@ -1105,6 +1401,7 @@ function printClassRekapPDF() {
 function exportRekapExcel() {
     const rows = latestRekapData.map(d => ({
         No: d.no, NISN: d.nisn, 'Nama Siswa': d.nama, Kelas: d.kelas,
+        'Mata Pelajaran': currentSettings ? currentSettings.mapel : '-',
         Hadir: d.absen.hadir, Sakit: d.absen.sakit, Izin: d.absen.izin, Alpa: d.absen.alpa,
         'Nilai Kehadiran': Number(d.nAbsen.toFixed(1)),
         'Rata-rata Tugas': Number(d.nTugas.toFixed(1)),
