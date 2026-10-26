@@ -2,33 +2,33 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
     <title>Portal Data & Profil Akademik Siswa — SiPantau Belajar</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <link rel="stylesheet" href="style.css?v=3.6">
+    <link rel="stylesheet" href="style.css?v=3.7">
 </head>
 <body class="min-h-screen flex flex-col bg-slate-50 text-slate-800 antialiased">
 
-    <!-- TOP NAVIGATION BAR -->
+    <!-- TOP NAVIGATION BAR (COMPACT MOBILE) -->
     <nav class="glass-nav sticky top-0 z-40 border-b border-slate-200/80 shadow-sm">
-        <div class="max-w-7xl mx-auto px-4 py-3.5 flex flex-wrap justify-between items-center gap-3">
-            <div class="flex items-center space-x-3 cursor-pointer" onclick="backToDirectory()">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center text-white font-extrabold text-lg shadow-md shadow-indigo-200">
+        <div class="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3.5 flex items-center justify-between gap-2">
+            <div class="flex items-center space-x-2.5 cursor-pointer min-w-0" onclick="backToDirectory()">
+                <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center text-white font-extrabold text-base sm:text-lg shadow-md shadow-indigo-200 shrink-0">
                     SP
                 </div>
-                <div>
-                    <span class="font-extrabold text-lg tracking-tight text-slate-900">Portal Akademik Siswa</span>
-                    <span class="block text-[11px] font-medium text-slate-500 -mt-1">Sistem Informasi Pemantauan Tugas & Kehadiran</span>
+                <div class="truncate">
+                    <span class="font-extrabold text-base sm:text-lg tracking-tight text-slate-900 block truncate">Portal Akademik Siswa</span>
+                    <span class="block text-[10px] sm:text-[11px] font-medium text-slate-500 -mt-0.5 truncate">Pemantauan Tugas & Kehadiran</span>
                 </div>
             </div>
 
-            <div class="flex items-center gap-2">
-                <button id="btn-nav-back" onclick="backToDirectory()" class="hidden px-3.5 py-2 rounded-xl text-xs font-extrabold bg-slate-100 text-slate-700 hover:bg-slate-200 transition items-center gap-1.5">
-                    <span>←</span> Kembali ke Daftar Siswa
+            <div class="flex items-center gap-1.5 shrink-0">
+                <button id="btn-nav-back" onclick="backToDirectory()" class="hidden px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-extrabold bg-slate-100 text-slate-700 hover:bg-slate-200 transition items-center gap-1">
+                    <span>←</span> <span class="hidden sm:inline">Kembali ke</span> Daftar
                 </button>
-                <button onclick="copyCurrentPageLink()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition flex items-center gap-1.5">
-                    <span>🔗</span> Salin Tautan Halaman
+                <button onclick="copyCurrentPageLink()" class="px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition flex items-center gap-1">
+                    <span>🔗</span> Salin Link
                 </button>
             </div>
         </div>
@@ -39,9 +39,9 @@
 
     <!-- MODAL SETOR LINK TUGAS -->
     <div id="modal-submit-link" class="hidden fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 modal-card border border-slate-100">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 sm:p-6 space-y-4 modal-card border border-slate-100">
             <div class="flex justify-between items-center border-b pb-3">
-                <h3 class="font-extrabold text-lg text-slate-800">🔗 Setor Link Bukti Tugas</h3>
+                <h3 class="font-extrabold text-base sm:text-lg text-slate-800">🔗 Setor Link Bukti Tugas</h3>
                 <button onclick="closeSubmitModal()" class="text-slate-400 hover:text-slate-600 font-bold">✕</button>
             </div>
             <form onsubmit="submitStudentTaskLink(event)" class="space-y-3.5">
@@ -61,54 +61,52 @@
                 <p class="text-[11px] text-slate-500">Setelah dikirim, tugas ini akan otomatis berpindah menjadi <b>Sudah Dikumpulkan</b>.</p>
                 <div class="flex justify-end gap-2 pt-2">
                     <button type="button" onclick="closeSubmitModal()" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200">Batal</button>
-                    <button type="submit" class="px-5 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-md">Simpan & Tandai Selesai</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-md">Simpan & Selesai</button>
                 </div>
             </form>
         </div>
     </div>
 
     <!-- MAIN CONTENT CONTAINER -->
-    <main class="flex-grow max-w-7xl w-full mx-auto px-4 py-6">
+    <main class="flex-grow max-w-7xl w-full mx-auto px-3 sm:px-4 py-4 sm:py-6 overflow-x-hidden">
 
-        <!-- ===================================================================
-             VIEW 1: HALAMAN DATA UTAMA SISWA (DIREKTORI SISWA)
-             =================================================================== -->
-        <section id="view-directory" class="space-y-6">
+        <!-- VIEW 1: HALAMAN DATA UTAMA SISWA (DIREKTORI SISWA) -->
+        <section id="view-directory" class="space-y-4 sm:space-y-6">
 
-            <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-violet-950 rounded-3xl p-6 md:p-8 text-white shadow-xl relative overflow-hidden">
-                <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                    <div class="space-y-2 max-w-2xl">
-                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-indigo-500/20 border border-indigo-400/30 text-indigo-200">
+            <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-violet-950 rounded-2xl sm:rounded-3xl p-5 sm:p-8 text-white shadow-xl">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
+                    <div class="space-y-1.5 max-w-2xl">
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider bg-indigo-500/20 border border-indigo-400/30 text-indigo-200">
                             ✨ Direktori Data Utama Siswa
                         </span>
-                        <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight">Data Induk & Profil Akademik Siswa</h1>
-                        <p class="text-xs md:text-sm text-slate-300 leading-relaxed">
-                            Pilih kelas atau cari nama Anda pada daftar di bawah ini, lalu <b>klik pada nama siswa</b> untuk membuka halaman profil lengkap berisi tanggungan tugas dan rincian hari kehadiran.
+                        <h1 class="text-xl sm:text-3xl font-extrabold tracking-tight">Data Induk & Profil Akademik Siswa</h1>
+                        <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                            Pilih kelas atau cari nama Anda di bawah ini, lalu <b>klik pada nama siswa</b> untuk membuka halaman profil lengkap.
                         </p>
                     </div>
 
-                    <div class="flex gap-3 shrink-0">
-                        <div class="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl px-5 py-3.5 text-center min-w-[110px]">
-                            <span id="stat-total-classes" class="block text-2xl font-extrabold text-white">0</span>
-                            <span class="text-[11px] font-semibold text-indigo-200">Total Kelas</span>
+                    <div class="grid grid-cols-2 sm:flex gap-2.5 shrink-0">
+                        <div class="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl px-4 py-2.5 text-center">
+                            <span id="stat-total-classes" class="block text-xl sm:text-2xl font-extrabold text-white">0</span>
+                            <span class="text-[10px] sm:text-[11px] font-semibold text-indigo-200">Total Kelas</span>
                         </div>
-                        <div class="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl px-5 py-3.5 text-center min-w-[110px]">
-                            <span id="stat-total-students" class="block text-2xl font-extrabold text-emerald-400">0</span>
-                            <span class="text-[11px] font-semibold text-indigo-200">Siswa Ditampilkan</span>
+                        <div class="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl px-4 py-2.5 text-center">
+                            <span id="stat-total-students" class="block text-xl sm:text-2xl font-extrabold text-emerald-400">0</span>
+                            <span class="text-[10px] sm:text-[11px] font-semibold text-indigo-200">Siswa Tampil</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+            <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200/80 grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4 items-end">
                 <div class="md:col-span-4">
-                    <label class="block text-xs font-extrabold uppercase text-slate-500 mb-1.5">Pilih Kelas</label>
+                    <label class="block text-xs font-extrabold uppercase text-slate-500 mb-1">Pilih Kelas</label>
                     <select id="dir-class" onchange="loadDirectoryStudents(true)" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm font-bold bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500">
                         <option value="all">-- Semua Kelas --</option>
                     </select>
                 </div>
                 <div class="md:col-span-6">
-                    <label class="block text-xs font-extrabold uppercase text-slate-500 mb-1.5">Cari Nama Siswa atau NISN</label>
+                    <label class="block text-xs font-extrabold uppercase text-slate-500 mb-1">Cari Nama Siswa atau NISN</label>
                     <input type="text" id="dir-search" oninput="renderDirectoryTable()" placeholder="Ketik nama lengkap atau NISN siswa..." class="w-full border border-slate-300 rounded-xl p-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
                 </div>
                 <div class="md:col-span-2">
@@ -121,22 +119,20 @@
             <div id="diagnostic-box" class="hidden p-4 rounded-2xl border text-xs space-y-1"></div>
 
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
-                <div class="px-6 py-4 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2 bg-slate-50/60">
-                    <div>
-                        <h2 class="font-extrabold text-sm text-slate-800">📋 Daftar Data Utama Siswa</h2>
-                        <p class="text-xs text-slate-500">Klik pada baris atau nama siswa untuk membuka Halaman Profil Siswa.</p>
-                    </div>
+                <div class="px-4 sm:px-6 py-3.5 border-b border-slate-200 bg-slate-50/60">
+                    <h2 class="font-extrabold text-sm text-slate-800">📋 Daftar Data Utama Siswa</h2>
+                    <p class="text-xs text-slate-500">Klik pada nama siswa untuk membuka Halaman Profil Siswa.</p>
                 </div>
 
-                <div class="overflow-x-auto">
+                <div class="table-responsive-wrapper">
                     <table class="w-full text-left border-collapse text-sm">
                         <thead>
                             <tr class="bg-slate-100/80 border-b border-slate-200 text-slate-600 text-xs uppercase tracking-wider">
-                                <th class="p-4 w-16 text-center font-extrabold">No</th>
-                                <th class="p-4 w-44 font-extrabold">NISN</th>
-                                <th class="p-4 font-extrabold">Nama Lengkap Siswa</th>
-                                <th class="p-4 w-40 text-center font-extrabold">Kelas</th>
-                                <th class="p-4 w-44 text-right font-extrabold">Profil Akademik</th>
+                                <th class="p-3 sm:p-4 w-12 text-center font-extrabold">No</th>
+                                <th class="p-3 sm:p-4 col-nisn font-extrabold">NISN</th>
+                                <th class="p-3 sm:p-4 col-nama font-extrabold">Nama Lengkap Siswa</th>
+                                <th class="p-3 sm:p-4 w-28 text-center font-extrabold">Kelas</th>
+                                <th class="p-3 sm:p-4 w-36 text-right font-extrabold">Profil</th>
                             </tr>
                         </thead>
                         <tbody id="dir-tbody" class="divide-y divide-slate-200/80">
@@ -150,48 +146,46 @@
 
         </section>
 
-        <!-- ===================================================================
-             VIEW 2: HALAMAN PROFIL LENGKAP SISWA (FULL-PAGE VIEW)
-             =================================================================== -->
-        <section id="view-profile" class="hidden space-y-6">
+        <!-- VIEW 2: HALAMAN PROFIL LENGKAP SISWA (FULL-PAGE VIEW) -->
+        <section id="view-profile" class="hidden space-y-4 sm:space-y-6">
 
-            <div class="flex flex-wrap items-center justify-between gap-3">
-                <button onclick="backToDirectory()" class="inline-flex items-center gap-2 text-xs font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-4 py-2 rounded-xl hover:bg-indigo-100 transition">
-                    <span>←</span> Kembali ke Halaman Data Utama Siswa
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <button onclick="backToDirectory()" class="inline-flex items-center gap-1.5 text-xs font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-3.5 py-2 rounded-xl hover:bg-indigo-100 transition">
+                    <span>←</span> Kembali ke Daftar Siswa
                 </button>
-                <span class="text-xs text-slate-400 font-medium">Halaman Profil & Pemantauan Akademik Individu</span>
+                <span class="text-[11px] text-slate-400 font-medium hidden sm:inline">Halaman Profil & Pemantauan Akademik Individu</span>
             </div>
 
             <!-- Kartu Identitas Utama Siswa -->
-            <div class="bg-white rounded-3xl shadow-sm border border-slate-200/80 overflow-hidden">
-                <div class="bg-gradient-to-r from-indigo-700 via-indigo-600 to-violet-700 px-6 py-6 md:px-8 md:py-7 text-white flex flex-col md:flex-row md:items-center justify-between gap-6">
-                    <div class="flex items-center gap-5">
-                        <div id="prof-avatar" class="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-white/15 backdrop-blur-md border-2 border-white/30 flex items-center justify-center text-2xl md:text-3xl font-extrabold text-white shadow-inner shrink-0">
+            <div class="bg-white rounded-2xl sm:rounded-3xl shadow-sm border border-slate-200/80 overflow-hidden">
+                <div class="bg-gradient-to-r from-indigo-700 via-indigo-600 to-violet-700 p-5 sm:p-7 text-white flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
+                    <div class="flex items-center gap-3.5 sm:gap-5 min-w-0">
+                        <div id="prof-avatar" class="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl bg-white/15 backdrop-blur-md border-2 border-white/30 flex items-center justify-center text-xl sm:text-3xl font-extrabold text-white shadow-inner shrink-0">
                             S
                         </div>
-                        <div class="space-y-1.5">
-                            <div class="flex flex-wrap items-center gap-2">
-                                <span id="prof-kelas-badge" class="px-3 py-0.5 rounded-full text-xs font-extrabold bg-white text-indigo-700 shadow-sm">
+                        <div class="space-y-1 min-w-0">
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                <span id="prof-kelas-badge" class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-white text-indigo-700 shadow-sm">
                                     Kelas -
                                 </span>
-                                <span class="px-3 py-0.5 rounded-full text-xs font-semibold bg-indigo-900/50 border border-indigo-400/30 text-indigo-100 font-mono" id="prof-nisn-badge">
+                                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-900/50 border border-indigo-400/30 text-indigo-100 font-mono" id="prof-nisn-badge">
                                     NISN: -
                                 </span>
                             </div>
-                            <h1 id="prof-nama" class="text-2xl md:text-3xl font-extrabold tracking-tight">Nama Lengkap Siswa</h1>
+                            <h1 id="prof-nama" class="text-lg sm:text-3xl font-extrabold tracking-tight break-words">Nama Lengkap Siswa</h1>
                         </div>
                     </div>
 
-                    <div class="bg-slate-900/30 backdrop-blur-md border border-white/15 rounded-2xl p-4 flex items-center gap-4 shrink-0">
+                    <div class="bg-slate-900/30 backdrop-blur-md border border-white/15 rounded-2xl p-3.5 sm:p-4 flex items-center gap-4 shrink-0">
                         <div>
                             <span class="block text-[10px] font-bold uppercase tracking-wider text-indigo-200">Status Tanggungan Tugas Publik</span>
-                            <span id="prof-status-headline" class="text-sm font-extrabold text-white">Memuat data...</span>
+                            <span id="prof-status-headline" class="text-xs sm:text-sm font-extrabold text-white">Memuat data...</span>
                         </div>
                     </div>
                 </div>
 
                 <!-- Bar Filter Guru & Mata Pelajaran di Dalam Profil Siswa -->
-                <div class="p-5 bg-slate-50/70 border-t border-slate-200/80 flex flex-col md:flex-row md:items-end justify-between gap-4">
+                <div class="p-4 sm:p-5 bg-slate-50/70 border-t border-slate-200/80 flex flex-col md:flex-row md:items-end justify-between gap-3 sm:gap-4">
                     <div class="space-y-1">
                         <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                             <span>🔍</span> Filter Sumber Data Guru & Mata Pelajaran
@@ -201,7 +195,7 @@
                         </p>
                     </div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full md:w-auto min-w-[320px] md:min-w-[460px]">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full md:w-auto md:min-w-[420px]">
                         <div>
                             <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Pilih Guru Pengampu</label>
                             <select id="prof-filter-teacher" onchange="onProfileTeacherFilterChange()" class="w-full border border-slate-300 rounded-xl p-2 text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-indigo-500">
@@ -218,94 +212,93 @@
                 </div>
             </div>
 
-            <!-- 4 KARTU RINGKASAN UTAMA (BERBASIS HARI UNTUK SAKIT, IZIN, ALPA) -->
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div class="bg-white p-5 rounded-2xl shadow-sm border border-rose-200 flex items-center justify-between">
-                    <div>
-                        <span class="text-xs font-bold text-slate-500 block">Tugas Belum Selesai</span>
-                        <span id="card-uncompleted-count" class="text-2xl md:text-3xl font-extrabold text-rose-600 mt-1 block">0</span>
-                        <span id="card-total-tasks-sub" class="text-[11px] font-semibold text-slate-400">dari 0 tugas ditampilkan</span>
+            <!-- 4 KARTU RINGKASAN UTAMA -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-rose-200 flex items-center justify-between gap-2">
+                    <div class="min-w-0">
+                        <span class="text-[11px] sm:text-xs font-bold text-slate-500 block truncate">Tugas Belum Selesai</span>
+                        <span id="card-uncompleted-count" class="text-xl sm:text-3xl font-extrabold text-rose-600 mt-0.5 block">0</span>
+                        <span id="card-total-tasks-sub" class="text-[10px] sm:text-[11px] font-semibold text-slate-400 block truncate">dari 0 tugas</span>
                     </div>
-                    <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl font-bold shrink-0">📝</div>
+                    <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-lg sm:text-xl font-bold shrink-0">📝</div>
                 </div>
 
-                <div class="bg-white p-5 rounded-2xl shadow-sm border border-amber-200 flex items-center justify-between">
-                    <div>
-                        <span class="text-xs font-bold text-slate-500 block">Sakit (S)</span>
-                        <span id="card-sakit-count" class="text-2xl md:text-3xl font-extrabold text-amber-500 mt-1 block">0 Hari</span>
-                        <span id="card-sakit-sub" class="text-[11px] font-semibold text-slate-400">0 mapel/pertemuan</span>
+                <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-amber-200 flex items-center justify-between gap-2">
+                    <div class="min-w-0">
+                        <span class="text-[11px] sm:text-xs font-bold text-slate-500 block">Sakit (S)</span>
+                        <span id="card-sakit-count" class="text-xl sm:text-3xl font-extrabold text-amber-500 mt-0.5 block">0 Hari</span>
+                        <span id="card-sakit-sub" class="text-[10px] sm:text-[11px] font-semibold text-slate-400 block truncate">0 mapel</span>
                     </div>
-                    <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center text-xl font-bold shrink-0">🤒</div>
+                    <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center text-lg sm:text-xl font-bold shrink-0">🤒</div>
                 </div>
 
-                <div class="bg-white p-5 rounded-2xl shadow-sm border border-sky-200 flex items-center justify-between">
-                    <div>
-                        <span class="text-xs font-bold text-slate-500 block">Izin (I)</span>
-                        <span id="card-izin-count" class="text-2xl md:text-3xl font-extrabold text-sky-600 mt-1 block">0 Hari</span>
-                        <span id="card-izin-sub" class="text-[11px] font-semibold text-slate-400">0 mapel/pertemuan</span>
+                <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-sky-200 flex items-center justify-between gap-2">
+                    <div class="min-w-0">
+                        <span class="text-[11px] sm:text-xs font-bold text-slate-500 block">Izin (I)</span>
+                        <span id="card-izin-count" class="text-xl sm:text-3xl font-extrabold text-sky-600 mt-0.5 block">0 Hari</span>
+                        <span id="card-izin-sub" class="text-[10px] sm:text-[11px] font-semibold text-slate-400 block truncate">0 mapel</span>
                     </div>
-                    <div class="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center text-xl font-bold shrink-0">📩</div>
+                    <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center text-lg sm:text-xl font-bold shrink-0">📩</div>
                 </div>
 
-                <div class="bg-white p-5 rounded-2xl shadow-sm border border-rose-200 flex items-center justify-between">
-                    <div>
-                        <span class="text-xs font-bold text-slate-500 block">Alpa (A)</span>
-                        <span id="card-alpa-count" class="text-2xl md:text-3xl font-extrabold text-rose-600 mt-1 block">0 Hari</span>
-                        <span id="card-alpa-sub" class="text-[11px] font-semibold text-slate-400">0 mapel/pertemuan</span>
+                <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-rose-200 flex items-center justify-between gap-2">
+                    <div class="min-w-0">
+                        <span class="text-[11px] sm:text-xs font-bold text-slate-500 block">Alpa (A)</span>
+                        <span id="card-alpa-count" class="text-xl sm:text-3xl font-extrabold text-rose-600 mt-0.5 block">0 Hari</span>
+                        <span id="card-alpa-sub" class="text-[10px] sm:text-[11px] font-semibold text-slate-400 block truncate">0 mapel</span>
                     </div>
-                    <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl font-bold shrink-0">⚠️</div>
+                    <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-lg sm:text-xl font-bold shrink-0">⚠️</div>
                 </div>
             </div>
 
             <!-- GRID 2 KOLOM: DAFTAR TUGAS BELUM SELESAI & RINCIAN HARI KETIDAKHADIRAN -->
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6">
 
-                <div class="lg:col-span-7 space-y-6">
+                <div class="lg:col-span-7 space-y-5">
                     <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
-                        <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-rose-50/40">
+                        <div class="px-4 sm:px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-2 bg-rose-50/40">
                             <div>
-                                <h2 class="font-extrabold text-base text-slate-900 flex items-center gap-2">
-                                    <span>🚨</span> Daftar Tugas / Ujian yang Belum Dikumpulkan
+                                <h2 class="font-extrabold text-sm sm:text-base text-slate-900 flex items-center gap-1.5">
+                                    <span>🚨</span> Tugas / Ujian Belum Dikumpulkan
                                 </h2>
-                                <p class="text-xs text-slate-500 mt-0.5">Menampilkan daftar tugas aktif yang dibuka oleh guru untuk halaman publik siswa.</p>
+                                <p class="text-[11px] sm:text-xs text-slate-500 mt-0.5">Menampilkan daftar tugas aktif yang dibuka oleh guru.</p>
                             </div>
-                            <span id="badge-pending-tasks" class="px-3 py-1 rounded-full text-xs font-extrabold bg-rose-100 text-rose-700">
+                            <span id="badge-pending-tasks" class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-rose-100 text-rose-700 shrink-0">
                                 0 Tugas
                             </span>
                         </div>
-                        <div id="prof-pending-tasks-list" class="p-6 space-y-3.5"></div>
+                        <div id="prof-pending-tasks-list" class="p-4 sm:p-6 space-y-3"></div>
                     </div>
 
                     <details class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden group">
-                        <summary class="px-6 py-4 cursor-pointer font-extrabold text-sm text-emerald-800 bg-emerald-50/40 flex items-center justify-between select-none">
+                        <summary class="px-4 sm:px-6 py-4 cursor-pointer font-extrabold text-xs sm:text-sm text-emerald-800 bg-emerald-50/40 flex items-center justify-between select-none">
                             <span class="flex items-center gap-2">
-                                <span>✅</span> Lihat Riwayat Tugas yang Sudah Dikumpulkan
+                                <span>✅</span> Riwayat Tugas yang Sudah Dikumpulkan
                             </span>
-                            <span id="badge-done-tasks" class="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800">0 Selesai</span>
+                            <span id="badge-done-tasks" class="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 shrink-0">0 Selesai</span>
                         </summary>
-                        <div id="prof-completed-tasks-list" class="p-6 border-t border-slate-100 space-y-2.5"></div>
+                        <div id="prof-completed-tasks-list" class="p-4 sm:p-6 border-t border-slate-100 space-y-2.5"></div>
                     </details>
                 </div>
 
-                <!-- KOLOM KANAN: RINCIAN HARI KETIDAKHADIRAN (DIGABUNGKAN PER HARI JIKA >= 2 GURU) -->
-                <div class="lg:col-span-5 space-y-6">
+                <div class="lg:col-span-5 space-y-5">
                     <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
-                        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50/60">
-                            <h2 class="font-extrabold text-base text-slate-900 flex items-center gap-2">
-                                <span>📅</span> Data Hari Ketidakhadiran (Sakit, Izin, Alpa)
+                        <div class="px-4 sm:px-6 py-4 border-b border-slate-200 bg-slate-50/60">
+                            <h2 class="font-extrabold text-sm sm:text-base text-slate-900 flex items-center gap-1.5">
+                                <span>📅</span> Data Hari Ketidakhadiran (S/I/A)
                             </h2>
-                            <p class="text-xs text-slate-500 mt-0.5">
-                                Dikelompokkan berdasarkan <b>Hari & Tanggal (DD/MM/YYYY)</b>. Jika 2 guru atau lebih mencatat pada hari yang sama, data digabung dalam hari tersebut.
+                            <p class="text-[11px] sm:text-xs text-slate-500 mt-0.5">
+                                Dikelompokkan berdasarkan <b>Hari & Tanggal (DD/MM/YYYY)</b>.
                             </p>
                         </div>
 
-                        <div class="p-6 space-y-4">
-                            <div class="overflow-x-auto rounded-xl border border-slate-200">
+                        <div class="p-4 sm:p-6 space-y-4">
+                            <div class="table-responsive-wrapper rounded-xl border border-slate-200">
                                 <table class="w-full text-left border-collapse text-xs">
                                     <thead>
                                         <tr class="bg-slate-100 text-slate-600 border-b border-slate-200">
                                             <th class="p-3 font-extrabold">Hari & Tanggal</th>
-                                            <th class="p-3 font-extrabold text-center">Status Hari</th>
+                                            <th class="p-3 font-extrabold text-center">Status</th>
                                             <th class="p-3 font-extrabold">Rincian Mapel & Guru</th>
                                         </tr>
                                     </thead>
@@ -323,7 +316,7 @@
 
     </main>
 
-    <script src="config.js?v=3.6"></script>
-    <script src="app-siswa.js?v=3.6"></script>
+    <script src="config.js?v=3.7"></script>
+    <script src="app-siswa.js?v=3.7"></script>
 </body>
 </html>
