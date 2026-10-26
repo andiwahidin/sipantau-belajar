@@ -1,6 +1,6 @@
 // ============================================================================
-// FILE: app-guru.js (v3.4)
-// Fitur: Edit Guru oleh Admin, Hapus Massal Siswa, Konfirmasi 2x, & Kunci Kelas Bersama
+// FILE: app-guru.js (v3.6)
+// Fitur: Toggle Tampilkan/Sembunyikan Tugas di Publik, Hapus Massal 2x Konfirmasi, Kunci Kelas Bersama
 // ============================================================================
 
 let currentUser = null;
@@ -11,7 +11,6 @@ let currentSettings = null;
 let currentAssessments = [];
 let latestRekapData = [];
 
-// State Keamanan Kelas Bersama & Hapus Massal
 let isCurrentClassLockedForGuru = false;
 let otherTeachersInCurrentClass = [];
 let selectedStudentIds = new Set();
@@ -44,7 +43,7 @@ function switchView(view) {
 }
 
 // ============================================================================
-// 1. AUTENTIKASI, UBAH PASSWORD & PANEL ADMIN (TERMASUK EDIT NAMA/USERNAME GURU)
+// 1. AUTENTIKASI, UBAH PASSWORD & PANEL ADMIN
 // ============================================================================
 async function handleLogin(e) {
     e.preventDefault();
@@ -94,7 +93,6 @@ function updateAuthUI() {
     }
 }
 
-// Navigasi Mode Admin: Antara Kelola Akun Guru & Kelola Siswa (Akses Penuh)
 async function switchAdminMode(mode) {
     if (!currentUser || currentUser.role !== 'admin') return;
     const btnTch = document.getElementById('adm-tab-teachers');
@@ -109,7 +107,6 @@ async function switchAdminMode(mode) {
         btnStu.className = 'px-3 py-1.5 rounded-lg text-xs font-extrabold bg-indigo-600 text-white transition';
         btnTch.className = 'px-3 py-1.5 rounded-lg text-xs font-extrabold text-slate-600 hover:text-slate-900 transition';
         
-        // Tampilkan View Kelas & Siswa dalam Mode Admin
         switchView('guru');
         document.getElementById('guru-only-header').classList.add('hidden');
         document.getElementById('admin-student-mode-banner').classList.remove('hidden');
@@ -222,7 +219,6 @@ async function loadAdminUsers() {
     });
 }
 
-// Fitur Admin Mengedit Nama Lengkap & Username Guru
 function openEditTeacherModal(id, nama, username) {
     document.getElementById('edit-tch-id').value = id;
     document.getElementById('edit-tch-nama').value = nama;
@@ -250,7 +246,6 @@ async function handleUpdateTeacher(e) {
         return showToast('Gagal memperbarui guru (Username mungkin sudah digunakan): ' + error.message, 'error');
     }
 
-    // Jika yang diedit adalah diri sendiri (Admin)
     if (currentUser && currentUser.id === id) {
         currentUser.nama_lengkap = nama_lengkap;
         currentUser.username = username;
@@ -270,7 +265,7 @@ async function addTeacher(e) {
     const password = username;
 
     const { error } = await db.from('app_users').insert([{ nama_lengkap, username, password, role: 'guru' }]);
-    if (error) return showToast('Gagal menambah guru (Username mungkin sudah terpakai): ' + error.message, 'error');
+    if (error) return showToast('Gagal menambah guru: ' + error.message, 'error');
 
     e.target.reset();
     showToast(`Akun ${nama_lengkap} dibuat! Password awal: ${username}`);
@@ -367,7 +362,6 @@ async function populateMapelDropdownForClass(classId, selectedSettingId = null) 
     const selMapel = document.getElementById('guru-active-mapel');
     let mapelsInClass = teacherAmpuanList.filter(a => a.class_id == classId);
 
-    // Jika guru sama sekali belum memiliki ampuan di kelas mana pun, buatkan 1 ampuan awal
     if (teacherAmpuanList.length === 0 && classId) {
         const { data: created } = await db.from('teacher_settings')
             .insert([{ teacher_id: currentUser.id, class_id: Number(classId), mapel: 'Mata Pelajaran' }])
@@ -540,13 +534,11 @@ async function checkSharedClassPermission(classId) {
 
     if (!classId || !currentUser) return;
 
-    // Jika yang login adalah Admin, Admin selalu bebas mengedit & menghapus siswa di kelas mana pun
     if (currentUser.role === 'admin') {
         document.getElementById('shared-class-lock-banner').classList.add('hidden');
         return;
     }
 
-    // Cari apakah ada guru lain (teacher_id != currentUser.id) yang mengampu kelas ini
     const { data: settingsOther } = await db.from('teacher_settings')
         .select('teacher_id, mapel')
         .eq('class_id', classId)
@@ -647,7 +639,6 @@ async function fetchStudentsByClass(classId) {
     });
 }
 
-// Logika Checkbox Pilih Beberapa / Pilih Semua Siswa
 function onStudentCheckboxChange(studentId, checked) {
     if (isCurrentClassLockedForGuru) return;
     if (checked) {
@@ -703,9 +694,6 @@ function updateBulkDeleteToolbarUI() {
     }
 }
 
-// ============================================================================
-// SISTEM KONFIRMASI 2 KALI (DOUBLE CONFIRMATION) UNTUK HAPUS SISWA
-// ============================================================================
 function initiateSingleStudentDelete(studentId) {
     if (isCurrentClassLockedForGuru) {
         return showToast('Akses ditolak: Kelas ini diampu bersama guru lain. Hanya Admin yang dapat menghapus siswa!', 'error');
@@ -738,7 +726,6 @@ function openDoubleConfirmDeleteModal(targetStudents, isFullClass = false) {
     const clsObj = classesList.find(c => c.id == classId);
     const namaKelas = clsObj ? clsObj.nama_kelas : '-';
 
-    // Siapkan tampilan Tahap 1
     document.getElementById('del-step-1').classList.remove('hidden');
     document.getElementById('del-step-2').classList.add('hidden');
 
@@ -750,7 +737,6 @@ function openDoubleConfirmDeleteModal(targetStudents, isFullClass = false) {
     const previewBox = document.getElementById('del-names-preview');
     previewBox.innerHTML = targetStudents.map((s, idx) => `<div>${idx + 1}. [${s.nisn}] ${s.nama}</div>`).join('');
 
-    // Siapkan teks Tahap 2
     document.getElementById('del-step2-desc').innerText = 
         `KONFIRMASI KE-2 (TERAKHIR): Sebanyak ${targetStudents.length} data siswa di Kelas ${namaKelas} akan dihapus secara permanen sekarang.`;
 
@@ -797,7 +783,6 @@ async function executeConfirmedStudentDelete() {
     await fetchStudentsByClass(document.getElementById('guru-active-class').value);
 }
 
-// Tambah & Edit Siswa
 async function addStudentManual(e) {
     e.preventDefault();
     const class_id = document.getElementById('guru-active-class').value;
@@ -1315,9 +1300,9 @@ async function importAbsenExcel() {
 }
 
 // ============================================================================
-// 6. TUGAS, LINK PENGUMPULAN & PENILAIAN PER MAPEL (TAB 4)
+// 6. TUGAS, VISIBILITAS PUBLIK, LINK PENGUMPULAN & PENILAIAN (TAB 4)
 // ============================================================================
-async function loadAssessmentsDropdown() {
+async function loadAssessmentsDropdown(keepSelectedId = null) {
     const classId = document.getElementById('guru-active-class').value;
     if (!classId || !currentSettings) return;
 
@@ -1333,8 +1318,14 @@ async function loadAssessmentsDropdown() {
     sel.innerHTML = currentAssessments.length ? '' : '<option value="">-- Belum Ada Penilaian di Mapel Ini --</option>';
     currentAssessments.forEach(a => {
         const labelKat = a.kategori === 'tugas' ? 'Tugas' : (a.kategori === 'ujian_bab' ? 'Ujian Bab' : 'Ujian Semester');
-        sel.innerHTML += `<option value="${a.id}">[${labelKat} - ${a.tipe_kerja.toUpperCase()}] ${a.judul}</option>`;
+        const visIcon = (a.tampil_publik !== false) ? '🌐 Publik' : '🔒 Sembunyi';
+        sel.innerHTML += `<option value="${a.id}">[${visIcon} | ${labelKat} - ${a.tipe_kerja.toUpperCase()}] ${a.judul}</option>`;
     });
+
+    if (keepSelectedId && currentAssessments.some(a => a.id == keepSelectedId)) {
+        sel.value = keepSelectedId;
+    }
+
     await loadAssessmentScores();
 }
 
@@ -1345,9 +1336,10 @@ async function createAssessment(e) {
     const judul = document.getElementById('ass-judul').value.trim();
     const kategori = document.getElementById('ass-kategori').value;
     const tipe_kerja = document.getElementById('ass-tipe').value;
+    const tampil_publik = document.getElementById('ass-publik').value === 'true';
     const link_pengumpulan = document.getElementById('ass-link').value.trim();
 
-    const { data, error } = await db.from('assessments')
+    let { data, error } = await db.from('assessments')
         .insert([{
             teacher_id: currentUser.id,
             class_id: Number(class_id),
@@ -1355,18 +1347,35 @@ async function createAssessment(e) {
             judul,
             kategori,
             tipe_kerja,
+            tampil_publik,
             link_pengumpulan
         }])
         .select().single();
+
+    // Fallback jika kolom tampil_publik belum ditambahkan via SQL
+    if (error && String(error.message).includes('tampil_publik')) {
+        const retry = await db.from('assessments')
+            .insert([{
+                teacher_id: currentUser.id,
+                class_id: Number(class_id),
+                mapel: currentSettings.mapel,
+                judul,
+                kategori,
+                tipe_kerja,
+                link_pengumpulan
+            }])
+            .select().single();
+        data = retry.data;
+        error = retry.error;
+        showToast('Info: Jalankan SQL ALTER TABLE assessments ADD COLUMN tampil_publik untuk mengaktifkan fitur sembunyi tugas.', 'info');
+    }
 
     if (error) return showToast('Gagal membuat penilaian: ' + error.message, 'error');
 
     document.getElementById('ass-judul').value = '';
     document.getElementById('ass-link').value = '';
-    showToast(`Penilaian "${judul}" (${currentSettings.mapel}) berhasil dibuat!`);
-    await loadAssessmentsDropdown();
-    document.getElementById('active-assessment').value = data.id;
-    await loadAssessmentScores();
+    showToast(`Penilaian "${judul}" berhasil dibuat!`);
+    await loadAssessmentsDropdown(data.id);
 }
 
 async function updateAssessmentLink() {
@@ -1381,10 +1390,35 @@ async function updateAssessmentLink() {
     showToast('Link pengumpulan tugas diperbarui!');
 }
 
+// Fitur Sakelar (Toggle) Tampilkan / Sembunyikan Tugas di Halaman Publik Siswa
+async function toggleAssessmentPublicVisibility() {
+    const assId = document.getElementById('active-assessment').value;
+    if (!assId) return;
+    const assObj = currentAssessments.find(a => a.id == assId);
+    if (!assObj) return;
+
+    const currentPub = assObj.tampil_publik !== false;
+    const newPub = !currentPub;
+
+    const { error } = await db.from('assessments')
+        .update({ tampil_publik: newPub })
+        .eq('id', assId);
+
+    if (error) {
+        return showToast('Gagal mengubah visibilitas! Pastikan Anda sudah menjalankan SQL: ALTER TABLE assessments ADD COLUMN IF NOT EXISTS tampil_publik BOOLEAN DEFAULT TRUE;', 'error');
+    }
+
+    assObj.tampil_publik = newPub;
+    showToast(newPub ? '🌐 Tugas ini sekarang DITAMPILKAN di halaman publik siswa.' : '🔒 Tugas ini sekarang DISEMBUNYIKAN dari halaman publik siswa.');
+    await loadAssessmentsDropdown(assId);
+}
+
 function renderAssLinkEditor(assObj) {
     const box = document.getElementById('ass-link-editor');
     const input = document.getElementById('edit-ass-link');
     const btnTest = document.getElementById('btn-test-ass-link');
+    const btnToggle = document.getElementById('btn-toggle-public');
+
     if (!assObj) {
         box.classList.add('hidden');
         return;
@@ -1396,6 +1430,17 @@ function renderAssLinkEditor(assObj) {
         btnTest.classList.remove('hidden');
     } else {
         btnTest.classList.add('hidden');
+    }
+
+    const isPublic = assObj.tampil_publik !== false;
+    if (btnToggle) {
+        if (isPublic) {
+            btnToggle.className = 'px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm';
+            btnToggle.innerHTML = '🌐 Ditampilkan di Siswa (Klik untuk Sembunyikan)';
+        } else {
+            btnToggle.className = 'px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-slate-700 text-white hover:bg-slate-800 transition shadow-sm';
+            btnToggle.innerHTML = '🔒 Disembunyikan dari Siswa (Klik untuk Tampilkan)';
+        }
     }
 }
 
