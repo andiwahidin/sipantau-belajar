@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel Guru & Admin — SiPantau Belajar v3.4</title>
+    <title>Panel Guru & Admin — SiPantau Belajar v3.6</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-    <link rel="stylesheet" href="style.css?v=3.4">
+    <link rel="stylesheet" href="style.css?v=3.6">
 </head>
 <body class="min-h-screen flex flex-col bg-slate-50 text-slate-800">
 
@@ -27,7 +27,6 @@
             </div>
 
             <div class="flex flex-wrap items-center gap-2.5">
-                <!-- Navigasi Khusus Admin (Berpindah antara Kelola Guru & Kelola Siswa) -->
                 <div id="admin-nav-switcher" class="hidden items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
                     <button onclick="switchAdminMode('teachers')" id="adm-tab-teachers" class="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-indigo-600 text-white transition">
                         👑 Kelola Akun Guru
@@ -85,22 +84,17 @@
         </div>
     </div>
 
-    <!-- MODAL 2: KONFIRMASI 2 KALI HAPUS SISWA (DOUBLE CONFIRMATION MODAL) -->
+    <!-- MODAL 2: KONFIRMASI 2 KALI HAPUS SISWA -->
     <div id="modal-delete-confirm" class="hidden fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 modal-card border border-slate-100">
-            
-            <!-- STEP 1: KONFIRMASI PERTAMA (1/2) -->
             <div id="del-step-1" class="space-y-4">
                 <div class="flex items-center gap-3 border-b pb-3">
-                    <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center text-xl font-bold shrink-0">
-                        ⚠️
-                    </div>
+                    <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center text-xl font-bold shrink-0">⚠️</div>
                     <div>
                         <span class="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-800">Konfirmasi Tahap 1 dari 2</span>
                         <h3 class="font-extrabold text-base text-slate-900 mt-0.5">Peringatan Penghapusan Siswa</h3>
                     </div>
                 </div>
-
                 <div class="text-xs text-slate-600 space-y-2 leading-relaxed">
                     <p id="del-step1-desc" class="font-semibold text-slate-800"></p>
                     <div id="del-names-preview" class="max-h-32 overflow-y-auto bg-slate-50 p-3 rounded-xl border border-slate-200 font-mono text-[11px] text-slate-700 space-y-1"></div>
@@ -108,49 +102,37 @@
                         Perhatian: Menghapus siswa juga akan menghapus seluruh riwayat kehadiran dan nilai tugas siswa tersebut di dalam sistem.
                     </p>
                 </div>
-
                 <div class="flex justify-end gap-2 pt-2 border-t">
-                    <button type="button" onclick="closeDeleteConfirmModal()" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200">
-                        Batal
-                    </button>
+                    <button type="button" onclick="closeDeleteConfirmModal()" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200">Batal</button>
                     <button type="button" onclick="proceedToDeleteStep2()" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-amber-500 text-white hover:bg-amber-600 shadow-sm">
                         Ya, Lanjutkan ke Konfirmasi Ke-2 →
                     </button>
                 </div>
             </div>
 
-            <!-- STEP 2: KONFIRMASI KEDUA / TERAKHIR (2/2) -->
             <div id="del-step-2" class="hidden space-y-4">
                 <div class="flex items-center gap-3 border-b border-rose-200 pb-3">
-                    <div class="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center text-xl font-bold shrink-0">
-                        🚨
-                    </div>
+                    <div class="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center text-xl font-bold shrink-0">🚨</div>
                     <div>
                         <span class="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded bg-rose-600 text-white">Konfirmasi Terakhir (Tahap 2 dari 2)</span>
                         <h3 class="font-extrabold text-base text-rose-950 mt-0.5">Pastikan Keputusan Anda!</h3>
                     </div>
                 </div>
-
                 <div class="bg-rose-50 border border-rose-200 rounded-xl p-3.5 text-xs text-rose-900 space-y-2">
                     <p class="font-bold" id="del-step2-desc"></p>
                     <p>Tindakan ini bersifat <b>permanen</b> dan data yang sudah dihapus tidak dapat dikembalikan lagi.</p>
                 </div>
-
                 <label class="flex items-start gap-2.5 cursor-pointer bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 select-none">
                     <input type="checkbox" id="del-final-check" onchange="toggleFinalDeleteButton()" class="mt-0.5 w-4 h-4 accent-rose-600">
                     <span>Saya telah memeriksa kembali dan benar-benar yakin ingin menghapus data siswa ini secara permanen.</span>
                 </label>
-
                 <div class="flex justify-end gap-2 pt-2 border-t">
-                    <button type="button" onclick="closeDeleteConfirmModal()" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200">
-                        Batal & Kembali
-                    </button>
+                    <button type="button" onclick="closeDeleteConfirmModal()" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200">Batal & Kembali</button>
                     <button type="button" id="btn-execute-delete" onclick="executeConfirmedStudentDelete()" disabled class="px-5 py-2 rounded-xl text-xs font-extrabold bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed shadow-md">
                         🗑️ Hapus Permanen Sekarang
                     </button>
                 </div>
             </div>
-
         </div>
     </div>
 
@@ -246,9 +228,7 @@
         <!-- ==================== 1. VIEW LOGIN ==================== -->
         <section id="view-login" class="max-w-md mx-auto mt-8">
             <div class="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/60 border border-slate-100">
-                <div class="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-2xl mx-auto mb-4 font-bold">
-                    🔐
-                </div>
+                <div class="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-2xl mx-auto mb-4 font-bold">🔐</div>
                 <h1 class="text-2xl font-extrabold text-center text-slate-900">Masuk ke Panel Kerja</h1>
                 <p class="text-xs text-center text-slate-500 mt-1 mb-6">Gunakan akun Guru atau Administrator Anda</p>
 
@@ -326,10 +306,7 @@
         <!-- ==================== 3. VIEW GURU (DAN MODE KELOLA SISWA ADMIN) ==================== -->
         <section id="view-guru" class="hidden space-y-5">
             
-            <!-- PANEL DAFTAR KELAS & MATA PELAJARAN YANG DIAMPU GURU -->
             <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 space-y-4">
-                
-                <!-- Header Khusus Guru -->
                 <div id="guru-only-header" class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
                     <div>
                         <h2 class="text-sm font-extrabold text-slate-900 flex items-center gap-2">
@@ -347,7 +324,6 @@
                     </div>
                 </div>
 
-                <!-- Header Khusus Saat Admin Membuka Manajemen Kelas & Siswa -->
                 <div id="admin-student-mode-banner" class="hidden bg-indigo-950 text-white p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3">
                     <div>
                         <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-amber-400 text-slate-950">Mode Administrator Aktif</span>
@@ -359,10 +335,8 @@
                     </button>
                 </div>
 
-                <!-- Kartu-kartu Kelas & Mapel yang Diampu (Quick Switcher) -->
                 <div id="teacher-ampuan-cards" class="flex flex-wrap gap-2.5"></div>
 
-                <!-- Bar Dropdown Kelas, Dropdown Mapel & Tab Menu -->
                 <div class="pt-3 border-t border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     <div class="flex flex-wrap items-center gap-3">
                         <div class="flex items-center gap-2">
@@ -378,7 +352,6 @@
                         </div>
                     </div>
 
-                    <!-- Navigasi Tab Guru -->
                     <div id="guru-tabs-nav" class="flex flex-wrap gap-1.5 bg-slate-100 p-1.5 rounded-2xl">
                         <button onclick="switchGuruTab('kelas')" id="gtab-kelas" class="px-3.5 py-2 rounded-xl text-xs font-bold transition">1. Kelas & Siswa</button>
                         <button onclick="switchGuruTab('bobot')" id="gtab-bobot" class="px-3.5 py-2 rounded-xl text-xs font-bold transition">2. Bobot & KKM</button>
@@ -430,7 +403,6 @@
                         <span id="stu-count-badge" class="text-xs font-extrabold px-3 py-1 rounded-full bg-indigo-50 text-indigo-700">0 Siswa</span>
                     </div>
 
-                    <!-- BANNER PROTEKSI KELAS BERSAMA (MUNCUL JIKA KELAS DIAMPU GURU LAIN) -->
                     <div id="shared-class-lock-banner" class="hidden p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-3">
                         <span class="text-lg">🔒</span>
                         <div class="space-y-1">
@@ -442,14 +414,12 @@
                         </div>
                     </div>
 
-                    <!-- Form Tambah Siswa Manual -->
                     <form onsubmit="addStudentManual(event)" class="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                         <input type="text" id="stu-nisn" required placeholder="Ketik NISN Siswa Baru" class="border border-slate-300 bg-white p-2.5 rounded-xl text-sm font-mono outline-none">
                         <input type="text" id="stu-nama" required placeholder="Ketik Nama Lengkap Siswa Baru" class="border border-slate-300 bg-white p-2.5 rounded-xl text-sm outline-none">
                         <button type="submit" class="bg-indigo-600 text-white rounded-xl px-4 py-2.5 text-xs font-bold hover:bg-indigo-700">+ Tambah Siswa Manual</button>
                     </form>
 
-                    <!-- BAR TINDAKAN MASSAL (PILIH BEBERAPA / PILIH SELURUH SISWA DI KELAS) -->
                     <div id="bulk-student-toolbar" class="bg-slate-100/80 px-4 py-3 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
                         <div class="flex items-center gap-3">
                             <label class="inline-flex items-center gap-2 cursor-pointer text-xs font-extrabold text-slate-700 select-none">
@@ -471,7 +441,6 @@
                         </div>
                     </div>
 
-                    <!-- Tabel Daftar Siswa -->
                     <div class="overflow-x-auto rounded-xl border border-slate-200">
                         <table class="w-full text-sm text-left border-collapse">
                             <thead class="bg-slate-100 text-slate-700">
@@ -648,12 +617,12 @@
                 </div>
             </div>
 
-            <!-- TAB 4: TUGAS, LINK PENGUMPULAN & PENILAIAN -->
+            <!-- TAB 4: TUGAS, VISIBILITAS PUBLIK, LINK PENGUMPULAN & PENILAIAN -->
             <div id="gcontent-nilai" class="hidden bg-white p-6 rounded-2xl shadow-sm border border-slate-200/80 space-y-6">
                 <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
                     <h3 class="font-extrabold text-sm text-slate-800">Buat Daftar Tugas / Ujian Baru pada Mata Pelajaran Ini</h3>
-                    <form onsubmit="createAssessment(event)" class="grid grid-cols-1 md:grid-cols-5 gap-3">
-                        <input type="text" id="ass-judul" required placeholder="Judul (Misal: Tugas 1)" class="border border-slate-300 bg-white p-2.5 rounded-xl text-sm">
+                    <form onsubmit="createAssessment(event)" class="grid grid-cols-1 md:grid-cols-6 gap-3">
+                        <input type="text" id="ass-judul" required placeholder="Judul (Misal: Tugas 1)" class="border border-slate-300 bg-white p-2.5 rounded-xl text-sm md:col-span-2">
                         <select id="ass-kategori" class="border border-slate-300 bg-white p-2.5 rounded-xl text-sm">
                             <option value="tugas">Kategori: Tugas</option>
                             <option value="ujian_bab">Kategori: Ujian Akhir Bab</option>
@@ -663,27 +632,42 @@
                             <option value="individu">Sistem: Individu</option>
                             <option value="kelompok">Sistem: Berkelompok</option>
                         </select>
-                        <input type="url" id="ass-link" placeholder="Link Drive/OneDrive Guru (Opsional)" class="border border-slate-300 bg-white p-2.5 rounded-xl text-sm">
+                        <select id="ass-publik" class="border border-indigo-200 bg-indigo-50/60 text-indigo-950 font-bold p-2.5 rounded-xl text-xs">
+                            <option value="true">🌐 Tampilkan di Hal. Siswa</option>
+                            <option value="false">🔒 Sembunyikan dari Siswa</option>
+                        </select>
                         <button type="submit" class="bg-indigo-600 text-white rounded-xl px-4 py-2.5 text-xs font-bold hover:bg-indigo-700">
                             + Buat Penilaian
                         </button>
+                        <div class="md:col-span-6">
+                            <input type="url" id="ass-link" placeholder="Link Folder Google Drive / OneDrive Pengumpulan Tugas (Opsional, bisa diisi nanti)" class="w-full border border-slate-300 bg-white p-2 rounded-xl text-xs">
+                        </div>
                     </form>
                 </div>
 
                 <div class="space-y-3 border-b pb-4">
                     <div class="flex flex-wrap items-center justify-between gap-4">
-                        <div class="flex items-center gap-3">
+                        <div class="flex flex-wrap items-center gap-3">
                             <label class="text-sm font-extrabold text-slate-700">Pilih Penilaian:</label>
-                            <select id="active-assessment" onchange="loadAssessmentScores()" class="border-2 border-indigo-200 bg-indigo-50 text-indigo-950 font-bold p-2 rounded-xl text-sm min-w-[260px]"></select>
+                            <select id="active-assessment" onchange="loadAssessmentScores()" class="border-2 border-indigo-200 bg-indigo-50 text-indigo-950 font-bold p-2 rounded-xl text-sm min-w-[280px]"></select>
                         </div>
                         <button onclick="deleteCurrentAssessment()" class="text-xs font-bold text-rose-600 hover:underline">🗑️ Hapus Penilaian Ini</button>
                     </div>
 
-                    <div id="ass-link-editor" class="hidden flex flex-wrap items-center gap-2 bg-indigo-50/70 p-3 rounded-xl border border-indigo-200">
-                        <span class="text-xs font-bold text-indigo-950">📂 Link Pengumpulan Guru (Google Drive / OneDrive):</span>
-                        <input type="url" id="edit-ass-link" placeholder="https://drive.google.com/..." class="border border-indigo-200 bg-white rounded-lg px-3 py-1.5 text-xs flex-grow min-w-[240px]">
-                        <button onclick="updateAssessmentLink()" class="bg-indigo-600 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700">Simpan Link</button>
-                        <a id="btn-test-ass-link" href="#" target="_blank" class="hidden text-xs bg-white border border-indigo-300 text-indigo-700 px-3 py-1.5 rounded-lg font-bold hover:bg-indigo-100">↗ Buka</a>
+                    <!-- Bar Edit Link & Pengaturan Visibilitas di Halaman Publik Siswa -->
+                    <div id="ass-link-editor" class="hidden flex flex-col md:flex-row md:items-center justify-between gap-3 bg-indigo-50/70 p-3.5 rounded-2xl border border-indigo-200">
+                        <div class="flex flex-wrap items-center gap-2 flex-grow">
+                            <span class="text-xs font-bold text-indigo-950">📂 Link Pengumpulan Guru:</span>
+                            <input type="url" id="edit-ass-link" placeholder="https://drive.google.com/..." class="border border-indigo-200 bg-white rounded-lg px-3 py-1.5 text-xs flex-grow min-w-[220px]">
+                            <button onclick="updateAssessmentLink()" class="bg-indigo-600 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700">Simpan Link</button>
+                            <a id="btn-test-ass-link" href="#" target="_blank" class="hidden text-xs bg-white border border-indigo-300 text-indigo-700 px-3 py-1.5 rounded-lg font-bold hover:bg-indigo-100">↗ Buka</a>
+                        </div>
+
+                        <!-- Sakelar Tampilkan / Sembunyikan Tugas di Halaman Publik Siswa -->
+                        <div class="flex items-center gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-indigo-200/60 shrink-0">
+                            <span class="text-[11px] font-bold text-slate-600">Visibilitas Hal. Siswa:</span>
+                            <button type="button" id="btn-toggle-public" onclick="toggleAssessmentPublicVisibility()" class="px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition shadow-sm"></button>
+                        </div>
                     </div>
                 </div>
 
@@ -755,7 +739,7 @@
 
     </main>
 
-    <script src="config.js?v=3.4"></script>
-    <script src="app-guru.js?v=3.4"></script>
+    <script src="config.js?v=3.6"></script>
+    <script src="app-guru.js?v=3.6"></script>
 </body>
 </html>
