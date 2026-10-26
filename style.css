@@ -1,26 +1,43 @@
 /* ============================================================================
-   FILE: style.css
-   Desain Kustom Modern SiPantau Belajar v3.0
+   FILE: style.css (v3.7 - Mobile-First Responsive Web Design)
    ============================================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
-body {
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+html, body {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     background-color: #f8fafc;
     color: #0f172a;
+    max-width: 100vw;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Mencegah dropdown dan input URL merusak lebar layar mobile */
+select, input, button, textarea {
+    max-width: 100%;
+}
+
+select {
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
 }
 
 /* Efek Glassmorphism pada Header */
 .glass-nav {
-    background: rgba(255, 255, 255, 0.88);
+    background: rgba(255, 255, 255, 0.92);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
 }
 
 /* Animasi Halus untuk Modal */
 .modal-backdrop {
-    background: rgba(15, 23, 42, 0.55);
+    background: rgba(15, 23, 42, 0.6);
     backdrop-filter: blur(4px);
     animation: fadeIn 0.2s ease-out;
 }
@@ -39,10 +56,39 @@ body {
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* Kustomisasi Scrollbar */
+/* Kontainer Tabel Responsif dengan Scroll Halus di HP */
+.table-responsive-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Lebar minimum kolom agar nama siswa tidak terpotong per kata di HP */
+.col-nisn {
+    min-width: 105px;
+}
+
+.col-nama {
+    min-width: 175px;
+}
+
+.col-aksi {
+    min-width: 135px;
+}
+
+/* Sembunyikan scrollbar pada deretan tombol horizontal di mobile */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* Kustomisasi Scrollbar Umum */
 ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
 }
 
 ::-webkit-scrollbar-track {
