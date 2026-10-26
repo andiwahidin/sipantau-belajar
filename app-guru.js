@@ -1,5 +1,5 @@
 // ============================================================================
-// FILE: app-guru.js (v3.7 - Mobile Responsive Table & Smart Column Hiding)
+// FILE: app-guru.js (v3.8 - Auto-Sync Header & Body Tabel Nilai)
 // ============================================================================
 
 let currentUser = null;
@@ -1305,7 +1305,7 @@ async function importAbsenExcel() {
 }
 
 // ============================================================================
-// 6. TUGAS, VISIBILITAS PUBLIK, LINK PENGUMPULAN & PENILAIAN (TAB 4)
+// 6. TUGAS, VISIBILITAS PUBLIK, LINK PENGUMPULAN & PENILAIAN (TAB 4 - AUTO-SYNC HEADER)
 // ============================================================================
 async function loadAssessmentsDropdown(keepSelectedId = null) {
     const classId = document.getElementById('guru-active-class').value;
@@ -1457,7 +1457,8 @@ async function deleteCurrentAssessment() {
 async function loadAssessmentScores() {
     const assId = document.getElementById('active-assessment').value;
     const tbody = document.getElementById('scores-tbody');
-    const thKelompok = document.getElementById('th-kelompok');
+    const tableEl = tbody ? tbody.closest('table') : null;
+    const theadEl = tableEl ? tableEl.querySelector('thead') : null;
 
     if (!assId) {
         document.getElementById('ass-link-editor').classList.add('hidden');
@@ -1471,9 +1472,18 @@ async function loadAssessmentScores() {
     const isGroup = assObj && assObj.tipe_kerja === 'kelompok';
     document.getElementById('group-mode-banner').classList.toggle('hidden', !isGroup);
 
-    // Sembunyikan header kolom Kelompok jika tugas bertipe Individu agar hemat ruang di layar HP
-    if (thKelompok) {
-        thKelompok.classList.toggle('hidden', !isGroup);
+    // SINKRONISASI OTOMATIS HEADER (THEAD) DAN ISI TABEL (TBODY) AGAR TIDAK PERNAH TERTUKAR DI DESKTOP MAUPUN MOBILE
+    if (theadEl) {
+        theadEl.innerHTML = `
+            <tr class="bg-slate-100 text-slate-700">
+                <th class="p-3 border-b text-left col-nisn">NISN</th>
+                <th class="p-3 border-b text-left col-nama">Nama Siswa</th>
+                <th id="th-kelompok" class="p-3 border-b text-left min-w-[130px] ${!isGroup ? 'hidden' : ''}">Kelompok</th>
+                <th class="p-3 border-b text-center min-w-[115px]">Status Kumpul</th>
+                <th class="p-3 border-b text-center min-w-[115px]">Nilai (0-100)</th>
+                <th class="p-3 border-b text-left min-w-[190px]">Link Bukti Siswa</th>
+            </tr>
+        `;
     }
 
     const { data } = await db.from('scores').select('*').eq('assessment_id', assId);
