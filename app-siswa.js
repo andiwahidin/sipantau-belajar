@@ -1,8 +1,8 @@
 // ============================================================================
-// FILE: app-siswa.js (v3.5 - Auto-Recovery & Fallback Koneksi Langsung)
+// FILE: app-siswa.js (v3.6)
+// Revisi: Filter Tugas Publik (tampil_publik) & Pengelompokan Absensi Berbasis Hari
 // ============================================================================
 
-// Koneksi Fallback Otomatis ke Supabase Anda jika config.js tertahan cache
 const BACKUP_SUPABASE_URL = 'https://hypajvsnlalytainfjjn.supabase.co';
 const BACKUP_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5cGFqdnNubGFseXRhaW5mampuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI3MjkyMzcsImV4cCI6MjEwODMwNTIzN30.iwGl4NxMeo_O5QCoeik7NlI__FBpFdPrLBaaQPmrY6Q';
 
@@ -47,11 +47,25 @@ function safeToast(msg, type = 'success') {
     }
 }
 
-function formatDateDDMMYYYY(dateStr) {
-    if (!dateStr) return '-';
+// Mengubah YYYY-MM-DD menjadi objek { dayName: 'Senin', ddmmyyyy: '26/10/2026' }
+function parseDateToDayAndDDMMYYYY(dateStr) {
+    if (!dateStr) return { dayName: '-', ddmmyyyy: '-', full: '-' };
     const parts = String(dateStr).split('-');
-    if (parts.length !== 3) return dateStr;
-    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    if (parts.length !== 3) return { dayName: '', ddmmyyyy: dateStr, full: dateStr };
+
+    const y = Number(parts[0]);
+    const m = Number(parts[1]);
+    const d = Number(parts[2]);
+    const dateObj = new Date(y, m - 1, d);
+    const daysIndo = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const dayName = daysIndo[dateObj.getDay()] || '';
+    const ddmmyyyy = `${parts[2]}/${parts[1]}/${parts[0]}`;
+
+    return {
+        dayName,
+        ddmmyyyy,
+        full: dayName ? `${dayName}, ${ddmmyyyy}` : ddmmyyyy
+    };
 }
 
 function showDiagnostic(msg, isError = false) {
@@ -87,7 +101,7 @@ async function startStudentPortal() {
         const guruParam = params.get('guru');
         const mapelParam = params.get('mapel');
 
-        const selClass = document.getElementById('dir-class') || document.getElementById('pub-class');
+        const selClass = document.getElementById('dir-class');
         if (selClass) {
             if (kelasParam && kelasParam !== 'all' && classesMap[kelasParam]) {
                 selClass.value = String(kelasParam);
@@ -123,7 +137,7 @@ async function initMasterData(client) {
     }
     allClasses = cls || [];
 
-    const selClass = document.getElementById('dir-class') || document.getElementById('pub-class');
+    const selClass = document.getElementById('dir-class');
     if (selClass) {
         selClass.innerHTML = '<option value="all">-- Semua Kelas --</option>';
         allClasses.forEach(c => {
@@ -142,11 +156,11 @@ async function initMasterData(client) {
 }
 
 // ============================================================================
-// MEMUAT & MENAMPILKAN DAFTAR SISWA (DENGAN AUTO-FALLBACK KE SEMUA KELAS)
+// MEMUAT & MENAMPILKAN DAFTAR SISWA
 // ============================================================================
 async function loadDirectoryStudents(manualTrigger = false) {
     const client = getDbClient();
-    const selClass = document.getElementById('dir-class') || document.getElementById('pub-class');
+    const selClass = document.getElementById('dir-class');
     let classId = selClass ? selClass.value : 'all';
 
     hideDiagnostic();
@@ -161,14 +175,12 @@ async function loadDirectoryStudents(manualTrigger = false) {
     if (error) {
         showDiagnostic(`
             <p class="font-extrabold">⚠️ Gagal memuat tabel students dari Supabase: ${error.message}</p>
-            <p>Pastikan Row Level Security (RLS) pada tabel <code>students</code> sudah dinonaktifkan dengan perintah: <code>ALTER TABLE students DISABLE ROW LEVEL SECURITY;</code></p>
         `, true);
         directoryStudents = [];
         renderDirectoryTable();
         return;
     }
 
-    // Jika filter kelas tertentu menghasilkan 0 siswa saat halaman baru dibuka, cek apakah ada siswa di kelas lain
     if ((!data || data.length === 0) && classId !== 'all' && !manualTrigger) {
         const { data: allStu } = await client.from('students').select('*').order('nama');
         if (allStu && allStu.length > 0) {
@@ -181,22 +193,14 @@ async function loadDirectoryStudents(manualTrigger = false) {
     }
 
     directoryStudents = data || [];
-
-    if (directoryStudents.length === 0 && classId === 'all') {
-        showDiagnostic(`
-            <p class="font-extrabold">ℹ️ Koneksi Database Berhasil, namun Tabel Siswa Masih Kosong (0 Siswa).</p>
-            <p>Tercatat <b>${allClasses.length} kelas</b> dan <b>0 siswa</b> di database. Silakan login ke <b>Panel Guru / Admin (index.html)</b> untuk menambahkan atau mengimpor daftar siswa terlebih dahulu, atau pastikan RLS pada tabel <code>students</code> sudah <i>Disabled</i> di Supabase.</p>
-        `, false);
-    }
-
     renderDirectoryTable();
 }
 
 function renderDirectoryTable() {
-    const tbody = document.getElementById('dir-tbody') || document.getElementById('pub-tbody');
+    const tbody = document.getElementById('dir-tbody');
     if (!tbody) return;
 
-    const searchInput = document.getElementById('dir-search') || document.getElementById('pub-search');
+    const searchInput = document.getElementById('dir-search');
     const keyword = (searchInput?.value || '').trim().toLowerCase();
 
     const filtered = directoryStudents.filter(s => {
@@ -325,7 +329,8 @@ async function fetchStudentAcademicData(stu, preferredTeacher = null, preferredM
     studentClassSettings = settings || [];
 
     const { data: assessments } = await client.from('assessments').select('*').eq('class_id', stu.class_id).order('id', { ascending: false });
-    studentClassAssessments = assessments || [];
+    // REVISI 1: Hanya ambil penilaian yang diizinkan guru tampil di halaman publik (tampil_publik !== false)
+    studentClassAssessments = (assessments || []).filter(a => a.tampil_publik !== false);
 
     const assIds = studentClassAssessments.map(a => a.id);
     studentScores = [];
@@ -406,6 +411,9 @@ function populateProfileMapelDropdown(preferredMapel = null) {
     }
 }
 
+// ============================================================================
+// RENDER ISI PROFIL SISWA: TUGAS PUBLIK & DATA HARI KEHADIRAN (DIGABUNG PER HARI)
+// ============================================================================
 function renderStudentProfileContent() {
     if (!activeStudent) return;
 
@@ -417,7 +425,11 @@ function renderStudentProfileContent() {
     const mapelLabel = mapelFilter === 'all' ? 'Semua Mata Pelajaran' : `Mata Pelajaran ${mapelFilter}`;
     infoEl.innerHTML = `Menampilkan data untuk: <b class="text-indigo-700">${teacherLabel}</b> • <b class="text-indigo-700">${mapelLabel}</b>`;
 
+    // ------------------------------------------------------------------------
+    // BAGIAN 1: TUGAS YANG DITAMPILKAN DI HALAMAN PUBLIK (tampil_publik !== false)
+    // ------------------------------------------------------------------------
     const filteredAssessments = studentClassAssessments.filter(a => {
+        if (a.tampil_publik === false) return false;
         const matchTeacher = (teacherFilter === 'all') || (a.teacher_id == teacherFilter);
         const matchMapel = (mapelFilter === 'all') || ((a.mapel || 'Mata Pelajaran') === mapelFilter);
         return matchTeacher && matchMapel;
@@ -437,13 +449,13 @@ function renderStudentProfileContent() {
     });
 
     document.getElementById('card-uncompleted-count').innerText = pendingTasks.length;
-    document.getElementById('card-total-tasks-sub').innerText = `dari ${filteredAssessments.length} total tugas`;
+    document.getElementById('card-total-tasks-sub').innerText = `dari ${filteredAssessments.length} tugas ditampilkan`;
     document.getElementById('badge-pending-tasks').innerText = `${pendingTasks.length} Belum Selesai`;
     document.getElementById('badge-done-tasks').innerText = `${completedTasks.length} Selesai`;
 
     const headlineEl = document.getElementById('prof-status-headline');
     if (pendingTasks.length === 0) {
-        headlineEl.innerText = '🎉 Semua Tugas Tuntas!';
+        headlineEl.innerText = '🎉 Semua Tugas Publik Tuntas!';
         headlineEl.className = 'text-sm font-extrabold text-emerald-300';
     } else {
         headlineEl.innerText = `⚠️ ${pendingTasks.length} Tugas Belum Dikumpulkan`;
@@ -456,7 +468,7 @@ function renderStudentProfileContent() {
     if (filteredAssessments.length === 0) {
         pendingListEl.innerHTML = `
             <div class="p-8 rounded-2xl bg-slate-50 border border-slate-200 text-center text-slate-400 text-xs">
-                Belum ada tugas atau ujian yang diberikan pada filter guru/mata pelajaran ini.
+                Tidak ada tugas atau ujian publik yang ditampilkan pada filter ini.
             </div>
         `;
     } else if (pendingTasks.length === 0) {
@@ -464,7 +476,7 @@ function renderStudentProfileContent() {
             <div class="p-6 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-center space-y-1">
                 <div class="text-2xl">🎉</div>
                 <p class="font-extrabold text-sm">Luar Biasa! Tidak Ada Tanggungan Tugas</p>
-                <p class="text-xs text-emerald-700">Seluruh tugas pada mata pelajaran ini sudah dikumpulkan.</p>
+                <p class="text-xs text-emerald-700">Seluruh tugas yang ditampilkan oleh guru sudah dikumpulkan.</p>
             </div>
         `;
     } else {
@@ -525,7 +537,9 @@ function renderStudentProfileContent() {
         });
     }
 
-    // Filter Kehadiran (Sakit, Izin, Alpa)
+    // ------------------------------------------------------------------------
+    // BAGIAN 2: REVISI KEHADIRAN BERBASIS HARI (JIKA >= 2 GURU MENCATAT PADA HARI YANG SAMA)
+    // ------------------------------------------------------------------------
     const filteredLogs = studentAttendanceLogs.filter(l => {
         const matchTeacher = (teacherFilter === 'all') || (l.teacher_id == teacherFilter);
         const matchMapel = (mapelFilter === 'all') || ((l.mapel || 'Mata Pelajaran') === mapelFilter);
@@ -538,67 +552,102 @@ function renderStudentProfileContent() {
         return matchTeacher && matchMapel;
     });
 
-    const logSakit = filteredLogs.filter(l => l.status === 'S').length;
-    const logIzin = filteredLogs.filter(l => l.status === 'I').length;
-    const logAlpa = filteredLogs.filter(l => l.status === 'A').length;
-    const logHadir = filteredLogs.filter(l => l.status === 'H').length;
+    // Hitung Hari Unik (Unique Dates) untuk masing-masing status S, I, A, H
+    const uniqueDaysSakit = new Set(filteredLogs.filter(l => l.status === 'S').map(l => l.tanggal)).size;
+    const uniqueDaysIzin = new Set(filteredLogs.filter(l => l.status === 'I').map(l => l.tanggal)).size;
+    const uniqueDaysAlpa = new Set(filteredLogs.filter(l => l.status === 'A').map(l => l.tanggal)).size;
+    const uniqueDaysHadir = new Set(filteredLogs.filter(l => l.status === 'H').map(l => l.tanggal)).size;
 
-    const sumSakit = filteredSummaries.reduce((acc, cur) => acc + (Number(cur.sakit) || 0), 0);
-    const sumIzin = filteredSummaries.reduce((acc, cur) => acc + (Number(cur.izin) || 0), 0);
-    const sumAlpa = filteredSummaries.reduce((acc, cur) => acc + (Number(cur.alpa) || 0), 0);
-    const sumHadir = filteredSummaries.reduce((acc, cur) => acc + (Number(cur.hadir) || 0), 0);
+    // Hitung jumlah pertemuan/mapel untuk keterangan sub-kartu
+    const sessionSakit = filteredLogs.filter(l => l.status === 'S').length || filteredSummaries.reduce((acc, c) => acc + (Number(c.sakit) || 0), 0);
+    const sessionIzin = filteredLogs.filter(l => l.status === 'I').length || filteredSummaries.reduce((acc, c) => acc + (Number(c.izin) || 0), 0);
+    const sessionAlpa = filteredLogs.filter(l => l.status === 'A').length || filteredSummaries.reduce((acc, c) => acc + (Number(c.alpa) || 0), 0);
+    const sessionHadir = filteredLogs.filter(l => l.status === 'H').length || filteredSummaries.reduce((acc, c) => acc + (Number(c.hadir) || 0), 0);
 
-    const totalSakit = Math.max(logSakit, sumSakit);
-    const totalIzin = Math.max(logIzin, sumIzin);
-    const totalAlpa = Math.max(logAlpa, sumAlpa);
-    const totalHadir = Math.max(logHadir, sumHadir);
+    const displayHariSakit = uniqueDaysSakit > 0 ? uniqueDaysSakit : sessionSakit;
+    const displayHariIzin = uniqueDaysIzin > 0 ? uniqueDaysIzin : sessionIzin;
+    const displayHariAlpa = uniqueDaysAlpa > 0 ? uniqueDaysAlpa : sessionAlpa;
+    const displayHariHadir = uniqueDaysHadir > 0 ? uniqueDaysHadir : sessionHadir;
 
-    document.getElementById('card-sakit-count').innerText = totalSakit;
-    document.getElementById('card-izin-count').innerText = totalIzin;
-    document.getElementById('card-alpa-count').innerText = totalAlpa;
+    document.getElementById('card-sakit-count').innerText = `${displayHariSakit} Hari`;
+    document.getElementById('card-sakit-sub').innerText = uniqueDaysSakit > 0 ? `tercatat di ${sessionSakit} mapel/guru` : `rekap ${sessionSakit} pertemuan`;
 
+    document.getElementById('card-izin-count').innerText = `${displayHariIzin} Hari`;
+    document.getElementById('card-izin-sub').innerText = uniqueDaysIzin > 0 ? `tercatat di ${sessionIzin} mapel/guru` : `rekap ${sessionIzin} pertemuan`;
+
+    document.getElementById('card-alpa-count').innerText = `${displayHariAlpa} Hari`;
+    document.getElementById('card-alpa-sub').innerText = uniqueDaysAlpa > 0 ? `tercatat di ${sessionAlpa} mapel/guru` : `rekap ${sessionAlpa} pertemuan`;
+
+    // Kelompokkan log ketidakhadiran (S, I, A) berdasarkan Tanggal (Hari)
     const absenceLogs = filteredLogs.filter(l => l.status === 'S' || l.status === 'I' || l.status === 'A');
+    const groupedByDateMap = new Map();
+
+    absenceLogs.forEach(log => {
+        if (!groupedByDateMap.has(log.tanggal)) {
+            groupedByDateMap.set(log.tanggal, []);
+        }
+        groupedByDateMap.get(log.tanggal).push(log);
+    });
+
     const absTbody = document.getElementById('prof-absence-logs-tbody');
     absTbody.innerHTML = '';
 
-    if (absenceLogs.length === 0) {
+    if (groupedByDateMap.size === 0) {
         absTbody.innerHTML = `
             <tr>
                 <td colspan="3" class="p-6 text-center text-emerald-700 bg-emerald-50/40 font-semibold">
-                    ✨ Tidak ada catatan tanggal ketidakhadiran (Sakit / Izin / Alpa).
+                    ✨ Tidak ada catatan hari ketidakhadiran (Sakit / Izin / Alpa).
                 </td>
             </tr>
         `;
     } else {
-        absenceLogs.forEach(log => {
-            const tglFormatted = formatDateDDMMYYYY(log.tanggal);
-            const namaGuru = teachersMap[log.teacher_id] || 'Guru Mapel';
-            const namaMapel = log.mapel || 'Mata Pelajaran';
+        groupedByDateMap.forEach((logsInDay, tanggalKey) => {
+            const parsedDate = parseDateToDayAndDDMMYYYY(tanggalKey);
+            const uniqueStatuses = [...new Set(logsInDay.map(l => l.status))];
 
-            let statusBadge = '';
-            if (log.status === 'S') {
-                statusBadge = `<span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200">🤒 Sakit (S)</span>`;
-            } else if (log.status === 'I') {
-                statusBadge = `<span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-sky-100 text-sky-800 border border-sky-200">📩 Izin (I)</span>`;
-            } else if (log.status === 'A') {
-                statusBadge = `<span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200">⚠️ Alpa (A)</span>`;
-            }
+            // Buat lencana status hari tersebut
+            const statusBadgesHtml = uniqueStatuses.map(st => {
+                if (st === 'S') return `<span class="inline-block px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200">🤒 Sakit</span>`;
+                if (st === 'I') return `<span class="inline-block px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-sky-100 text-sky-800 border border-sky-200">📩 Izin</span>`;
+                return `<span class="inline-block px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200">⚠️ Alpa</span>`;
+            }).join('<div class="my-1"></div>');
+
+            // Rincian semua guru & mata pelajaran yang memberikan keterangan pada hari tersebut
+            const detailsHtml = logsInDay.map(item => {
+                const namaGuru = teachersMap[item.teacher_id] || 'Guru Mapel';
+                const namaMapel = item.mapel || 'Mata Pelajaran';
+                const stLabel = item.status === 'S' ? 'Sakit' : (item.status === 'I' ? 'Izin' : 'Alpa');
+                return `
+                    <div class="py-1 border-b last:border-b-0 border-slate-100 flex items-center justify-between gap-2">
+                        <div>
+                            <span class="font-extrabold text-slate-800">📘 ${namaMapel}</span>
+                            <span class="text-[11px] text-slate-500 block">${namaGuru}</span>
+                        </div>
+                        ${uniqueStatuses.length > 1 ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">${stLabel}</span>` : ''}
+                    </div>
+                `;
+            }).join('');
 
             absTbody.innerHTML += `
-                <tr class="hover:bg-slate-50">
-                    <td class="p-3 font-mono font-bold text-slate-800 whitespace-nowrap">${tglFormatted}</td>
-                    <td class="p-3 text-center whitespace-nowrap">${statusBadge}</td>
-                    <td class="p-3">
-                        <span class="font-bold text-slate-800 block">${namaMapel}</span>
-                        <span class="text-[11px] text-slate-500">${namaGuru}</span>
+                <tr class="hover:bg-slate-50 align-top">
+                    <td class="p-3 whitespace-nowrap">
+                        <span class="font-extrabold text-slate-900 block">${parsedDate.dayName}</span>
+                        <span class="font-mono text-indigo-700 font-bold text-xs">${parsedDate.ddmmyyyy}</span>
+                        ${logsInDay.length > 1 ? `
+                            <span class="mt-1 inline-block px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                ${logsInDay.length} Guru / Mapel
+                            </span>
+                        ` : ''}
                     </td>
+                    <td class="p-3 text-center whitespace-nowrap">${statusBadgesHtml}</td>
+                    <td class="p-3">${detailsHtml}</td>
                 </tr>
             `;
         });
     }
 
     document.getElementById('prof-attendance-note').innerHTML = `
-        <b>Ringkasan Kehadiran:</b> Tercatat <b>${totalHadir} kali Hadir</b>, <b>${totalSakit} Sakit</b>, <b>${totalIzin} Izin</b>, dan <b>${totalAlpa} Alpa</b> pada filter yang dipilih.
+        <b>Ringkasan Hari Kehadiran:</b> Tercatat <b>${displayHariHadir} Hari Hadir</b> (${sessionHadir} pertemuan mapel), <b>${displayHariSakit} Hari Sakit</b>, <b>${displayHariIzin} Hari Izin</b>, dan <b>${displayHariAlpa} Hari Alpa</b>.
     `;
 }
 
