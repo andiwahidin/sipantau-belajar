@@ -1,15 +1,36 @@
 // ============================================================================
 // FILE: config.js
-// Pusat Konfigurasi Supabase & Utilitas Umum
+// Pusat Konfigurasi Supabase & Utiliti Umum - PantauBelajar
 // ============================================================================
 
 const SUPABASE_URL = 'https://hypajvsnlalytainfjjn.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5cGFqdnNubGFseXRhaW5mampuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI3MjkyMzcsImV4cCI6MjEwODMwNTIzN30.iwGl4NxMeo_O5QCoeik7NlI__FBpFdPrLBaaQPmrY6Q';
 
 // Inisialisasi Klien Supabase
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const db = typeof supabase !== 'undefined' 
+    ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
+    : null;
 
-// Fungsi Notifikasi Toast Modern
+// Alias tambahan jika ada bahagian skrip yang memanggil supabaseClient
+const supabaseClient = db;
+
+// Konfigurasi Lalai Aplikasi PantauBelajar
+const APP_CONFIG = {
+    namaAplikasi: "PantauBelajar",
+    tahunAjaranDefault: "2025/2026",
+    semesterDefault: "Semester Ganjil",
+    periodeDefault: "Semester Ganjil 2026",
+    kelasDefault: "X-A",
+    kkmDefault: {
+        "Matematika": 75,
+        "Informatika": 78,
+        "IPA": 75,
+        "Bahasa Indonesia": 75,
+        "Sejarah": 75
+    }
+};
+
+// Fungsi Notifikasi Toast Moden
 function showToast(message, type = 'success') {
     const toast = document.getElementById('toast');
     if (!toast) return;
@@ -33,7 +54,7 @@ function showToast(message, type = 'success') {
     }, 3500);
 }
 
-// Helper untuk membuat inisial nama pada Avatar Profil
+// Pembantu untuk membuat inisial nama pada Avatar Profil
 function getInitials(name) {
     if (!name) return 'S';
     const parts = name.trim().split(' ');
