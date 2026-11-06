@@ -6,7 +6,7 @@ async function cariProgresSiswa() {
     const query = (document.getElementById('inputCariSiswa')?.value || '').trim().toLowerCase();
     const container = document.getElementById('hasilSiswaContainer');
     if (!query) {
-        showToast('Masukkan NIS atau Nama Siswa terlebih dahulu!', 'error');
+        showToast('Masukkan NISN atau Nama Siswa terlebih dahulu!', 'error');
         return;
     }
 
@@ -15,14 +15,14 @@ async function cariProgresSiswa() {
 
     let hasil = null;
 
-    // 1. Cari di database Supabase terlebih dahulu
+    // 1. Cari di database Supabase terlebih dahulu (menggunakan tabel 'students')
     if (typeof db !== 'undefined' && db) {
         try {
-            const { data } = await db.from('siswa').select('*');
-            if (data && data.length > 0) {
+            const { data, error } = await db.from('students').select('*');
+            if (!error && data && data.length > 0) {
                 hasil = data.find(s => 
                     (s.nama && s.nama.toLowerCase().includes(query)) ||
-                    (s.nis && String(s.nis).includes(query))
+                    (s.nisn && String(s.nisn).toLowerCase().includes(query))
                 );
             }
         } catch (err) {
@@ -33,11 +33,11 @@ async function cariProgresSiswa() {
     // 2. Fallback jika belum ditemukan di tabel
     if (!hasil) {
         const fallbackList = [
-            { nama: 'Ahmad Fauzi', nis: '10108390601', kelas: 'X-A', kehadiran: 98, tugas_selesai: 12, total_tugas: 12, rata_nilai: 88, status: 'Sangat Aktif', catatan_wali: 'Sangat berprestasi, pertahankan keaktifannya.' },
-            { nama: 'Budi Santoso', nis: '10108390602', kelas: 'X-A', kehadiran: 95, tugas_selesai: 11, total_tugas: 12, rata_nilai: 82, status: 'Aktif', catatan_wali: 'Sikap baik, konsisten dalam pengerjaan tugas.' },
-            { nama: 'Citra Lestari', nis: '10108390301', kelas: 'X-A', kehadiran: 88, tugas_selesai: 8, total_tugas: 12, rata_nilai: 65, status: 'Butuh Perhatian', catatan_wali: 'Kehadiran menurun, perlu bimbingan untuk tugas.' }
+            { nama: 'Ahmad Fauzi', nisn: '10108390601', kelas: 'X-A', kehadiran: 98, tugas_selesai: 12, total_tugas: 12, rata_nilai: 88, status: 'Sangat Aktif', catatan_wali: 'Sangat berprestasi, pertahankan keaktifannya.' },
+            { nama: 'Budi Santoso', nisn: '10108390602', kelas: 'X-A', kehadiran: 95, tugas_selesai: 11, total_tugas: 12, rata_nilai: 82, status: 'Aktif', catatan_wali: 'Sikap baik, konsisten dalam pengerjaan tugas.' },
+            { nama: 'Citra Lestari', nisn: '10108390301', kelas: 'X-A', kehadiran: 88, tugas_selesai: 8, total_tugas: 12, rata_nilai: 65, status: 'Butuh Perhatian', catatan_wali: 'Kehadiran menurun, perlu bimbingan untuk tugas.' }
         ];
-        hasil = fallbackList.find(s => s.nama.toLowerCase().includes(query) || s.nis.includes(query));
+        hasil = fallbackList.find(s => s.nama.toLowerCase().includes(query) || String(s.nisn).includes(query));
     }
 
     if (!hasil) {
@@ -46,7 +46,7 @@ async function cariProgresSiswa() {
     }
 
     const nama = hasil.nama || hasil.nama_siswa || 'Siswa';
-    const nis = hasil.nis || hasil.nisn || '-';
+    const nis = hasil.nisn || hasil.nis || '-';
     const kelas = hasil.kelas || 'X-A';
     const hadir = hasil.kehadiran ?? 95;
     const nilai = hasil.rata_nilai ?? hasil.nilai ?? 82;
@@ -54,7 +54,7 @@ async function cariProgresSiswa() {
     const catatan = hasil.catatan_wali || 'Tetap semangat mengikuti pembelajaran.';
 
     container.innerHTML = `
-        <div class="card-box">
+        <div class="card-box bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
             <div class="flex items-center justify-between pb-4 mb-4 border-b border-slate-200">
                 <div class="flex items-center gap-3">
                     <div class="w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-base">
@@ -62,10 +62,10 @@ async function cariProgresSiswa() {
                     </div>
                     <div>
                         <h3 class="text-base font-bold text-slate-900">${nama}</h3>
-                        <p class="text-xs text-slate-500">NIS: ${nis} • Kelas: ${kelas}</p>
+                        <p class="text-xs text-slate-500">NISN: ${nis} • Kelas: ${kelas}</p>
                     </div>
                 </div>
-                <span class="badge badge-success">Aktif Terpantau</span>
+                <span class="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800">Aktif Terpantau</span>
             </div>
 
             <div class="grid grid-cols-3 gap-4 mb-4 text-center">
