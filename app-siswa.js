@@ -1,5 +1,5 @@
 // ============================================================================
-// FILE: app-siswa.js (PORTAL SISWA - PENCARIAN MULTI-HASIL & CHART VISUAL)
+// FILE: app-siswa.js (PORTAL SISWA - PERHITUNGAN KEHADIRAN BERBASIS JUMLAH HARI)
 // ============================================================================
 
 const BACKUP_SUPABASE_URL = 'https://hypajvsnlalytainfjjn.supabase.co';
@@ -83,7 +83,6 @@ async function cariProgresSiswa() {
         return;
     }
 
-    // Jika ditemukan 1 atau lebih, render daftar ringkasannya terlebih dahulu
     let listHtml = '';
     for (const hasil of matchedStudents) {
         const stuId = hasil.id;
@@ -123,7 +122,7 @@ async function cariProgresSiswa() {
     `;
 }
 
-// 2. KETIKA TOMBOL DETAIL DIKLIK, TAMPILKAN LAPORAN KESELURUHAN BESERTA CHART & LINK TUGAS
+// 2. KETIKA TOMBOL DETAIL DIKLIK, TAMPILKAN LAPORAN KESELURUHAN & CHART BERBASIS JUMLAH HARI UNIK
 async function bukaDetailSiswa(stuId) {
     const container = document.getElementById('hasilSiswaContainer');
     container.innerHTML = `<div class="card-box bg-white p-6 rounded-2xl shadow-sm text-center py-8 text-slate-500">Memuat laporan lengkap siswa...</div>`;
@@ -174,11 +173,10 @@ async function bukaDetailSiswa(stuId) {
 
     // Hitung tugas selesai / belum
     let doneCount = 0;
-    let pendingCount = 0;
     const taskDetailsHtml = publicAssessments.map(ass => {
         const rec = studentScores.find(sc => sc.assessment_id === ass.id);
         const isDone = rec && rec.status_kumpul;
-        if (isDone) doneCount++; else pendingCount++;
+        if (isDone) doneCount++;
 
         const namaGuru = teachersMap[ass.teacher_id] || 'Guru Mapel';
         const namaMapel = ass.mapel || 'Mata Pelajaran';
@@ -205,11 +203,36 @@ async function bukaDetailSiswa(stuId) {
         `;
     }).join('') || '<p class="text-xs text-slate-400 italic">Belum ada tugas publik.</p>';
 
-    // Hitung rekap kehadiran
-    const totalHadir = attendanceLogs.filter(l => l.status === 'H').length;
-    const totalSakit = attendanceLogs.filter(l => l.status === 'S').length;
-    const totalIzin  = attendanceLogs.filter(l => l.status === 'I').length;
-    const totalAlpa  = attendanceLogs.filter(l => l.status === 'A').length;
+    const pendingCount = publicAssessments.length - doneCount;
+
+    // --- PERHITUNGAN JUMLAH HARI UNIK (BERDASARKAN TANGGAL) ---
+    // Jika ada banyak log di tanggal yang sama, ambil status dominan atau prioritaskan (Alpa > Sakit > Izin > Hadir)
+    const dateStatusMap = new Map();
+    attendanceLogs.forEach(log => {
+        const tgl = log.tanggal;
+        const st = log.status; // 'H', 'S', 'I', 'A'
+        if (!dateStatusMap.has(tgl)) {
+            dateStatusMap.set(tgl, new Set());
+        }
+        dateStatusMap.get(tgl).add(st);
+    });
+
+    let uniqueHadirDays = 0;
+    let uniqueSakitDays = 0;
+    let uniqueIzinDays  = 0;
+    let uniqueAlpaDays  = 0;
+
+    dateStatusMap.forEach((statuses) => {
+        if (statuses.has('A')) {
+            uniqueAlpaDays++;
+        } else if (statuses.has('S')) {
+            uniqueSakitDays++;
+        } else if (statuses.has('I')) {
+            uniqueIzinDays++;
+        } else if (statuses.has('H')) {
+            uniqueHadirDays++;
+        }
+    });
 
     // Render Log Ketidakhadiran Saja
     const absenceLogs = attendanceLogs.filter(l => l.status === 'S' || l.status === 'I' || l.status === 'A');
@@ -272,10 +295,10 @@ async function bukaDetailSiswa(stuId) {
                 </div>
             </div>
 
-            <!-- BAGIAN 2 CHART (KEHADIRAN & PENGUMPULAN TUGAS) -->
+            <!-- BAGIAN 2 CHART (KEHADIRAN BERBASIS JUMLAH HARI & PENGUMPULAN TUGAS) -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="card-box bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col items-center">
-                    <h4 class="font-extrabold text-xs text-slate-700 mb-2">Kehadiran (Hadir / Sakit / Izin / Alpa)</h4>
+                    <h4 class="font-extrabold text-xs text-slate-700 mb-2">Kehadiran</h4>
                     <div class="w-48 h-48 relative">
                         <canvas id="chartDetailAtt"></canvas>
                     </div>
@@ -322,25 +345,24 @@ async function bukaDetailSiswa(stuId) {
         </div>
     `;
 
-    // Render Chart.js setelah elemen HTML terpasang
-    renderStudentCharts(totalHadir, totalSakit, totalIzin, totalAlpa, doneCount, pendingCount);
+    // Render Chart.js dengan data hari unik
+    renderStudentCharts(uniqueHadirDays, uniqueSakitDays, uniqueIzinDays, uniqueAlpaDays, doneCount, pendingCount);
 }
 
 // 3. FUNGSI RENDER CHART DENGAN CHART.JS
 function renderStudentCharts(hadir, sakit, izin, alpa, done, pending) {
     if (typeof Chart === 'undefined') return;
 
-    // Destroy chart lama jika ada
     if (studentChartInstances.att) studentChartInstances.att.destroy();
     if (studentChartInstances.task) studentChartInstances.task.destroy();
 
-    // Chart Kehadiran
+    // Chart Kehadiran (Jumlah Hari)
     const ctxAtt = document.getElementById('chartDetailAtt');
     if (ctxAtt) {
         studentChartInstances.att = new Chart(ctxAtt, {
             type: 'doughnut',
             data: {
-                labels: ['Hadir', 'Sakit', 'Izin', 'Alpa'],
+                labels: [`Hadir (${hadir} hr)`, `Sakit (${sakit} hr)`, `Izin (${izin} hr)`, `Alpa (${alpa} hr)`],
                 datasets: [{
                     data: [hadir, sakit, izin, alpa],
                     backgroundColor: ['#10b981', '#f59e0b', '#0284c7', '#f43f5e'],
@@ -362,7 +384,7 @@ function renderStudentCharts(hadir, sakit, izin, alpa, done, pending) {
         studentChartInstances.task = new Chart(ctxTask, {
             type: 'doughnut',
             data: {
-                labels: ['Sudah Dikumpulkan', 'Belum Dikumpulkan'],
+                labels: [`Sudah (${done})`, `Belum (${pending})`],
                 datasets: [{
                     data: [done, pending],
                     backgroundColor: ['#10b981', '#cbd5e1'],
