@@ -1,5 +1,5 @@
 // ============================================================================
-// FILE: app-guru.js (v4.3 - Full Integration + Fix Login & Dashboard Charts)
+// FILE: app-guru.js (v4.4 - Full Integration + Mobile Sidebar Support + Charts)
 // ============================================================================
 
 let currentUser = null;
@@ -1327,51 +1327,54 @@ async function loadRecordedDates() {
     const chipsContainer = document.getElementById('abs-date-chips');
 
     if (error) {
-        sel.innerHTML = `<option value="">-- Error Memuat Riwayat --</option>`;
-        chipsContainer.innerHTML = `<span class="text-xs text-rose-600 font-bold">⚠️ Gagal memuat riwayat tanggal.</span>`;
+        if (sel) sel.innerHTML = `<option value="">-- Error Memuat Riwayat --</option>`;
+        if (chipsContainer) chipsContainer.innerHTML = `<span class="text-xs text-rose-600 font-bold">⚠️ Gagal memuat riwayat tanggal.</span>`;
         return;
     }
 
     const uniqueDates = [...new Set((data || []).map(d => d.tanggal))];
-    sel.innerHTML = `<option value="">-- ${uniqueDates.length} Pertemuan Tercatat --</option>`;
-    chipsContainer.innerHTML = '';
+    if (sel) sel.innerHTML = `<option value="">-- ${uniqueDates.length} Pertemuan Tercatat --</option>`;
+    if (chipsContainer) chipsContainer.innerHTML = '';
 
     if (uniqueDates.length === 0) {
-        chipsContainer.innerHTML = `<span class="text-xs text-slate-400 italic">Belum ada tanggal pertemuan yang disimpan pada mata pelajaran ini.</span>`;
+        if (chipsContainer) chipsContainer.innerHTML = `<span class="text-xs text-slate-400 italic">Belum ada tanggal pertemuan yang disimpan pada mata pelajaran ini.</span>`;
     } else {
-        const currentPicked = document.getElementById('abs-date-picker').value;
+        const currentPicked = document.getElementById('abs-date-picker')?.value || '';
         uniqueDates.forEach(tgl => {
-            sel.innerHTML += `<option value="${tgl}" ${tgl === currentPicked ? 'selected' : ''}>${tgl}</option>`;
+            if (sel) sel.innerHTML += `<option value="${tgl}" ${tgl === currentPicked ? 'selected' : ''}>${tgl}</option>`;
             const logsOnDate = (data || []).filter(d => d.tanggal === tgl);
             const hCount = logsOnDate.filter(d => d.status === 'H').length;
             const isSelected = tgl === currentPicked;
 
-            chipsContainer.innerHTML += `
-                <button type="button" onclick="selectRecordedDate('${tgl}')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${
-                    isSelected 
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
-                    : 'bg-white text-slate-700 border-slate-300 hover:bg-blue-50 hover:border-blue-300'
-                }">
-                    <span>📅 ${tgl}</span>
-                    <span class="px-1.5 py-0.5 rounded text-[10px] ${isSelected ? 'bg-blue-800 text-blue-100' : 'bg-emerald-50 text-emerald-700'}">H:${hCount}</span>
-                </button>
-            `;
+            if (chipsContainer) {
+                chipsContainer.innerHTML += `
+                    <button type="button" onclick="selectRecordedDate('${tgl}')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${
+                        isSelected 
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
+                        : 'bg-white text-slate-700 border-slate-300 hover:bg-blue-50 hover:border-blue-300'
+                    }">
+                        <span>📅 ${tgl}</span>
+                        <span class="px-1.5 py-0.5 rounded text-[10px] ${isSelected ? 'bg-blue-800 text-blue-100' : 'bg-emerald-50 text-emerald-700'}">H:${hCount}</span>
+                    </button>
+                `;
+            }
         });
     }
 }
 
 function selectRecordedDate(val) {
     if (!val) return;
-    document.getElementById('abs-date-picker').value = val;
+    const dp = document.getElementById('abs-date-picker');
+    if (dp) dp.value = val;
     loadDailyAttendanceForDate();
     loadRecordedDates();
 }
 
 async function loadDailyAttendanceForDate() {
     const classId = document.getElementById('guru-active-class').value;
-    const tanggal = document.getElementById('abs-date-picker').value;
+    const tanggal = document.getElementById('abs-date-picker')?.value;
     const tbody = document.getElementById('daily-absen-tbody');
-    if (!classId || !tanggal || !currentSettings) return;
+    if (!classId || !tanggal || !currentSettings || !tbody) return;
 
     const { data } = await db.from('attendance_logs')
         .select('*')
@@ -1422,10 +1425,15 @@ async function loadDailyAttendanceForDate() {
     });
 
     const totalStu = studentsList.length || 1;
-    document.getElementById('prs-stat-rate').innerText = `${((countH / totalStu) * 100).toFixed(1)}%`;
-    document.getElementById('prs-stat-hadir').innerText = countH;
-    document.getElementById('prs-stat-sakitizin').innerText = countSI;
-    document.getElementById('prs-stat-alpa').innerText = countA;
+    const rateEl = document.getElementById('prs-stat-rate');
+    const hadirEl = document.getElementById('prs-stat-hadir');
+    const siEl = document.getElementById('prs-stat-sakitizin');
+    const alpaEl = document.getElementById('prs-stat-alpa');
+
+    if (rateEl) rateEl.innerText = `${((countH / totalStu) * 100).toFixed(1)}%`;
+    if (hadirEl) hadirEl.innerText = countH;
+    if (siEl) siEl.innerText = countSI;
+    if (alpaEl) alpaEl.innerText = countA;
 }
 
 function recalcDailyStatPills() {
@@ -1438,10 +1446,15 @@ function recalcDailyStatPills() {
         else if (val === 'A') a++;
     });
     const total = studentsList.length || 1;
-    document.getElementById('prs-stat-rate').innerText = `${((h / total) * 100).toFixed(1)}%`;
-    document.getElementById('prs-stat-hadir').innerText = h;
-    document.getElementById('prs-stat-sakitizin').innerText = si;
-    document.getElementById('prs-stat-alpa').innerText = a;
+    const rateEl = document.getElementById('prs-stat-rate');
+    const hadirEl = document.getElementById('prs-stat-hadir');
+    const siEl = document.getElementById('prs-stat-sakitizin');
+    const alpaEl = document.getElementById('prs-stat-alpa');
+
+    if (rateEl) rateEl.innerText = `${((h / total) * 100).toFixed(1)}%`;
+    if (hadirEl) hadirEl.innerText = h;
+    if (siEl) siEl.innerText = si;
+    if (alpaEl) alpaEl.innerText = a;
 }
 
 function markAllPresentDaily() {
@@ -1454,7 +1467,7 @@ function markAllPresentDaily() {
 
 async function saveDailyAttendance() {
     const class_id = Number(document.getElementById('guru-active-class').value);
-    const tanggal = document.getElementById('abs-date-picker').value;
+    const tanggal = document.getElementById('abs-date-picker')?.value;
     if (!class_id || !tanggal || !currentSettings) return showToast('Pilih kelas, mapel, dan tanggal!', 'error');
 
     const upserts = studentsList.map(stu => {
@@ -1485,7 +1498,7 @@ async function saveDailyAttendance() {
 
 async function deleteDailyAttendanceDate() {
     const class_id = Number(document.getElementById('guru-active-class').value);
-    const tanggal = document.getElementById('abs-date-picker').value;
+    const tanggal = document.getElementById('abs-date-picker')?.value;
     if (!class_id || !tanggal || !currentSettings) return;
     if (!confirm(`Hapus catatan kehadiran tanggal ${tanggal} untuk mapel ${currentSettings.mapel}?`)) return;
 
@@ -1585,7 +1598,9 @@ async function loadAttendanceTable() {
     data.forEach(a => mapAbsen[a.student_id] = a);
 
     const tbody = document.getElementById('absen-tbody');
+    if (!tbody) return;
     tbody.innerHTML = '';
+
     studentsList.forEach(stu => {
         const rec = mapAbsen[stu.id] || { hadir: 0, sakit: 0, izin: 0, alpa: 0 };
         const nilaiAbsen = calcAttendanceScore(rec.hadir, rec.sakit, rec.izin, rec.alpa);
@@ -1638,7 +1653,7 @@ function downloadTemplateAbsen() {
 async function importAbsenExcel() {
     if (!currentSettings) return;
     const fileInput = document.getElementById('excel-absen');
-    if (!fileInput.files.length) return showToast('Pilih file Excel kehadiran!', 'error');
+    if (!fileInput || !fileInput.files.length) return showToast('Pilih file Excel kehadiran!', 'error');
     const reader = new FileReader();
     reader.onload = async (e) => {
         const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
@@ -1809,6 +1824,7 @@ async function loadAssessmentsDropdown(keepSelectedId = null) {
 
     currentAssessments = data || [];
     const sel = document.getElementById('active-assessment');
+    if (!sel) return;
     const prevSelected = keepSelectedId || sel.value;
 
     sel.innerHTML = currentAssessments.length ? '' : '<option value="">-- Belum Ada Penilaian di Mapel Ini --</option>';
@@ -1834,8 +1850,8 @@ async function createAssessment(e) {
     const judul = document.getElementById('ass-judul').value.trim();
     const kategori = document.getElementById('ass-kategori').value;
     const tipe_kerja = document.getElementById('ass-tipe').value;
-    const tampil_publik = document.getElementById('ass-publik').value === 'true';
-    const link_pengumpulan = document.getElementById('ass-link').value.trim();
+    const tampil_publik = document.getElementById('ass-publik')?.value === 'true' ?? true;
+    const link_pengumpulan = document.getElementById('ass-link')?.value.trim() || '';
 
     let { data, error } = await db.from('assessments')
         .insert([{
@@ -1868,8 +1884,8 @@ async function createAssessment(e) {
 
     if (error) return showToast('Gagal membuat penilaian: ' + error.message, 'error');
 
-    document.getElementById('ass-judul').value = '';
-    document.getElementById('ass-link').value = '';
+    if (document.getElementById('ass-judul')) document.getElementById('ass-judul').value = '';
+    if (document.getElementById('ass-link')) document.getElementById('ass-link').value = '';
     showToast(`Penilaian "${judul}" berhasil dibuat!`);
     await loadAssessmentsDropdown(data.id);
 }
@@ -1936,6 +1952,7 @@ async function toggleAssessmentPublicVisibility() {
 
 function renderAssLinkEditor(assObj) {
     const box = document.getElementById('ass-link-editor');
+    if (!box) return;
     const judulInput = document.getElementById('edit-ass-judul');
     const katSelect = document.getElementById('edit-ass-kategori');
     const tipeSelect = document.getElementById('edit-ass-tipe');
@@ -1954,21 +1971,23 @@ function renderAssLinkEditor(assObj) {
     if (tipeSelect) tipeSelect.value = assObj.tipe_kerja || 'individu';
     if (input) input.value = assObj.link_pengumpulan || '';
 
-    if (assObj.link_pengumpulan) {
-        btnTest.href = assObj.link_pengumpulan;
-        btnTest.classList.remove('hidden');
-    } else {
-        btnTest.classList.add('hidden');
+    if (btnTest) {
+        if (assObj.link_pengumpulan) {
+            btnTest.href = assObj.link_pengumpulan;
+            btnTest.classList.remove('hidden');
+        } else {
+            btnTest.classList.add('hidden');
+        }
     }
 
     const isPublic = assObj.tampil_publik !== false;
     if (btnToggle) {
         if (isPublic) {
-            btnToggle.className = 'w-full sm:w-auto px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm text-center';
-            btnToggle.innerHTML = '🌐 Ditampilkan di Siswa (Klik untuk Sembunyikan)';
+            btnToggle.className = 'px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm';
+            btnToggle.innerHTML = '🌐 Ditampilkan (Klik untuk Sembunyikan)';
         } else {
-            btnToggle.className = 'w-full sm:w-auto px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-slate-700 text-white hover:bg-slate-800 transition shadow-sm text-center';
-            btnToggle.innerHTML = '🔒 Disembunyikan dari Siswa (Klik untuk Tampilkan)';
+            btnToggle.className = 'px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-slate-700 text-white hover:bg-slate-800 transition shadow-sm';
+            btnToggle.innerHTML = '🔒 Disembunyikan (Klik untuk Tampilkan)';
         }
     }
 }
@@ -1982,19 +2001,21 @@ async function deleteCurrentAssessment() {
 }
 
 async function loadAssessmentScores() {
-    const assId = document.getElementById('active-assessment').value;
+    const assId = document.getElementById('active-assessment')?.value;
     const tbody = document.getElementById('scores-tbody');
-    const tableEl = tbody ? tbody.closest('table') : null;
+    if (!tbody) return;
+    const tableEl = tbody.closest('table');
     const theadEl = tableEl ? tableEl.querySelector('thead') : null;
 
-    document.getElementById('tgs-stat-total').innerText = currentAssessments.length;
+    const statTotal = document.getElementById('tgs-stat-total');
+    if (statTotal) statTotal.innerText = currentAssessments.length;
 
     if (!assId) {
-        document.getElementById('ass-link-editor').classList.add('hidden');
-        document.getElementById('group-mode-banner').classList.add('hidden');
-        document.getElementById('tgs-stat-submit').innerText = '0%';
-        document.getElementById('tgs-stat-ungraded').innerText = '0';
-        document.getElementById('tgs-stat-avg').innerText = '0.0';
+        document.getElementById('ass-link-editor')?.classList.add('hidden');
+        document.getElementById('group-mode-banner')?.classList.add('hidden');
+        if (document.getElementById('tgs-stat-submit')) document.getElementById('tgs-stat-submit').innerText = '0%';
+        if (document.getElementById('tgs-stat-ungraded')) document.getElementById('tgs-stat-ungraded').innerText = '0';
+        if (document.getElementById('tgs-stat-avg')) document.getElementById('tgs-stat-avg').innerText = '0.0';
         tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400">Silakan buat atau pilih penilaian di atas.</td></tr>';
         return;
     }
@@ -2003,7 +2024,7 @@ async function loadAssessmentScores() {
     renderAssLinkEditor(assObj);
 
     const isGroup = assObj && assObj.tipe_kerja === 'kelompok';
-    document.getElementById('group-mode-banner').classList.toggle('hidden', !isGroup);
+    document.getElementById('group-mode-banner')?.classList.toggle('hidden', !isGroup);
 
     if (theadEl) {
         theadEl.innerHTML = `
@@ -2083,9 +2104,9 @@ async function loadAssessmentScores() {
     });
 
     const totalStu = studentsList.length || 1;
-    document.getElementById('tgs-stat-submit').innerText = `${((submittedCount / totalStu) * 100).toFixed(1)}%`;
-    document.getElementById('tgs-stat-ungraded').innerText = studentsList.length - gradedCount;
-    document.getElementById('tgs-stat-avg').innerText = gradedCount > 0 ? (sumScore / gradedCount).toFixed(1) : '0.0';
+    if (document.getElementById('tgs-stat-submit')) document.getElementById('tgs-stat-submit').innerText = `${((submittedCount / totalStu) * 100).toFixed(1)}%`;
+    if (document.getElementById('tgs-stat-ungraded')) document.getElementById('tgs-stat-ungraded').innerText = studentsList.length - gradedCount;
+    if (document.getElementById('tgs-stat-avg')) document.getElementById('tgs-stat-avg').innerText = gradedCount > 0 ? (sumScore / gradedCount).toFixed(1) : '0.0';
 }
 
 function onStudentGroupNameInput(groupInputEl) {
@@ -2146,7 +2167,7 @@ function syncGroupRow(el) {
 }
 
 async function saveAssessmentScores() {
-    const assId = Number(document.getElementById('active-assessment').value);
+    const assId = Number(document.getElementById('active-assessment')?.value);
     if (!assId) return;
 
     const assObj = currentAssessments.find(a => a.id == assId);
@@ -2197,8 +2218,10 @@ async function calculateAndRenderRekap() {
     const classObj = classesList.find(c => c.id == classId);
     const namaKelas = classObj ? classObj.nama_kelas : '-';
 
-    document.getElementById('rekap-info-bobot').innerText = 
-        `Mapel: ${currentSettings.mapel} | Kelas: ${namaKelas} | KKM: ${currentSettings.kkm} | Bobot: Absen (${currentSettings.w_absen}%), Tugas (${currentSettings.w_tugas}%), Ujian Bab (${currentSettings.w_bab}%), Ujian Smt (${currentSettings.w_uas}%)`;
+    const infoBobot = document.getElementById('rekap-info-bobot');
+    if (infoBobot) {
+        infoBobot.innerText = `Mapel: ${currentSettings.mapel} | Kelas: ${namaKelas} | KKM: ${currentSettings.kkm} | Bobot: Absen (${currentSettings.w_absen}%), Tugas (${currentSettings.w_tugas}%), Ujian Bab (${currentSettings.w_bab}%), Ujian Smt (${currentSettings.w_uas}%)`;
+    }
 
     const stuIds = studentsList.map(s => s.id);
     let absData = [];
@@ -2228,6 +2251,7 @@ async function calculateAndRenderRekap() {
     }
 
     const tbody = document.getElementById('rekap-tbody');
+    if (!tbody) return;
     tbody.innerHTML = '';
     latestRekapData = [];
 
@@ -2293,12 +2317,7 @@ async function calculateAndRenderRekap() {
                 <td class="p-3 text-center text-slate-500">${idx + 1}</td>
                 <td class="p-3 font-mono whitespace-nowrap">${stu.nisn}</td>
                 <td class="p-3 font-semibold">${stu.nama}</td>
-                <td class="p-3 text-center">${nAbsen.toFixed(1)}</td>
-                <td class="p-3 text-center">${nTugas.toFixed(1)}</td>
-                <td class="p-3 text-center">${nBab.toFixed(1)}</td>
-                <td class="p-3 text-center">${nSumatif.toFixed(1)}</td>
                 <td class="p-3 text-center font-extrabold bg-blue-50/70 text-blue-950">${nilaiAkhir.toFixed(2)}</td>
-                <td class="p-3 text-center">${currentSettings.kkm}</td>
                 <td class="p-3 text-center whitespace-nowrap">
                     <span class="px-2.5 py-1 rounded-full text-xs font-extrabold ${tuntas ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">
                         ${tuntas ? 'TUNTAS' : 'BELUM TUNTAS'}
@@ -2496,40 +2515,18 @@ async function renderGuruWaliTable() {
     tbody.innerHTML = '';
 
     if (!latestRekapData.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-slate-400">Belum ada data siswa di kelas ini.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-slate-400">Belum ada data siswa di kelas ini.</td></tr>';
         return;
     }
 
-    latestRekapData.forEach((d, idx) => {
-        const catatan = d.tuntas
-            ? 'Capaian akademik tuntas dan kehadiran baik. Pertahankan semangat belajarnya.'
-            : 'Perlu pendampingan tambahan pada penyelesaian tugas dan peningkatan nilai evaluasi.';
-
-        const statusBadge = d.tuntas
-            ? '<span class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800">Tuntas / Aktif</span>'
-            : '<span class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-800">Butuh Perhatian</span>';
-
+    latestRekapData.forEach((d) => {
         tbody.innerHTML += `
             <tr class="hover:bg-slate-50">
-                <td class="p-3 text-center text-slate-500">${idx + 1}</td>
-                <td class="p-3 font-semibold text-slate-900">
-                    <div class="flex items-center gap-2.5">
-                        <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center shrink-0">
-                            ${getInitials(d.nama)}
-                        </div>
-                        <span>${d.nama}</span>
-                    </div>
-                </td>
+                <td class="p-3 font-semibold text-slate-900">${d.nama}</td>
                 <td class="p-3 font-mono text-xs">${d.nisn}</td>
-                <td class="p-3 text-center font-bold">${d.nAbsen.toFixed(1)}</td>
                 <td class="p-3 text-center font-extrabold text-blue-700">${d.nilaiAkhir.toFixed(2)}</td>
-                <td class="p-3 text-xs text-slate-600 max-w-xs">${catatan}</td>
-                <td class="p-3 text-center">${statusBadge}</td>
-                <td class="p-3 text-center whitespace-nowrap space-x-1">
-                    <button type="button" onclick="printStudentCardPDF(${d.id})" class="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold">
-                        📄 PDF
-                    </button>
-                    <button type="button" onclick="sendWhatsAppReport(${d.id})" class="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-extrabold">
+                <td class="p-3 text-center">
+                    <button type="button" onclick="sendWhatsAppReport(${d.id})" class="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-extrabold">
                         <i class="fa-brands fa-whatsapp"></i> Kirim WA
                     </button>
                 </td>
