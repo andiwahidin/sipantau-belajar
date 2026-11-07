@@ -296,14 +296,14 @@ async function bukaDetailSiswa(stuId) {
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="card-box bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col items-center">
-                    <h4 class="font-extrabold text-xs text-slate-700 mb-2">Chart Kehadiran (Jumlah Hari)</h4>
+                    <h4 class="font-extrabold text-xs text-slate-700 mb-2">Kehadiran</h4>
                     <div class="w-48 h-48 relative">
                         <canvas id="chartDetailAtt"></canvas>
                     </div>
                 </div>
 
                 <div class="card-box bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col items-center">
-                    <h4 class="font-extrabold text-xs text-slate-700 mb-2">Chart Pengumpulan Tugas</h4>
+                    <h4 class="font-extrabold text-xs text-slate-700 mb-2">Tugas</h4>
                     <div class="w-48 h-48 relative">
                         <canvas id="chartDetailTask"></canvas>
                     </div>
