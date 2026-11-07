@@ -628,18 +628,52 @@
                                     <select id="active-assessment" onchange="loadAssessmentScores()" class="flex-1 border-2 border-blue-200 bg-blue-50 p-2 rounded-xl text-xs font-bold"></select>
                                     <button type="button" onclick="deleteCurrentAssessment()" class="text-xs font-bold text-rose-600">🗑️ Hapus</button>
                                 </div>
-                                <div id="ass-link-editor" class="hidden bg-blue-50/60 p-3.5 rounded-2xl border space-y-3">
-                                    <div class="flex justify-between items-center"><span class="text-xs font-bold text-blue-950">Pengaturan Tugas</span><button type="button" id="btn-toggle-public" onclick="toggleAssessmentPublicVisibility()" class="px-3 py-1 rounded-lg text-xs font-bold"></button></div>
-                                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                        <input type="text" id="edit-ass-judul" class="border bg-white rounded-xl p-2 text-xs">
-                                        <select id="edit-ass-kategori" class="border bg-white rounded-xl p-2 text-xs">
-                                            <option value="tugas_individu">Tugas</option>
-                                            <option value="ujian_bab">Ujian Akhir Bab</option>
-                                            <option value="ujian_sumatif">Ujian Sumatif</option>
-                                        </select>
-                                        <input type="url" id="edit-ass-link" placeholder="Link Pengumpulan" class="border bg-white rounded-xl p-2 text-xs">
+                                <div id="ass-link-editor" class="hidden bg-indigo-50/70 p-3.5 sm:p-4 rounded-2xl border border-indigo-200 space-y-3 min-w-0">
+                                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-200/70 pb-2.5">
+                                        <span class="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
+                                            ⚙️ Edit Nama, Jenis Tugas (Individu/Kelompok) & Link Pengumpulan
+                                        </span>
+                                        <div class="flex items-center gap-2 shrink-0">
+                                            <span class="text-[11px] font-bold text-slate-600">Visibilitas Hal. Siswa:</span>
+                                            <button type="button" id="btn-toggle-public" onclick="toggleAssessmentPublicVisibility()" class="px-3 py-1.5 rounded-xl text-xs font-extrabold transition shadow-sm text-center"></button>
+                                        </div>
                                     </div>
-                                    <div class="flex justify-end"><button type="button" onclick="updateAssessmentLink()" class="bg-blue-600 text-white px-4 py-1.5 rounded-xl text-xs font-bold">Simpan Tugas</button></div>
+                                
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5">
+                                        <div class="sm:col-span-2 lg:col-span-4">
+                                            <label class="block text-[11px] font-bold text-indigo-900 mb-1">Nama / Judul Tugas</label>
+                                            <input type="text" id="edit-ass-judul" placeholder="Judul Tugas/Ujian" class="w-full border border-indigo-200 bg-white rounded-xl px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-indigo-500">
+                                        </div>
+                                        <div class="lg:col-span-3">
+                                            <label class="block text-[11px] font-bold text-indigo-900 mb-1">Kategori Penilaian</label>
+                                            <select id="edit-ass-kategori" class="w-full border border-indigo-200 bg-white rounded-xl px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-indigo-500">
+                                                <option value="tugas">Tugas</option>
+                                                <option value="ujian_bab">Ujian Akhir Bab</option>
+                                                <option value="ujian_semester">Ujian Semester</option>
+                                            </select>
+                                        </div>
+                                        <!-- TAMBAHKAN KODE INI AGAR PILIHAN INDIVIDU/KELOMPOK MUNCUL SAAT DIEDIT -->
+                                        <div class="lg:col-span-2">
+                                            <label class="block text-[11px] font-bold text-indigo-900 mb-1">Sistem / Jenis Kerja</label>
+                                            <select id="edit-ass-tipe" class="w-full border border-indigo-200 bg-white rounded-xl px-3 py-2 text-xs font-bold text-indigo-950 outline-none focus:ring-2 focus:ring-indigo-500">
+                                                <option value="individu">👤 Individu</option>
+                                                <option value="kelompok">👥 Berkelompok</option>
+                                            </select>
+                                        </div>
+                                        <div class="sm:col-span-2 lg:col-span-3">
+                                            <label class="block text-[11px] font-bold text-indigo-900 mb-1">📂 Link Pengumpulan Guru</label>
+                                            <input type="url" id="edit-ass-link" placeholder="https://drive.google.com/..." class="w-full border border-indigo-200 bg-white rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500">
+                                        </div>
+                                    </div>
+                                
+                                    <div class="flex flex-wrap items-center justify-end gap-2 pt-1">
+                                        <a id="btn-test-ass-link" href="#" target="_blank" class="hidden text-center bg-white border border-indigo-300 text-indigo-700 px-3.5 py-2 rounded-xl text-xs font-bold hover:bg-indigo-100">
+                                            ↗ Buka Link Guru
+                                        </a>
+                                        <button type="button" onclick="updateAssessmentLink()" class="w-full sm:w-auto bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-extrabold hover:bg-indigo-700 shadow-sm transition">
+                                            💾 Simpan Perubahan Tugas
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                             <div id="group-mode-banner" class="hidden bg-amber-50 border border-amber-300 p-3 rounded-xl text-xs flex justify-between items-center">
