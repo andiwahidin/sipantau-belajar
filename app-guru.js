@@ -1,5 +1,5 @@
 // ============================================================================
-// FILE: app-guru.js (v4.4 - Full Integration + Mobile Sidebar Support + Charts)
+// FILE: app-guru.js (v4.5 - Full Integration + Semester Filter Kehadiran)
 // ============================================================================
 
 let currentUser = null;
@@ -25,6 +25,28 @@ function getLocalTodayString() {
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+}
+
+// Helper: Menentukan rentang tanggal semester aktif (Ganjil: Juli-Des, Genap: Jan-Jun)
+function getActiveSemesterDateRange() {
+    const d = new Date();
+    const currentMonth = d.getMonth() + 1; // 1 - 12
+    const currentYear = d.getFullYear();
+    const isGanjil = currentMonth >= 7 && currentMonth <= 12;
+
+    if (isGanjil) {
+        return {
+            label: `Semester Ganjil ${currentYear}`,
+            start: `${currentYear}-07-01`,
+            end: `${currentYear}-12-31`
+        };
+    } else {
+        return {
+            label: `Semester Genap ${currentYear}`,
+            start: `${currentYear}-01-01`,
+            end: `${currentYear}-06-30`
+        };
+    }
 }
 
 window.onload = async () => {
@@ -1297,7 +1319,7 @@ async function saveSettings(e) {
 }
 
 // ============================================================================
-// 6. MENU 3: KEHADIRAN HARIAN PER TANGGAL & REKAP ANTI-RESET
+// 6. MENU 3: KEHADIRAN HARIAN (DENGAN FILTER SEMESTER AKTIF)
 // ============================================================================
 function calcAttendanceScore(h, s, i, a) {
     const total = h + s + i + a;
@@ -1313,14 +1335,19 @@ async function loadAttendanceTab() {
 }
 
 async function loadRecordedDates() {
-    const classId = document.getElementById('guru-active-class').value;
+    const classId = document.getElementById('guru-active-class')?.value;
     if (!classId || !currentSettings) return;
+
+    // Filter berdasarkan rentang semester aktif (Ganjil: Juli-Des, Genap: Jan-Jun)
+    const semesterRange = getActiveSemesterDateRange();
 
     const { data, error } = await db.from('attendance_logs')
         .select('tanggal, status')
         .eq('teacher_id', currentUser.id)
         .eq('class_id', classId)
         .eq('mapel', currentSettings.mapel)
+        .gte('tanggal', semesterRange.start)
+        .lte('tanggal', semesterRange.end)
         .order('tanggal', { ascending: false });
 
     const sel = document.getElementById('abs-recorded-dates');
@@ -1333,11 +1360,11 @@ async function loadRecordedDates() {
     }
 
     const uniqueDates = [...new Set((data || []).map(d => d.tanggal))];
-    if (sel) sel.innerHTML = `<option value="">-- ${uniqueDates.length} Pertemuan Tercatat --</option>`;
+    if (sel) sel.innerHTML = `<option value="">-- ${uniqueDates.length} Pertemuan (${semesterRange.label}) --</option>`;
     if (chipsContainer) chipsContainer.innerHTML = '';
 
     if (uniqueDates.length === 0) {
-        if (chipsContainer) chipsContainer.innerHTML = `<span class="text-xs text-slate-400 italic">Belum ada tanggal pertemuan yang disimpan pada mata pelajaran ini.</span>`;
+        if (chipsContainer) chipsContainer.innerHTML = `<span class="text-xs text-slate-400 italic">Belum ada tanggal pertemuan tercatat pada ${semesterRange.label}.</span>`;
     } else {
         const currentPicked = document.getElementById('abs-date-picker')?.value || '';
         uniqueDates.forEach(tgl => {
@@ -1371,7 +1398,7 @@ function selectRecordedDate(val) {
 }
 
 async function loadDailyAttendanceForDate() {
-    const classId = document.getElementById('guru-active-class').value;
+    const classId = document.getElementById('guru-active-class')?.value;
     const tanggal = document.getElementById('abs-date-picker')?.value;
     const tbody = document.getElementById('daily-absen-tbody');
     if (!classId || !tanggal || !currentSettings || !tbody) return;
@@ -1519,11 +1546,15 @@ async function deleteDailyAttendanceDate() {
 }
 
 async function recalculateAttendanceSummaryFromLogs(classId, mapelName) {
+    const semesterRange = getActiveSemesterDateRange();
+
     const { data: logs, error } = await db.from('attendance_logs')
         .select('*')
         .eq('teacher_id', currentUser.id)
         .eq('class_id', classId)
-        .eq('mapel', mapelName);
+        .eq('mapel', mapelName)
+        .gte('tanggal', semesterRange.start)
+        .lte('tanggal', semesterRange.end);
 
     if (error || !logs) return;
 
@@ -1548,11 +1579,15 @@ async function recalculateAttendanceSummaryFromLogs(classId, mapelName) {
 async function exportDailyAttendanceExcel() {
     const classId = document.getElementById('guru-active-class').value;
     if (!classId || !currentSettings) return;
+    const semesterRange = getActiveSemesterDateRange();
+
     const { data: logs } = await db.from('attendance_logs')
         .select('*')
         .eq('teacher_id', currentUser.id)
         .eq('class_id', classId)
         .eq('mapel', currentSettings.mapel)
+        .gte('tanggal', semesterRange.start)
+        .lte('tanggal', semesterRange.end)
         .order('tanggal', { ascending: true });
 
     const dates = [...new Set((logs || []).map(l => l.tanggal))];
