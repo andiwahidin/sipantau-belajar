@@ -3,44 +3,295 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-    <title>Portal Data & Profil Akademik Siswa — SiPantau Belajar</title>
+    <title>Portal Siswa — Pengajuan & Status Tugas</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- TAMBAHKAN BARIS DI BAWAH INI -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="style.css?v=3.7">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css?v=4.7">
 </head>
-<body class="bg-[#f4f6f9] text-[#1e293b] min-h-screen flex flex-col">
+<body class="min-h-screen flex flex-col bg-[#f8fafc] text-slate-800">
 
-    <!-- Header Portal Siswa -->
-    <header class="bg-white border-b border-slate-200 h-[68px] px-6 flex items-center justify-between sticky top-0 z-30">
-        <div class="flex items-center gap-3">
-            <div class="w-9 h-9 bg-gradient-to-br from-blue-600 to-sky-400 rounded-lg flex items-center justify-center text-white">
-                <i class="fa-solid fa-graduation-cap"></i>
-            </div>
-            <span class="text-lg font-bold text-slate-900">Pantau<span class="text-blue-600">Belajar</span> <small class="text-xs font-medium text-slate-500 ml-1">Portal Siswa</small></span>
-        </div>
-        <a href="index.html" class="btn btn-outline text-xs"><i class="fa-solid fa-Chalkboard-user"></i> Login Guru</a>
-    </header>
-
-    <!-- Konten Utama -->
-    <main class="max-w-3xl w-full mx-auto p-6 flex-1">
-        <div class="card-box text-center py-8 px-6 mb-6">
-            <h1 class="text-xl font-bold text-slate-900 mb-2">Cek Perkembangan & Kehadiran Belajar</h1>
-            <p class="text-xs text-slate-500 mb-5">Masukkan NIS atau Nama Lengkap Anda untuk melihat rekap kehadiran, tugas, dan nilai.</p>
-            <div class="flex max-w-md mx-auto gap-2">
-                <input type="text" id="inputCariSiswa" placeholder="Masukkan NIS atau Nama Siswa..." class="form-control flex-1">
-                <button class="btn btn-primary" onclick="cariProgresSiswa()"><i class="fa-solid fa-magnifying-glass"></i> Cari</button>
-            </div>
-        </div>
-
-        <!-- Hasil Pencarian Siswa -->
-        <div id="hasilSiswaContainer" class="hidden"></div>
-    </main>
-
+    <!-- TOAST NOTIFICATION -->
     <div id="toast" class="hidden"></div>
 
-    <script src="config.js"></script>
-    <script src="app-siswa.js"></script>
+    <!-- HEADER / NAVBAR -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-sm">
+        <div class="flex items-center gap-2.5">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white text-base shadow-md">
+                <i class="fa-solid fa-graduation-cap"></i>
+            </div>
+            <div>
+                <span class="font-extrabold text-base tracking-tight text-slate-900 block">Portal Siswa</span>
+                <span class="text-[11px] text-slate-500 block">Pantau & Ajukan Tugas Mandiri</span>
+            </div>
+        </div>
+        <a href="index.html" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">
+            👑 Panel Guru ↗
+        </a>
+    </header>
+
+    <!-- KONTEN UTAMA -->
+    <main class="max-w-4xl w-full mx-auto p-4 sm:p-6 space-y-5 flex-1">
+
+        <!-- KARTU PEMILIH KELAS & SISWA -->
+        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <h1 class="text-base sm:text-lg font-extrabold text-slate-900">🔍 Pilih Identitas Anda</h1>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1">1. Pilih Kelas</label>
+                    <select id="portal-select-kelas" onchange="onPortalClassChange()" class="w-full border border-slate-300 rounded-xl p-2.5 text-xs sm:text-sm bg-white font-bold outline-none focus:ring-2 focus:ring-blue-500"></select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1">2. Pilih Nama Lengkap Anda</label>
+                    <select id="portal-select-siswa" onchange="onPortalStudentChange()" class="w-full border border-slate-300 rounded-xl p-2.5 text-xs sm:text-sm bg-white font-bold outline-none focus:ring-2 focus:ring-blue-500"></select>
+                </div>
+            </div>
+        </div>
+
+        <!-- PROFIL & DAFTAR TUGAS SISWA -->
+        <div id="portal-content-area" class="hidden space-y-5">
+            <div class="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-5 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-white/20 text-white">Profil Siswa</span>
+                    <h2 id="portal-stu-name" class="text-lg sm:text-xl font-extrabold mt-1">Nama Siswa</h2>
+                    <p id="portal-stu-nisn" class="text-xs text-blue-100 font-mono mt-0.5">NISN: -</p>
+                </div>
+                <div class="bg-white/10 p-3 rounded-xl border border-white/20 text-xs space-y-1">
+                    <div>Status Tugas Selesai: <b id="portal-stat-done">0 / 0</b></div>
+                    <div>Menunggu Verifikasi Guru: <b id="portal-stat-pending">0</b></div>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <div class="border-b pb-3">
+                    <h3 class="font-extrabold text-sm sm:text-base text-slate-900">📚 Daftar Tugas & Pengajuan Selesai</h3>
+                    <p class="text-xs text-slate-500">Unggah file tugas Anda ke link OneDrive guru, lalu klik tombol <b>"Ajukan Selesai"</b> di bawah.</p>
+                </div>
+                <div id="portal-tasks-container" class="space-y-3"></div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="bg-white border-t border-slate-200 text-center py-4 text-xs text-slate-500">
+        PantauBelajar &copy; 2026 — Sistem Pemantauan Akademik Terpadu
+    </footer>
+
+    <!-- MODAL KONFIRMASI PENGAJUAN -->
+    <div id="modal-portal-submit" class="hidden fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 modal-card border border-slate-100 space-y-4">
+            <div class="flex items-center gap-3 border-b pb-3">
+                <div class="w-9 h-9 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold">📤</div>
+                <div>
+                    <h3 class="font-extrabold text-sm text-slate-900">Konfirmasi Pengajuan</h3>
+                    <p class="text-[11px] text-slate-500">Pastikan Anda sudah mengunggah file ke OneDrive.</p>
+                </div>
+            </div>
+            <p class="text-xs text-slate-600">Ajukan tugas <b id="modal-task-title" class="text-slate-900"></b> ke guru pengampu?</p>
+            <div class="flex justify-end gap-2 pt-2 border-t">
+                <button type="button" onclick="closePortalSubmitModal()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-600">Batal</button>
+                <button type="button" onclick="executeSubmitTask()" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-md">Ya, Ajukan Selesai</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="config.js?v=4.7"></script>
+    <script>
+        let portalClasses = [];
+        let portalStudents = [];
+        let currentPortalStudent = null;
+        let selectedAssessmentForSubmit = null;
+
+        window.onload = async () => {
+            await initPortal();
+        };
+
+        async function initPortal() {
+            const [clsRes, stuRes] = await Promise.all([
+                db.from('classes').select('*').order('nama_kelas'),
+                db.from('students').select('*').order('nama')
+            ]);
+
+            portalClasses = clsRes.data || [];
+            portalStudents = stuRes.data || [];
+
+            const selCls = document.getElementById('portal-select-kelas');
+            if (selCls) {
+                selCls.innerHTML = portalClasses.length ? '<option value="">-- Pilih Kelas Anda --</option>' : '<option value="">-- Belum Ada Kelas --</option>';
+                portalClasses.forEach(c => {
+                    selCls.innerHTML += `<option value="${c.id}">${c.nama_kelas}</option>`;
+                });
+            }
+        }
+
+        function onPortalClassChange() {
+            const classId = document.getElementById('portal-select-kelas').value;
+            const selStu = document.getElementById('portal-select-siswa');
+            if (!selStu) return;
+
+            if (!classId) {
+                selStu.innerHTML = '<option value="">-- Pilih Kelas Terlebih Dahulu --</option>';
+                document.getElementById('portal-content-area').classList.add('hidden');
+                return;
+            }
+
+            const filtered = portalStudents.filter(s => s.class_id == classId);
+            selStu.innerHTML = filtered.length ? '<option value="">-- Pilih Nama Anda --</option>' : '<option value="">-- Tidak Ada Siswa di Kelas Ini --</option>';
+            filtered.forEach(s => {
+                selStu.innerHTML += `<option value="${s.id}">${s.nama} (NISN: ${s.nisn})</option>`;
+            });
+            document.getElementById('portal-content-area').classList.add('hidden');
+        }
+
+        async function onPortalStudentChange() {
+            const studentId = document.getElementById('portal-select-siswa').value;
+            if (!studentId) {
+                document.getElementById('portal-content-area').classList.add('hidden');
+                return;
+            }
+
+            currentPortalStudent = portalStudents.find(s => s.id == studentId);
+            if (!currentPortalStudent) return;
+
+            document.getElementById('portal-stu-name').innerText = currentPortalStudent.nama;
+            document.getElementById('portal-stu-nisn').innerText = `NISN: ${currentPortalStudent.nisn}`;
+            document.getElementById('portal-content-area').classList.remove('hidden');
+
+            await loadPortalStudentTasks();
+        }
+
+        async function loadPortalStudentTasks() {
+            if (!currentPortalStudent) return;
+
+            const [settingsRes, assRes, scoresRes] = await Promise.all([
+                db.from('teacher_settings').select('*').eq('class_id', currentPortalStudent.class_id),
+                db.from('assessments').select('*').eq('class_id', currentPortalStudent.class_id).eq('tampil_publik', true),
+                db.from('scores').select('*').eq('student_id', currentPortalStudent.id)
+            ]);
+
+            const settings = settingsRes.data || [];
+            const assessments = assRes.data || [];
+            const scores = scoresRes.data || [];
+
+            const container = document.getElementById('portal-tasks-container');
+            if (!container) return;
+
+            if (!assessments.length) {
+                container.innerHTML = `<p class="text-xs text-slate-400 italic text-center py-6">Belum ada tugas atau ujian yang dipublikasikan oleh guru.</p>`;
+                document.getElementById('portal-stat-done').innerText = '0 / 0';
+                document.getElementById('portal-stat-pending').innerText = '0';
+                return;
+            }
+
+            let doneCount = 0;
+            let pendingCount = 0;
+
+            container.innerHTML = assessments.map(a => {
+                const setting = settings.find(s => s.teacher_id == a.teacher_id && s.mapel === a.mapel);
+                const mapelName = a.mapel || 'Mata Pelajaran';
+                const sc = scores.find(s => s.assessment_id === a.id) || { status_kumpul: false, status_pengajuan: 'none', nilai: null };
+
+                const isApproved = sc.status_kumpul === true || sc.status_pengajuan === 'approved';
+                const isPending = sc.status_pengajuan === 'pending' && !isApproved;
+                const isRejected = sc.status_pengajuan === 'rejected';
+
+                if (isApproved) doneCount++;
+                if (isPending) pendingCount++;
+
+                let badgeHtml = '';
+                let actionBtn = '';
+
+                if (isApproved) {
+                    badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800">✅ Selesai (Diterima Guru)</span>`;
+                    actionBtn = `<span class="text-xs font-bold text-emerald-700">Tuntas (Nilai: ${sc.nilai !== null ? sc.nilai : '-'})</span>`;
+                } else if (isPending) {
+                    badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-800">⏳ Menunggu Verifikasi Guru</span>`;
+                    actionBtn = `<button type="button" disabled class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-400 cursor-not-allowed">Pengajuan Dikirim</button>`;
+                } else if (isRejected) {
+                    badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-rose-100 text-rose-800">❌ Perlu Revisi / Ditolak</span>`;
+                    actionBtn = `<button type="button" onclick="openPortalSubmitModal(${a.id}, '${a.judul.replace(/'/g, "\\'")}')" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-sm">Ajukan Ulang</button>`;
+                } else {
+                    badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-slate-100 text-slate-600">Belum Mengajukan</span>`;
+                    actionBtn = `<button type="button" onclick="openPortalSubmitModal(${a.id}, '${a.judul.replace(/'/g, "\\'")}')" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-sm">📤 Ajukan Selesai</button>`;
+                }
+
+                return `
+                    <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div class="space-y-1">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-100 text-blue-800">📘 ${mapelName}</span>
+                                ${badgeHtml}
+                            </div>
+                            <h4 class="font-extrabold text-sm sm:text-base text-slate-900">${a.judul}</h4>
+                            ${a.link_pengumpulan ? `<a href="${a.link_pengumpulan}" target="_blank" class="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:underline"><span>📂</span> Buka Link OneDrive Request Files Guru ↗</a>` : ''}
+                        </div>
+                        <div class="shrink-0 flex items-center gap-2">
+                            ${actionBtn}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('portal-stat-done').innerText = `${doneCount} / ${assessments.length}`;
+            document.getElementById('portal-stat-pending').innerText = pendingCount;
+        }
+
+        function openPortalSubmitModal(assessmentId, taskTitle) {
+            selectedAssessmentForSubmit = assessmentId;
+            document.getElementById('modal-task-title').innerText = taskTitle;
+            document.getElementById('modal-portal-submit').classList.remove('hidden');
+        }
+
+        function closePortalSubmitModal() {
+            selectedAssessmentForSubmit = null;
+            document.getElementById('modal-portal-submit').classList.add('hidden');
+        }
+
+        async function executeSubmitTask() {
+            if (!currentPortalStudent || !selectedAssessmentForSubmit) return;
+
+            const { data: existing } = await db.from('scores')
+                .select('*')
+                .eq('assessment_id', selectedAssessmentForSubmit)
+                .eq('student_id', currentPortalStudent.id)
+                .single();
+
+            let error = null;
+            if (existing) {
+                const res = await db.from('scores')
+                    .update({ status_pengajuan: 'pending' })
+                    .eq('id', existing.id);
+                error = res.error;
+            } else {
+                const res = await db.from('scores')
+                    .insert([{
+                        assessment_id: selectedAssessmentForSubmit,
+                        student_id: currentPortalStudent.id,
+                        status_pengajuan: 'pending',
+                        status_kumpul: false
+                    }]);
+                error = res.error;
+            }
+
+            closePortalSubmitModal();
+            if (error) {
+                return showToast('Gagal mengajukan tugas: ' + error.message, 'error');
+            }
+
+            showToast('✅ Berhasil mengajukan tugas! Menunggu verifikasi guru.');
+            await loadPortalStudentTasks();
+        }
+
+        function showToast(msg, type = 'success') {
+            const t = document.getElementById('toast');
+            if (!t) return;
+            t.innerText = msg;
+            t.className = `fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg text-white transition-all duration-300 ${type === 'error' ? 'bg-rose-600' : 'bg-slate-900'}`;
+            t.classList.remove('hidden');
+            setTimeout(() => t.classList.add('hidden'), 3500);
+        }
+    </script>
 </body>
 </html>
