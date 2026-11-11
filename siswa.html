@@ -3,11 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-    <title>Portal Siswa — Pengajuan & Status Tugas</title>
+    <title>Portal Siswa — PantauBelajar</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=4.7">
+    <link rel="stylesheet" href="style.css?v=4.8">
 </head>
 <body class="min-h-screen flex flex-col bg-[#f8fafc] text-slate-800">
 
@@ -22,7 +23,7 @@
             </div>
             <div>
                 <span class="font-extrabold text-base tracking-tight text-slate-900 block">Portal Siswa</span>
-                <span class="text-[11px] text-slate-500 block">Pantau & Ajukan Tugas Mandiri</span>
+                <span class="text-[11px] text-slate-500 block">Cari Nama & Ajukan Tugas Mandiri</span>
             </div>
         </div>
         <a href="index.html" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">
@@ -33,39 +34,53 @@
     <!-- KONTEN UTAMA -->
     <main class="max-w-4xl w-full mx-auto p-4 sm:p-6 space-y-5 flex-1">
 
-        <!-- KARTU PEMILIH KELAS & SISWA -->
-        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <h1 class="text-base sm:text-lg font-extrabold text-slate-900">🔍 Pilih Identitas Anda</h1>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1">1. Pilih Kelas</label>
-                    <select id="portal-select-kelas" onchange="onPortalClassChange()" class="w-full border border-slate-300 rounded-xl p-2.5 text-xs sm:text-sm bg-white font-bold outline-none focus:ring-2 focus:ring-blue-500"></select>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1">2. Pilih Nama Lengkap Anda</label>
-                    <select id="portal-select-siswa" onchange="onPortalStudentChange()" class="w-full border border-slate-300 rounded-xl p-2.5 text-xs sm:text-sm bg-white font-bold outline-none focus:ring-2 focus:ring-blue-500"></select>
-                </div>
+        <!-- KARTU PENCARIAN SISWA (HALAMAN AWAL BERSIH) -->
+        <div id="portal-search-card" class="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-4 text-center">
+            <div class="max-w-md mx-auto space-y-2">
+                <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900">🔍 Cari Nama / NISN Anda</h1>
+                <p class="text-xs sm:text-sm text-slate-500">Masukkan nama lengkap atau NISN Anda untuk mulai melihat daftar tugas.</p>
+            </div>
+            <form onsubmit="handleStudentSearch(event)" class="max-w-md mx-auto flex gap-2 pt-2">
+                <input type="text" id="input-search-query" required placeholder="Contoh: Andi Pratama atau NISN..." class="w-full border border-slate-300 rounded-xl p-3 text-xs sm:text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl text-xs sm:text-sm font-extrabold shadow-md shrink-0">Cari</button>
+            </form>
+            <!-- HASIL PENCARIAN -->
+            <div id="search-results-container" class="max-w-md mx-auto pt-3 text-left space-y-2 hidden">
+                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Hasil Pencarian:</p>
+                <div id="search-results-list" class="space-y-2"></div>
             </div>
         </div>
 
-        <!-- PROFIL & DAFTAR TUGAS SISWA -->
+        <!-- PROFIL & DETAIL TUGAS SISWA (MUNCUL SETELAH KLIK LIHAT DETAIL) -->
         <div id="portal-content-area" class="hidden space-y-5">
             <div class="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-5 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-white/20 text-white">Profil Siswa</span>
+                    <button type="button" onclick="backToSearch()" class="text-xs text-blue-200 hover:text-white font-bold mb-2 inline-flex items-center gap-1">
+                        <i class="fa-solid fa-arrow-left"></i> ← Cari Siswa Lain
+                    </button>
+                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-white/20 text-white block w-max mt-1">Profil Siswa</span>
                     <h2 id="portal-stu-name" class="text-lg sm:text-xl font-extrabold mt-1">Nama Siswa</h2>
-                    <p id="portal-stu-nisn" class="text-xs text-blue-100 font-mono mt-0.5">NISN: -</p>
+                    <p id="portal-stu-nisn" class="text-xs text-blue-100 font-mono mt-0.5">NISN: - | Kelas: -</p>
                 </div>
                 <div class="bg-white/10 p-3 rounded-xl border border-white/20 text-xs space-y-1">
-                    <div>Status Tugas Selesai: <b id="portal-stat-done">0 / 0</b></div>
-                    <div>Menunggu Verifikasi Guru: <b id="portal-stat-pending">0</b></div>
+                    <div>Tugas Tuntas: <b id="portal-stat-done">0 / 0</b></div>
+                    <div>Menunggu Verifikasi: <b id="portal-stat-pending">0</b></div>
                 </div>
             </div>
 
+            <!-- KOTAK GRAFIK / CHART CAPAIAN -->
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                <h3 class="font-extrabold text-xs sm:text-sm text-slate-900">📊 Grafik Status Penyelesaian Tugas Anda</h3>
+                <div class="h-40 relative max-w-xs mx-auto">
+                    <canvas id="chartStudentTaskStatus"></canvas>
+                </div>
+            </div>
+
+            <!-- DAFTAR TUGAS -->
             <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                 <div class="border-b pb-3">
                     <h3 class="font-extrabold text-sm sm:text-base text-slate-900">📚 Daftar Tugas & Pengajuan Selesai</h3>
-                    <p class="text-xs text-slate-500">Unggah file tugas Anda ke link OneDrive guru, lalu klik tombol <b>"Ajukan Selesai"</b> di bawah.</p>
+                    <p class="text-xs text-slate-500">Klik tombol link OneDrive guru untuk mengunggah file, lalu klik <b>"Ajukan Selesai"</b>.</p>
                 </div>
                 <div id="portal-tasks-container" class="space-y-3"></div>
             </div>
@@ -97,69 +112,87 @@
     </div>
 
     <!-- SCRIPTS -->
-    <script src="config.js?v=4.7"></script>
+    <script src="config.js?v=4.8"></script>
     <script>
-        let portalClasses = [];
-        let portalStudents = [];
+        let allStudentsCache = [];
+        let classesCache = [];
         let currentPortalStudent = null;
         let selectedAssessmentForSubmit = null;
+        let studentChartInstance = null;
 
         window.onload = async () => {
-            await initPortal();
+            await initPortalSearch();
         };
 
-        async function initPortal() {
+        async function initPortalSearch() {
             const [clsRes, stuRes] = await Promise.all([
-                db.from('classes').select('*').order('nama_kelas'),
-                db.from('students').select('*').order('nama')
+                db.from('classes').select('*'),
+                db.from('students').select('*, classes(nama_kelas)').order('nama')
             ]);
-
-            portalClasses = clsRes.data || [];
-            portalStudents = stuRes.data || [];
-
-            const selCls = document.getElementById('portal-select-kelas');
-            if (selCls) {
-                selCls.innerHTML = portalClasses.length ? '<option value="">-- Pilih Kelas Anda --</option>' : '<option value="">-- Belum Ada Kelas --</option>';
-                portalClasses.forEach(c => {
-                    selCls.innerHTML += `<option value="${c.id}">${c.nama_kelas}</option>`;
-                });
-            }
+            classesCache = clsRes.data || [];
+            allStudentsCache = stuRes.data || [];
         }
 
-        function onPortalClassChange() {
-            const classId = document.getElementById('portal-select-kelas').value;
-            const selStu = document.getElementById('portal-select-siswa');
-            if (!selStu) return;
+        async function handleStudentSearch(e) {
+            e.preventDefault();
+            const q = document.getElementById('input-search-query').value.trim().toLowerCase();
+            const listContainer = document.getElementById('search-results-list');
+            const boxContainer = document.getElementById('search-results-container');
+            if (!listContainer || !boxContainer) return;
 
-            if (!classId) {
-                selStu.innerHTML = '<option value="">-- Pilih Kelas Terlebih Dahulu --</option>';
-                document.getElementById('portal-content-area').classList.add('hidden');
+            if (!q) {
+                boxContainer.classList.add('hidden');
                 return;
             }
 
-            const filtered = portalStudents.filter(s => s.class_id == classId);
-            selStu.innerHTML = filtered.length ? '<option value="">-- Pilih Nama Anda --</option>' : '<option value="">-- Tidak Ada Siswa di Kelas Ini --</option>';
-            filtered.forEach(s => {
-                selStu.innerHTML += `<option value="${s.id}">${s.nama} (NISN: ${s.nisn})</option>`;
+            const matched = allStudentsCache.filter(s => 
+                s.nama.toLowerCase().includes(q) || String(s.nisn).toLowerCase().includes(q)
+            );
+
+            boxContainer.classList.remove('hidden');
+            listContainer.innerHTML = '';
+
+            if (!matched.length) {
+                listContainer.innerHTML = `<p class="text-xs text-rose-600 font-semibold p-3 bg-rose-50 rounded-xl border border-rose-200">Siswa dengan nama/NISN tersebut tidak ditemukan.</p>`;
+                return;
+            }
+
+            matched.forEach(s => {
+                const className = s.classes?.nama_kelas || 'Kelas';
+                listContainer.innerHTML += `
+                    <div class="p-3.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-blue-50/50 transition flex items-center justify-between gap-3">
+                        <div>
+                            <h4 class="font-extrabold text-sm text-slate-900">${s.nama}</h4>
+                            <p class="text-[11px] text-slate-500 font-mono">NISN: ${s.nisn} • Kelas: ${className}</p>
+                        </div>
+                        <button type="button" onclick="selectStudentProfile(${s.id})" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-sm shrink-0">
+                            Lihat Detail →
+                        </button>
+                    </div>
+                `;
             });
-            document.getElementById('portal-content-area').classList.add('hidden');
         }
 
-        async function onPortalStudentChange() {
-            const studentId = document.getElementById('portal-select-siswa').value;
-            if (!studentId) {
-                document.getElementById('portal-content-area').classList.add('hidden');
-                return;
-            }
-
-            currentPortalStudent = portalStudents.find(s => s.id == studentId);
+        async function selectStudentProfile(studentId) {
+            currentPortalStudent = allStudentsCache.find(s => s.id === studentId);
             if (!currentPortalStudent) return;
 
-            document.getElementById('portal-stu-name').innerText = currentPortalStudent.nama;
-            document.getElementById('portal-stu-nisn').innerText = `NISN: ${currentPortalStudent.nisn}`;
+            document.getElementById('portal-search-card').classList.add('hidden');
             document.getElementById('portal-content-area').classList.remove('hidden');
 
+            const className = currentPortalStudent.classes?.nama_kelas || 'Kelas';
+            document.getElementById('portal-stu-name').innerText = currentPortalStudent.nama;
+            document.getElementById('portal-stu-nisn').innerText = `NISN: ${currentPortalStudent.nisn} | Kelas: ${className}`;
+
             await loadPortalStudentTasks();
+        }
+
+        function backToSearch() {
+            currentPortalStudent = null;
+            document.getElementById('portal-content-area').classList.add('hidden');
+            document.getElementById('portal-search-card').classList.remove('hidden');
+            document.getElementById('input-search-query').value = '';
+            document.getElementById('search-results-container').classList.add('hidden');
         }
 
         async function loadPortalStudentTasks() {
@@ -182,16 +215,18 @@
                 container.innerHTML = `<p class="text-xs text-slate-400 italic text-center py-6">Belum ada tugas atau ujian yang dipublikasikan oleh guru.</p>`;
                 document.getElementById('portal-stat-done').innerText = '0 / 0';
                 document.getElementById('portal-stat-pending').innerText = '0';
+                renderStudentChart(0, 0, 0);
                 return;
             }
 
             let doneCount = 0;
             let pendingCount = 0;
+            let rejectedCount = 0;
 
             container.innerHTML = assessments.map(a => {
                 const setting = settings.find(s => s.teacher_id == a.teacher_id && s.mapel === a.mapel);
                 const mapelName = a.mapel || 'Mata Pelajaran';
-                const sc = scores.find(s => s.assessment_id === a.id) || { status_kumpul: false, status_pengajuan: 'none', nilai: null };
+                const sc = scores.find(s => s.assessment_id === a.id) || { status_kumpul: false, status_pengajuan: 'none' };
 
                 const isApproved = sc.status_kumpul === true || sc.status_pengajuan === 'approved';
                 const isPending = sc.status_pengajuan === 'pending' && !isApproved;
@@ -199,13 +234,15 @@
 
                 if (isApproved) doneCount++;
                 if (isPending) pendingCount++;
+                if (isRejected) rejectedCount++;
 
                 let badgeHtml = '';
                 let actionBtn = '';
 
                 if (isApproved) {
-                    badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800">✅ Selesai (Diterima Guru)</span>`;
-                    actionBtn = `<span class="text-xs font-bold text-emerald-700">Tuntas (Nilai: ${sc.nilai !== null ? sc.nilai : '-'})</span>`;
+                    badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800">✅ Selesai (Disetujui Guru)</span>`;
+                    // Nilai disengaja tidak ditampilkan ke siswa, hanya status tuntas
+                    actionBtn = `<span class="text-xs font-extrabold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">Tuntas</span>`;
                 } else if (isPending) {
                     badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-800">⏳ Menunggu Verifikasi Guru</span>`;
                     actionBtn = `<button type="button" disabled class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-400 cursor-not-allowed">Pengajuan Dikirim</button>`;
@@ -219,13 +256,19 @@
 
                 return `
                     <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div class="space-y-1">
+                        <div class="space-y-1.5">
                             <div class="flex items-center gap-2 flex-wrap">
-                                <span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-100 text-blue-800">📘 ${mapelName}</span>
+                                <span class="px-2.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-100 text-blue-800">📘 ${mapelName}</span>
                                 ${badgeHtml}
                             </div>
                             <h4 class="font-extrabold text-sm sm:text-base text-slate-900">${a.judul}</h4>
-                            ${a.link_pengumpulan ? `<a href="${a.link_pengumpulan}" target="_blank" class="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:underline"><span>📂</span> Buka Link OneDrive Request Files Guru ↗</a>` : ''}
+                            ${a.link_pengumpulan ? `
+                                <div>
+                                    <a href="${a.link_pengumpulan}" target="_blank" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-sm transition">
+                                        <span>📂</span> Buka Link OneDrive Request Files Guru ↗
+                                    </a>
+                                </div>
+                            ` : ''}
                         </div>
                         <div class="shrink-0 flex items-center gap-2">
                             ${actionBtn}
@@ -236,6 +279,31 @@
 
             document.getElementById('portal-stat-done').innerText = `${doneCount} / ${assessments.length}`;
             document.getElementById('portal-stat-pending').innerText = pendingCount;
+            renderStudentChart(doneCount, pendingCount, assessments.length - (doneCount + pendingCount));
+        }
+
+        function renderStudentChart(done, pending, belum) {
+            const ctx = document.getElementById('chartStudentTaskStatus');
+            if (!ctx) return;
+            if (studentChartInstance) studentChartInstance.destroy();
+
+            studentChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Selesai', 'Pending', 'Belum'],
+                    datasets: [{
+                        data: [done, pending, belum],
+                        backgroundColor: ['#10b981', '#f59e0b', '#cbd5e1'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%',
+                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
+                }
+            });
         }
 
         function openPortalSubmitModal(assessmentId, taskTitle) {
