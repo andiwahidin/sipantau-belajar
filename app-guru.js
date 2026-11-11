@@ -1,6 +1,5 @@
 // ============================================================================
-// FILE: app-guru.js (v4.7 - Full Integration + Moderasi Pengajuan & Guru Wali)
-// BAGIAN 1 DARI 3: State, Helper Semester, Auth, Admin, Navigasi & Dashboard
+// FILE: app-guru.js (v4.9 - Full Integration + Moderasi Pengajuan & Guru Wali)
 // ============================================================================
 
 let currentUser = null;
@@ -70,16 +69,22 @@ function formatKategoriLabel(ass) {
     return 'Tugas';
 }
 
+function getInitials(name) {
+    if (!name) return 'G';
+    return name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+}
+
+// PERBAIKAN: Konten tidak tergeser di PC, tetap responsif di Mobile
 function toggleMobileSidebar(forceClose = false) {
     const sidebar = document.getElementById('main-sidebar');
     if (!sidebar) return;
 
-    if (forceClose || !sidebar.classList.contains('hidden')) {
+    if (window.innerWidth >= 1024) return;
+
+    if (forceClose) {
         sidebar.classList.add('hidden');
-        sidebar.classList.remove('flex', 'fixed', 'inset-y-0', 'left-0', 'shadow-2xl');
     } else {
-        sidebar.classList.remove('hidden');
-        sidebar.classList.add('flex', 'fixed', 'inset-y-0', 'left-0', 'shadow-2xl');
+        sidebar.classList.toggle('hidden');
     }
 }
 
@@ -148,9 +153,7 @@ function updateAuthUI() {
 
     if (elDispName) elDispName.innerText = currentUser.nama_lengkap || 'Guru';
     if (elRoleSub)  elRoleSub.innerText = currentUser.role === 'admin' ? 'Administrator Sistem' : 'Guru & Pembimbing';
-    if (elAvatar && typeof getInitials === 'function') {
-        elAvatar.innerText = getInitials(currentUser.nama_lengkap);
-    }
+    if (elAvatar)   elAvatar.innerText = getInitials(currentUser.nama_lengkap);
 
     const navSidebar = document.getElementById('guru-tabs-nav');
     if (navSidebar) navSidebar.classList.remove('hidden');
@@ -359,7 +362,7 @@ async function addTeacher(e) {
 }
 
 async function resetTeacherPassword(id, username) {
-    if (!confirm(`Reset password guru ini kembali menjadi sama dengan username (${username})?`)) return;
+    if (!confirm(`Reset password guru ini kembali sama dengan username (${username})?`)) return;
     await db.from('app_users').update({ password: username }).eq('id', id);
     showToast(`Password direset menjadi: ${username}`);
 }
@@ -400,7 +403,7 @@ function switchGuruTab(tab) {
         if (tab === 'absen') loadAttendanceTab();
         if (tab === 'nilai') loadAssessmentsDropdown();
         if (tab === 'rekap') calculateAndRenderRekap();
-        if (tab === 'wali') renderGuruWaliTable();
+        if (tab === 'wali') loadGuruWaliDashboard();
     } catch (err) {
         console.error('Error saat berpindah tab:', err);
     }
@@ -497,7 +500,6 @@ async function populateMapelDropdownForClass(classId, selectedSettingId = null) 
 
     renderAmpuanCards();
     updateWorkspaceBanner();
-
     await fetchStudentsByClass(classId);
     refreshActiveGuruTab();
 }
@@ -751,7 +753,7 @@ async function loadDashboardMetrics() {
                 <td class="p-3 font-semibold text-slate-900">
                     <div class="flex items-center gap-2.5">
                         <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center shrink-0">
-                            ${typeof getInitials === 'function' ? getInitials(stu.nama) : 'S'}
+                            ${getInitials(stu.nama)}
                         </div>
                         <div>
                             <span class="block text-slate-900 font-bold">${stu.nama}</span>
@@ -904,10 +906,8 @@ function renderDashboardCharts(pctHadir, pctSI, pctAlpa, logsData, assList, scor
         });
     }
 }
-// ============================================================================
-// BAGIAN 2 DARI 3: Kelola Siswa, Bobot/KKM, Kehadiran Semester & Tugas/Kelompok
-// ============================================================================
 
+// 2. KELOLA SISWA & ABSENSI
 async function checkSharedClassPermission(classId) {
     isCurrentClassLockedForGuru = false;
     otherTeachersInCurrentClass = [];
@@ -1015,7 +1015,7 @@ function renderStudentsTableRows(listToRender) {
                 <td class="p-3 font-semibold text-slate-900">
                     <div class="flex items-center gap-2.5">
                         <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center shrink-0">
-                            ${typeof getInitials === 'function' ? getInitials(s.nama) : 'S'}
+                            ${getInitials(s.nama)}
                         </div>
                         <span>${s.nama}</span>
                     </div>
@@ -1772,10 +1772,8 @@ async function importAbsenExcel() {
     };
     reader.readAsArrayBuffer(fileInput.files[0]);
 }
-// ============================================================================
-// BAGIAN 3 DARI 3: Tugas, Moderasi Pengajuan, Rekap Nilai Akhir & Guru Wali (PA)
-// ============================================================================
 
+// 3. TUGAS, KELOMPOK & MODERASI
 async function loadAssessmentsDropdown() {
     const classId = document.getElementById('guru-active-class')?.value;
     const sel = document.getElementById('active-assessment');
@@ -1913,10 +1911,6 @@ async function deleteCurrentAssessment() {
     await loadAssessmentsDropdown();
 }
 
-// ============================================================================
-// MANAJEMEN KELOMPOK SISWA (PRESETS & MODAL)
-// ============================================================================
-
 async function loadGroupPresetsForCurrentClass() {
     const classId = document.getElementById('guru-active-class')?.value;
     if (!classId) return;
@@ -1988,33 +1982,6 @@ function onStudentGroupNameInput(inputEl) {
             if (sourceNilai !== undefined) r.querySelector('.sc-nilai').value = sourceNilai;
             if (sourceLink !== undefined) r.querySelector('.sc-link').value = sourceLink;
         }
-    });
-}
-
-function syncAllGroupsInCurrentTable() {
-    const rows = Array.from(document.querySelectorAll('#scores-tbody tr'));
-    const groupMap = {};
-
-    rows.forEach(r => {
-        const groupVal = (r.querySelector('.sc-group')?.value || '').trim();
-        if (!groupVal) return;
-        const isChecked = r.querySelector('.sc-status')?.checked;
-        const valNilai = r.querySelector('.sc-nilai')?.value;
-        const valLink = r.querySelector('.sc-link')?.value;
-
-        if (isChecked || valNilai || valLink) {
-            groupMap[groupVal.toLowerCase()] = { checked: isChecked, nilai: valNilai, link: valLink };
-        }
-    });
-
-    rows.forEach(r => {
-        const groupVal = (r.querySelector('.sc-group')?.value || '').trim().toLowerCase();
-        if (!groupVal || !groupMap[groupVal]) return;
-        const data = groupMap[groupVal];
-
-        if (data.checked !== undefined) r.querySelector('.sc-status').checked = data.checked;
-        if (data.nilai) r.querySelector('.sc-nilai').value = data.nilai;
-        if (data.link) r.querySelector('.sc-link').value = data.link;
     });
 }
 
@@ -2223,10 +2190,6 @@ async function saveGroupPresetFromModal(andApply = false) {
         await loadAssessmentScores();
     }
 }
-
-// ============================================================================
-// MODERASI PENGAJUAN & SIMPAN NILAI TUGAS
-// ============================================================================
 
 async function loadAssessmentScores() {
     const assId = document.getElementById('active-assessment')?.value;
@@ -2457,10 +2420,7 @@ async function saveAssessmentScores() {
     await loadAssessmentScores();
 }
 
-// ============================================================================
-// GRAFIK & REKAPITULASI NILAI AKHIR KELAS
-// ============================================================================
-
+// 4. REKAPITULASI & LAPORAN
 async function calculateAndRenderRekap() {
     const classId = document.getElementById('guru-active-class')?.value;
     const tbody = document.getElementById('rekap-tbody');
@@ -2716,10 +2676,7 @@ async function printSingleStudentCardPDF(studentId) {
     doc.save(`Rapor_${stu.nama.replace(/\s+/g, '_')}_${currentSettings.mapel}.pdf`);
 }
 
-// ============================================================================
-// DASHBOARD GURU WALI & BIMBINGAN AKADEMIK (PA 360°)
-// ============================================================================
-
+// 5. GURU WALI & BIMBINGAN AKADEMIK (PA 360°)
 let waliBinaanList = [];
 let activeWaliStudent360 = null;
 
@@ -2857,7 +2814,6 @@ async function renderGuruWaliRows() {
         else if (ewsStatus === 'waspada') ewsBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800">🟡 Waspada</span>`;
         else ewsBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800">🟢 Aman</span>`;
 
-        const safeNama = stu.nama.replace(/'/g, "\\'");
         tbody.innerHTML += `
             <tr class="hover:bg-slate-50">
                 <td class="p-3 text-center text-slate-500">${displayedCount}</td>
@@ -2963,10 +2919,18 @@ async function renderBinaanPickerList() {
 }
 
 async function toggleWaliBinaanStudent(studentId, checked) {
+    if (!currentUser) return;
+
     if (checked) {
-        await db.from('wali_binaan').insert([{ teacher_id: currentUser.id, student_id: studentId }]);
+        await db.from('wali_binaan').insert([{ 
+            teacher_id: currentUser.id, 
+            student_id: Number(studentId) 
+        }]);
     } else {
-        await db.from('wali_binaan').delete().eq('teacher_id', currentUser.id).eq('student_id', studentId);
+        await db.from('wali_binaan')
+            .delete()
+            .eq('teacher_id', currentUser.id)
+            .eq('student_id', Number(studentId));
     }
 
     const { data } = await db.from('wali_binaan').select('student_id').eq('teacher_id', currentUser.id);
@@ -2976,7 +2940,7 @@ async function toggleWaliBinaanStudent(studentId, checked) {
 
 async function saveWaliBinaanSelection() {
     closeManageBinaanModal();
-    showToast('Daftar siswa binaan berhasil disimpan!');
+    showToast('✅ Daftar siswa binaan berhasil diperbarui!');
     await loadGuruWaliDashboard();
 }
 
@@ -2989,7 +2953,7 @@ async function openWali360Modal(studentId) {
     document.getElementById('w360-kelas').innerText = `Kelas ${stu.classes?.nama_kelas || '-'}`;
     document.getElementById('w360-nisn').innerText = `NISN: ${stu.nisn}`;
     if (document.getElementById('w360-avatar')) {
-        document.getElementById('w360-avatar').innerText = typeof getInitials === 'function' ? getInitials(stu.nama) : 'S';
+        document.getElementById('w360-avatar').innerText = getInitials(stu.nama);
     }
 
     const [logsRes, targetRes, settingsRes, assRes, scoresRes, attRes, counselingRes] = await Promise.all([
@@ -3207,4 +3171,13 @@ async function exportWaliBinaanExcel() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Siswa_Binaan");
     XLSX.writeFile(wb, "Daftar_Siswa_Binaan_PA.xlsx");
+}
+
+function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    if (!t) return;
+    t.innerText = msg;
+    t.className = `fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg text-white transition-all duration-300 ${type === 'error' ? 'bg-rose-600' : 'bg-slate-900'}`;
+    t.classList.remove('hidden');
+    setTimeout(() => t.classList.add('hidden'), 3500);
 }
