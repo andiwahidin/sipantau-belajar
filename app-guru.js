@@ -1,5 +1,5 @@
 // ============================================================================
-// FILE: app-guru.js (v4.7 - Full Integration + Guru Wali 360 PA + Mobile Sidebar)
+// FILE: app-guru.js (v4.7 - Full Integration + Moderasi Pengajuan & Guru Wali)
 // BAGIAN 1 DARI 3: State, Helper Semester, Auth, Admin, Navigasi & Dashboard
 // ============================================================================
 
@@ -28,7 +28,6 @@ function getLocalTodayString() {
     return `${year}-${month}-${day}`;
 }
 
-// Helper: Menentukan rentang tanggal semester aktif (Ganjil: Juli-Des, Genap: Jan-Jun)
 function getActiveSemesterDateRange() {
     const d = new Date();
     const currentMonth = d.getMonth() + 1;
@@ -50,7 +49,6 @@ function getActiveSemesterDateRange() {
     }
 }
 
-// Helper: Normalisasi Kategori Database (tugas, ujian_bab, ujian_semester)
 function isKategoriTugas(kat) {
     return kat === 'tugas' || kat === 'tugas_individu' || kat === 'tugas_kelompok';
 }
@@ -72,7 +70,6 @@ function formatKategoriLabel(ass) {
     return 'Tugas';
 }
 
-// Toggle Sidebar Vertikal di Layar HP (Mobile)
 function toggleMobileSidebar(forceClose = false) {
     const sidebar = document.getElementById('main-sidebar');
     if (!sidebar) return;
@@ -113,9 +110,7 @@ function switchView(view) {
     if (target) target.classList.remove('hidden');
 }
 
-// ============================================================================
-// 1. AUTENTIKASI, UBAH PASSWORD & PANEL ADMIN
-// ============================================================================
+// 1. AUTH, ADMIN & NAVIGASI
 async function handleLogin(e) {
     e.preventDefault();
     const u = document.getElementById('login-user').value.trim();
@@ -376,9 +371,6 @@ async function deleteUser(id) {
     loadAdminUsers();
 }
 
-// ============================================================================
-// 2. NAVIGASI MENU & MANAJEMEN KELAS/MAPEL AMPUAN
-// ============================================================================
 function switchGuruTab(tab) {
     const allTabs = ['dashboard', 'kelas', 'absen', 'nilai', 'rekap', 'wali', 'bobot'];
 
@@ -639,17 +631,12 @@ async function deleteCurrentAmpuan() {
 }
 
 function copyStudentPortalLink() {
-    const classId = document.getElementById('guru-active-class').value;
-    const mapel = currentSettings ? encodeURIComponent(currentSettings.mapel) : '';
     const baseUrl = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
-    const url = `${baseUrl}siswa.html?kelas=${classId}&guru=${currentUser.id}&mapel=${mapel}`;
+    const url = `${baseUrl}siswa.html`;
     navigator.clipboard.writeText(url);
-    showToast('Link Halaman Siswa berhasil disalin!');
+    showToast('Link Portal Siswa berhasil disalin!');
 }
 
-// ============================================================================
-// 3. MENU 1: DASHBOARD PEMANTAUAN & CHART (SESUAI KATEGORI DATABASE)
-// ============================================================================
 async function loadDashboardMetrics() {
     const classId = document.getElementById('guru-active-class')?.value;
     const clsObj = classesList.find(c => c.id == classId);
@@ -727,7 +714,7 @@ async function loadDashboardMetrics() {
         let stuTasksDone = 0;
         safeAssList.forEach(a => {
             const sc = scoresList.find(s => s.assessment_id === a.id && s.student_id === stu.id);
-            if (sc && sc.status_kumpul) stuTasksDone++;
+            if (sc && (sc.status_kumpul || sc.status_pengajuan === 'approved')) stuTasksDone++;
         });
         totalSubmitted += stuTasksDone;
 
@@ -887,7 +874,7 @@ function renderDashboardCharts(pctHadir, pctSI, pctAlpa, logsData, assList, scor
             const totalMax = filteredAss.length * studentsList.length;
             let totalDone = 0;
             filteredAss.forEach(a => {
-                totalDone += scoresList.filter(s => s.assessment_id === a.id && s.status_kumpul).length;
+                totalDone += scoresList.filter(s => s.assessment_id === a.id && (s.status_kumpul || s.status_pengajuan === 'approved')).length;
             });
             return totalMax > 0 ? Math.round((totalDone / totalMax) * 100) : 0;
         };
@@ -921,9 +908,6 @@ function renderDashboardCharts(pctHadir, pctSI, pctAlpa, logsData, assList, scor
 // BAGIAN 2 DARI 3: Kelola Siswa, Bobot/KKM, Kehadiran Semester & Tugas/Kelompok
 // ============================================================================
 
-// ============================================================================
-// 4. TAB KELOLA KELAS & SISWA
-// ============================================================================
 async function checkSharedClassPermission(classId) {
     isCurrentClassLockedForGuru = false;
     otherTeachersInCurrentClass = [];
@@ -1315,9 +1299,6 @@ async function importStudentsExcel() {
     reader.readAsArrayBuffer(fileInput.files[0]);
 }
 
-// ============================================================================
-// 5. TAB PENGATURAN BOBOT & KKM PER MAPEL
-// ============================================================================
 function loadSettingsForm() {
     if (!currentSettings) return;
     const setVal = (id, val) => {
@@ -1389,9 +1370,6 @@ async function saveSettings(e) {
     await fetchClassesAndAmpuan(currentSettings.id);
 }
 
-// ============================================================================
-// 6. TAB KEHADIRAN HARIAN & REKAP PERIODE SEMESTER AKTIF
-// ============================================================================
 function calcAttendanceScore(h, s, i, a) {
     const total = h + s + i + a;
     if (total === 0 || !currentSettings) return 100;
@@ -1794,138 +1772,14 @@ async function importAbsenExcel() {
     };
     reader.readAsArrayBuffer(fileInput.files[0]);
 }
-
 // ============================================================================
-// 7. TAB TUGAS, SISTEM INDIVIDU/KELOMPOK, VISIBILITAS & PRESET KELOMPOK
+// BAGIAN 3 DARI 3: Tugas, Moderasi Pengajuan, Rekap Nilai Akhir & Guru Wali (PA)
 // ============================================================================
-function getGroupStorageKey() {
-    const classId = document.getElementById('guru-active-class')?.value || 'none';
-    const mapel = currentSettings?.mapel || 'umum';
-    const teacherId = currentUser?.id || 'anon';
-    return `sipantau_groups_${teacherId}_${classId}_${mapel}`;
-}
 
-async function loadClassGroupPresets() {
+async function loadAssessmentsDropdown() {
     const classId = document.getElementById('guru-active-class')?.value;
-    if (!classId || !currentUser) return {};
-
-    let presets = {};
-
-    try {
-        const raw = localStorage.getItem(getGroupStorageKey());
-        if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object') presets = { ...parsed };
-        }
-    } catch (e) {}
-
-    if (currentSettings && currentSettings.kelompok_template && typeof currentSettings.kelompok_template === 'object') {
-        presets = { ...presets, ...currentSettings.kelompok_template };
-    }
-
-    try {
-        const groupAssessments = (currentAssessments || []).filter(a => a.tipe_kerja === 'kelompok');
-        if (groupAssessments.length > 0) {
-            const assIds = groupAssessments.map(a => a.id);
-            const { data: pastScores } = await db.from('scores')
-                .select('assessment_id, student_id, nama_kelompok')
-                .in('assessment_id', assIds);
-
-            if (pastScores && pastScores.length > 0) {
-                groupAssessments.forEach(ass => {
-                    const rows = pastScores.filter(s => s.assessment_id === ass.id && s.nama_kelompok && s.nama_kelompok.trim() !== '');
-                    if (rows.length > 0) {
-                        const mapObj = {};
-                        rows.forEach(r => { mapObj[r.student_id] = r.nama_kelompok.trim(); });
-                        if (!presets['Kelompok Default'] || Object.keys(presets['Kelompok Default']).length === 0) {
-                            presets['Kelompok Default'] = { ...mapObj };
-                        }
-                        presets[`[Riwayat] ${ass.judul}`] = mapObj;
-                    }
-                });
-            }
-        }
-    } catch (e) {}
-
-    if (Object.keys(presets).length === 0) {
-        presets['Kelompok Default'] = {};
-    }
-
-    classGroupPresets = presets;
-    if (!classGroupPresets[activePresetKey]) {
-        activePresetKey = Object.keys(classGroupPresets)[0] || 'Kelompok Default';
-    }
-
-    refreshGroupPresetDropdown();
-    updateGroupAutocompleteDatalist();
-    return classGroupPresets;
-}
-
-async function persistClassGroupPresets() {
-    const cleanPresets = {};
-    Object.keys(classGroupPresets).forEach(k => {
-        if (!k.startsWith('[Riwayat] ')) {
-            cleanPresets[k] = classGroupPresets[k];
-        }
-    });
-
-    try {
-        localStorage.setItem(getGroupStorageKey(), JSON.stringify(cleanPresets));
-    } catch (e) {}
-
-    if (currentSettings && currentSettings.id) {
-        try {
-            const { error } = await db.from('teacher_settings')
-                .update({ kelompok_template: cleanPresets })
-                .eq('id', currentSettings.id);
-            if (!error) {
-                currentSettings.kelompok_template = cleanPresets;
-            }
-        } catch (e) {}
-    }
-
-    refreshGroupPresetDropdown();
-    updateGroupAutocompleteDatalist();
-}
-
-function refreshGroupPresetDropdown() {
-    const sel = document.getElementById('select-group-preset');
-    if (!sel) return;
-
-    sel.innerHTML = '';
-    Object.keys(classGroupPresets).forEach(k => {
-        const countAssigned = Object.values(classGroupPresets[k] || {}).filter(v => v && v.trim() !== '').length;
-        const opt = document.createElement('option');
-        opt.value = k;
-        opt.textContent = `${k} (${countAssigned} siswa)`;
-        if (k === activePresetKey) opt.selected = true;
-        sel.appendChild(opt);
-    });
-}
-
-function updateGroupAutocompleteDatalist(extraScores = []) {
-    const dl = document.getElementById('datalist-kelompok-options');
-    if (!dl) return;
-
-    const names = new Set(['Kelompok 1', 'Kelompok 2', 'Kelompok 3', 'Kelompok 4', 'Kelompok 5', 'Kelompok 6']);
-    Object.values(classGroupPresets).forEach(mapObj => {
-        Object.values(mapObj || {}).forEach(g => {
-            if (g && g.trim()) names.add(g.trim());
-        });
-    });
-    (extraScores || []).forEach(s => {
-        if (s.nama_kelompok && s.nama_kelompok.trim()) names.add(s.nama_kelompok.trim());
-    });
-
-    dl.innerHTML = Array.from(names)
-        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-        .map(n => `<option value="${n.replace(/"/g, '&quot;')}">`)
-        .join('');
-}
-
-async function loadAssessmentsDropdown(keepSelectedId = null) {
-    const classId = document.getElementById('guru-active-class')?.value;
-    if (!classId || !currentSettings) return;
+    const sel = document.getElementById('active-assessment');
+    if (!classId || !currentSettings || !sel) return;
 
     const { data } = await db.from('assessments')
         .select('*')
@@ -1935,110 +1789,101 @@ async function loadAssessmentsDropdown(keepSelectedId = null) {
         .order('id');
 
     currentAssessments = data || [];
-    const sel = document.getElementById('active-assessment');
-    if (!sel) return;
-    const prevSelected = keepSelectedId || sel.value;
-
-    sel.innerHTML = currentAssessments.length ? '' : '<option value="">-- Belum Ada Penilaian di Mapel Ini --</option>';
+    sel.innerHTML = currentAssessments.length ? '' : '<option value="">-- Belum Ada Penilaian --</option>';
     currentAssessments.forEach(a => {
-        const labelKat = formatKategoriLabel(a);
-        const labelTipe = a.tipe_kerja === 'kelompok' ? '👥 Kelompok' : '👤 Individu';
-        const visIcon = (a.tampil_publik !== false) ? '🌐 Publik' : '🔒 Sembunyi';
-        sel.innerHTML += `<option value="${a.id}">[${visIcon} | ${labelKat} • ${labelTipe}] ${a.judul}</option>`;
+        sel.innerHTML += `<option value="${a.id}">[${formatKategoriLabel(a)}] ${a.judul}</option>`;
     });
 
-    await loadClassGroupPresets();
+    await loadAssessmentScores();
+    await loadGroupPresetsForCurrentClass();
+}
 
-    if (prevSelected && currentAssessments.some(a => a.id == prevSelected)) {
-        sel.value = prevSelected;
+function renderAssLinkEditor(assObj) {
+    const box = document.getElementById('ass-link-editor');
+    if (!box) return;
+
+    if (!assObj) {
+        box.classList.add('hidden');
+        return;
     }
 
-    await loadAssessmentScores();
+    box.classList.remove('hidden');
+    const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+    setVal('edit-ass-judul', assObj.judul);
+    setVal('edit-ass-kategori', assObj.kategori);
+    setVal('edit-ass-tipe', assObj.tipe_kerja || 'individu');
+    setVal('edit-ass-link', assObj.link_pengumpulan);
+
+    const btnPub = document.getElementById('btn-toggle-public');
+    if (btnPub) {
+        const isPub = assObj.tampil_publik !== false;
+        btnPub.innerText = isPub ? '🌐 Ditampilkan ke Siswa' : '🔒 Disembunyikan';
+        btnPub.className = isPub 
+            ? 'px-3 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300' 
+            : 'px-3 py-1 rounded-lg text-xs font-bold bg-slate-200 text-slate-700 border border-slate-300';
+    }
+
+    const testLink = document.getElementById('btn-test-ass-link');
+    if (testLink) {
+        if (assObj.link_pengumpulan) {
+            testLink.href = assObj.link_pengumpulan;
+            testLink.classList.remove('hidden');
+        } else {
+            testLink.classList.add('hidden');
+        }
+    }
 }
 
 async function createAssessment(e) {
     e.preventDefault();
     const class_id = document.getElementById('guru-active-class').value;
-    if (!class_id || !currentSettings) return showToast('Pilih kelas & mapel terlebih dahulu!', 'error');
+    if (!class_id || !currentSettings) return showToast('Pilih kelas & mapel aktif!', 'error');
+
     const judul = document.getElementById('ass-judul').value.trim();
-    const kategori = document.getElementById('ass-kategori').value; // 'tugas', 'ujian_bab', 'ujian_semester'
+    const kategori = document.getElementById('ass-kategori').value;
     const tipe_kerja = document.getElementById('ass-tipe').value;
     const tampil_publik = document.getElementById('ass-publik').value === 'true';
     const link_pengumpulan = document.getElementById('ass-link').value.trim();
 
-    let { data, error } = await db.from('assessments')
-        .insert([{
-            teacher_id: currentUser.id,
-            class_id: Number(class_id),
-            mapel: currentSettings.mapel,
-            judul,
-            kategori,
-            tipe_kerja,
-            tampil_publik,
-            link_pengumpulan
-        }])
-        .select().single();
-
-    if (error && String(error.message).includes('tampil_publik')) {
-        const retry = await db.from('assessments')
-            .insert([{
-                teacher_id: currentUser.id,
-                class_id: Number(class_id),
-                mapel: currentSettings.mapel,
-                judul,
-                kategori,
-                tipe_kerja,
-                link_pengumpulan
-            }])
-            .select().single();
-        data = retry.data;
-        error = retry.error;
-    }
+    const { data, error } = await db.from('assessments').insert([{
+        teacher_id: currentUser.id,
+        class_id: Number(class_id),
+        mapel: currentSettings.mapel,
+        judul,
+        kategori,
+        tipe_kerja,
+        tampil_publik,
+        link_pengumpulan
+    }]).select().single();
 
     if (error) return showToast('Gagal membuat penilaian: ' + error.message, 'error');
 
     document.getElementById('ass-judul').value = '';
     document.getElementById('ass-link').value = '';
     showToast(`Penilaian "${judul}" berhasil dibuat!`);
-    await loadAssessmentsDropdown(data.id);
+    await loadAssessmentsDropdown();
+    if (data) document.getElementById('active-assessment').value = data.id;
+    await loadAssessmentScores();
 }
 
 async function updateAssessmentLink() {
     const assId = document.getElementById('active-assessment')?.value;
     if (!assId) return;
 
-    const assObj = currentAssessments.find(a => a.id == assId);
-    if (!assObj) return;
-
-    const judulEl = document.getElementById('edit-ass-judul');
-    const katEl = document.getElementById('edit-ass-kategori');
-    const tipeEl = document.getElementById('edit-ass-tipe');
-    const linkEl = document.getElementById('edit-ass-link');
-
-    const judul = judulEl ? judulEl.value.trim() : assObj.judul;
-    const kategori = katEl ? katEl.value : assObj.kategori;
-    const tipe_kerja = tipeEl ? tipeEl.value : assObj.tipe_kerja;
-    const link_pengumpulan = linkEl ? linkEl.value.trim() : (assObj.link_pengumpulan || '');
-
-    if (!judul) {
-        return showToast('Nama / Judul penilaian tidak boleh kosong!', 'error');
-    }
+    const judul = document.getElementById('edit-ass-judul').value.trim();
+    const kategori = document.getElementById('edit-ass-kategori').value;
+    const tipe_kerja = document.getElementById('edit-ass-tipe').value;
+    const link_pengumpulan = document.getElementById('edit-ass-link').value.trim();
 
     const { error } = await db.from('assessments')
         .update({ judul, kategori, tipe_kerja, link_pengumpulan })
         .eq('id', assId);
 
-    if (error) {
-        return showToast('Gagal memperbarui penilaian: ' + error.message, 'error');
-    }
-
-    assObj.judul = judul;
-    assObj.kategori = kategori;
-    assObj.tipe_kerja = tipe_kerja;
-    assObj.link_pengumpulan = link_pengumpulan;
-
-    showToast('Detail penilaian (Judul, Kategori, Individu/Kelompok & Link) berhasil diperbarui!');
-    await loadAssessmentsDropdown(assId);
+    if (error) return showToast('Gagal memperbarui penilaian: ' + error.message, 'error');
+    showToast('Perubahan penilaian berhasil disimpan!');
+    await loadAssessmentsDropdown();
+    document.getElementById('active-assessment').value = assId;
+    await loadAssessmentScores();
 }
 
 async function toggleAssessmentPublicVisibility() {
@@ -2047,80 +1892,341 @@ async function toggleAssessmentPublicVisibility() {
     const assObj = currentAssessments.find(a => a.id == assId);
     if (!assObj) return;
 
-    const currentPub = assObj.tampil_publik !== false;
-    const newPub = !currentPub;
+    const nextVal = assObj.tampil_publik === false ? true : false;
+    const { error } = await db.from('assessments').update({ tampil_publik: nextVal }).eq('id', assId);
+    if (error) return showToast('Gagal mengubah visibilitas: ' + error.message, 'error');
 
-    const { error } = await db.from('assessments')
-        .update({ tampil_publik: newPub })
-        .eq('id', assId);
-
-    if (error) {
-        return showToast('Gagal mengubah visibilitas!', 'error');
-    }
-
-    assObj.tampil_publik = newPub;
-    showToast(newPub ? '🌐 Tugas DITAMPILKAN di halaman publik siswa.' : '🔒 Tugas DISEMBUNYIKAN dari halaman publik siswa.');
-    await loadAssessmentsDropdown(assId);
-}
-
-function renderAssLinkEditor(assObj) {
-    const box = document.getElementById('ass-link-editor');
-    if (!box) return;
-    const judulInput = document.getElementById('edit-ass-judul');
-    const katSelect = document.getElementById('edit-ass-kategori');
-    const tipeSelect = document.getElementById('edit-ass-tipe');
-    const input = document.getElementById('edit-ass-link');
-    const btnTest = document.getElementById('btn-test-ass-link');
-    const btnToggle = document.getElementById('btn-toggle-public');
-
-    if (!assObj) {
-        box.classList.add('hidden');
-        return;
-    }
-    box.classList.remove('hidden');
-
-    if (judulInput) judulInput.value = assObj.judul || '';
-    if (katSelect) {
-        let valKat = assObj.kategori || 'tugas';
-        if (valKat === 'tugas_individu' || valKat === 'tugas_kelompok') valKat = 'tugas';
-        if (valKat === 'ujian_sumatif') valKat = 'ujian_semester';
-        katSelect.value = valKat;
-    }
-    if (tipeSelect) {
-        let valTipe = assObj.tipe_kerja || 'individu';
-        if (assObj.kategori === 'tugas_kelompok') valTipe = 'kelompok';
-        tipeSelect.value = valTipe;
-    }
-    if (input) input.value = assObj.link_pengumpulan || '';
-
-    if (btnTest) {
-        if (assObj.link_pengumpulan) {
-            btnTest.href = assObj.link_pengumpulan;
-            btnTest.classList.remove('hidden');
-        } else {
-            btnTest.classList.add('hidden');
-        }
-    }
-
-    const isPublic = assObj.tampil_publik !== false;
-    if (btnToggle) {
-        if (isPublic) {
-            btnToggle.className = 'px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm';
-            btnToggle.innerHTML = '🌐 Ditampilkan (Klik Sembunyi)';
-        } else {
-            btnToggle.className = 'px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-slate-700 text-white hover:bg-slate-800 transition shadow-sm';
-            btnToggle.innerHTML = '🔒 Disembunyikan (Klik Tampilkan)';
-        }
-    }
+    showToast(nextVal ? 'Tugas sekarang ditampilkan ke portal siswa.' : 'Tugas disembunyikan dari portal siswa.');
+    await loadAssessmentsDropdown();
+    document.getElementById('active-assessment').value = assId;
+    await loadAssessmentScores();
 }
 
 async function deleteCurrentAssessment() {
     const assId = document.getElementById('active-assessment')?.value;
-    if (!assId || !confirm('Hapus penilaian beserta seluruh nilainya?')) return;
+    if (!assId) return;
+    const assObj = currentAssessments.find(a => a.id == assId);
+    if (!confirm(`Hapus penilaian "${assObj?.judul || ''}" beserta seluruh nilai siswa di dalamnya?`)) return;
+
     await db.from('assessments').delete().eq('id', assId);
     showToast('Penilaian dihapus.');
     await loadAssessmentsDropdown();
 }
+
+// ============================================================================
+// MANAJEMEN KELOMPOK SISWA (PRESETS & MODAL)
+// ============================================================================
+
+async function loadGroupPresetsForCurrentClass() {
+    const classId = document.getElementById('guru-active-class')?.value;
+    if (!classId) return;
+
+    const { data } = await db.from('group_presets')
+        .select('*')
+        .eq('teacher_id', currentUser.id)
+        .eq('class_id', classId)
+        .order('id');
+
+    classGroupPresets = {};
+    (data || []).forEach(p => {
+        try {
+            classGroupPresets[p.preset_name] = JSON.parse(p.mapping_json || '{}');
+        } catch (e) {}
+    });
+
+    const keys = Object.keys(classGroupPresets);
+    if (keys.length === 0) {
+        classGroupPresets['Kelompok Default'] = {};
+        activePresetKey = 'Kelompok Default';
+    } else {
+        activePresetKey = keys[0];
+    }
+
+    const sel = document.getElementById('select-group-preset');
+    if (sel) {
+        sel.innerHTML = '';
+        Object.keys(classGroupPresets).forEach(k => {
+            sel.innerHTML += `<option value="${k}" ${k === activePresetKey ? 'selected' : ''}>${k}</option>`;
+        });
+    }
+}
+
+function updateGroupAutocompleteDatalist(scoresData = []) {
+    const datalist = document.getElementById('datalist-kelompok-options');
+    if (!datalist) return;
+
+    const groups = new Set();
+    Object.values(classGroupPresets[activePresetKey] || {}).forEach(g => { if (g) groups.add(g); });
+    scoresData.forEach(s => { if (s.nama_kelompok) groups.add(s.nama_kelompok); });
+
+    datalist.innerHTML = '';
+    groups.forEach(g => {
+        datalist.innerHTML += `<option value="${g}">`;
+    });
+}
+
+function onStudentGroupNameInput(inputEl) {
+    const row = inputEl.closest('tr');
+    if (!row) return;
+    const groupVal = inputEl.value.trim();
+    const assId = document.getElementById('active-assessment')?.value;
+    const assObj = currentAssessments.find(a => a.id == assId);
+    const isGroup = assObj && (assObj.tipe_kerja === 'kelompok' || assObj.kategori === 'tugas_kelompok');
+    if (!isGroup || !groupVal) return;
+
+    const groupInputs = document.querySelectorAll('#scores-tbody tr');
+    groupInputs.forEach(r => {
+        const otherGroupInput = r.querySelector('.sc-group');
+        const otherStuId = Number(r.getAttribute('data-stuid'));
+        const thisStuId = Number(row.getAttribute('data-stuid'));
+        if (otherGroupInput && otherStuId !== thisStuId && otherGroupInput.value.trim().toLowerCase() === groupVal.toLowerCase()) {
+            const sourceStatus = row.querySelector('.sc-status')?.checked;
+            const sourceNilai = row.querySelector('.sc-nilai')?.value;
+            const sourceLink = row.querySelector('.sc-link')?.value;
+
+            if (sourceStatus !== undefined) r.querySelector('.sc-status').checked = sourceStatus;
+            if (sourceNilai !== undefined) r.querySelector('.sc-nilai').value = sourceNilai;
+            if (sourceLink !== undefined) r.querySelector('.sc-link').value = sourceLink;
+        }
+    });
+}
+
+function syncAllGroupsInCurrentTable() {
+    const rows = Array.from(document.querySelectorAll('#scores-tbody tr'));
+    const groupMap = {};
+
+    rows.forEach(r => {
+        const groupVal = (r.querySelector('.sc-group')?.value || '').trim();
+        if (!groupVal) return;
+        const isChecked = r.querySelector('.sc-status')?.checked;
+        const valNilai = r.querySelector('.sc-nilai')?.value;
+        const valLink = r.querySelector('.sc-link')?.value;
+
+        if (isChecked || valNilai || valLink) {
+            groupMap[groupVal.toLowerCase()] = { checked: isChecked, nilai: valNilai, link: valLink };
+        }
+    });
+
+    rows.forEach(r => {
+        const groupVal = (r.querySelector('.sc-group')?.value || '').trim().toLowerCase();
+        if (!groupVal || !groupMap[groupVal]) return;
+        const data = groupMap[groupVal];
+
+        if (data.checked !== undefined) r.querySelector('.sc-status').checked = data.checked;
+        if (data.nilai) r.querySelector('.sc-nilai').value = data.nilai;
+        if (data.link) r.querySelector('.sc-link').value = data.link;
+    });
+}
+
+function applySelectedGroupPreset() {
+    const sel = document.getElementById('select-group-preset');
+    if (!sel) return;
+    activePresetKey = sel.value;
+    const map = classGroupPresets[activePresetKey] || {};
+
+    document.querySelectorAll('#scores-tbody tr').forEach(r => {
+        const stuId = Number(r.getAttribute('data-stuid'));
+        const groupInput = r.querySelector('.sc-group');
+        if (groupInput && map[stuId]) {
+            groupInput.value = map[stuId];
+        }
+    });
+    showToast(`Daftar kelompok "${activePresetKey}" diterapkan!`);
+}
+
+async function saveCurrentTableAsGroupPreset() {
+    const classId = document.getElementById('guru-active-class')?.value;
+    if (!classId) return;
+
+    const presetName = prompt('Simpan tabel kelompok ini dengan nama:', `Kelompok Bab ${Date.now().toString().slice(-4)}`);
+    if (!presetName) return;
+
+    const mapping = {};
+    document.querySelectorAll('#scores-tbody tr').forEach(r => {
+        const stuId = Number(r.getAttribute('data-stuid'));
+        const g = (r.querySelector('.sc-group')?.value || '').trim();
+        if (g) mapping[stuId] = g;
+    });
+
+    classGroupPresets[presetName] = mapping;
+    activePresetKey = presetName;
+
+    const jsonStr = JSON.stringify(mapping);
+    await db.from('group_presets').insert([{
+        teacher_id: currentUser.id,
+        class_id: Number(classId),
+        preset_name: presetName,
+        mapping_json: jsonStr
+    }]);
+
+    await loadGroupPresetsForCurrentClass();
+    showToast(`Daftar kelompok "${presetName}" berhasil disimpan permanen!`);
+}
+
+function openGroupManagerModal() {
+    const sel = document.getElementById('gm-preset-select');
+    if (!sel) return;
+    sel.innerHTML = '';
+    Object.keys(classGroupPresets).forEach(k => {
+        sel.innerHTML += `<option value="${k}" ${k === activePresetKey ? 'selected' : ''}>${k}</option>`;
+    });
+
+    document.getElementById('gm-preset-name').value = activePresetKey;
+    loadPresetIntoModal();
+    document.getElementById('modal-group-manager').classList.remove('hidden');
+}
+
+function closeGroupManagerModal() {
+    document.getElementById('modal-group-manager').classList.add('hidden');
+}
+
+function loadPresetIntoModal() {
+    const sel = document.getElementById('gm-preset-select');
+    if (!sel) return;
+    activePresetKey = sel.value;
+    document.getElementById('gm-preset-name').value = activePresetKey;
+    const map = classGroupPresets[activePresetKey] || {};
+
+    const tbody = document.getElementById('gm-students-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    studentsList.forEach((s, idx) => {
+        const gVal = map[s.id] || '';
+        tbody.innerHTML += `
+            <tr class="hover:bg-slate-50" data-stuid="${s.id}">
+                <td class="p-2 text-center text-slate-500">${idx + 1}</td>
+                <td class="p-2 font-mono">${s.nisn}</td>
+                <td class="p-2 font-semibold">${s.nama}</td>
+                <td class="p-2">
+                    <input type="text" value="${gVal.replace(/"/g, '&quot;')}" placeholder="Kelompok 1" class="gm-stu-group w-full border rounded-lg p-1.5 text-xs font-semibold">
+                </td>
+            </tr>
+        `;
+    });
+    updateGroupSummaryBadgesInModal();
+}
+
+function updateGroupSummaryBadgesInModal() {
+    const container = document.getElementById('gm-summary-badges');
+    if (!container) return;
+    const counts = {};
+    document.querySelectorAll('#gm-students-tbody tr').forEach(r => {
+        const g = (r.querySelector('.gm-stu-group')?.value || '').trim();
+        if (g) counts[g] = (counts[g] || 0) + 1;
+    });
+
+    container.innerHTML = '';
+    const keys = Object.keys(counts);
+    if (!keys.length) {
+        container.innerHTML = `<span class="text-xs text-slate-400 italic">Belum ada kelompok yang terisi.</span>`;
+        return;
+    }
+    keys.forEach(k => {
+        container.innerHTML += `<span class="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-800">👥 ${k}: <b>${counts[k]} siswa</b></span>`;
+    });
+}
+
+function autoGenerateGroups(mode) {
+    const countInput = document.getElementById('gm-auto-count');
+    const numGroups = Number(countInput?.value) || 5;
+    const rows = Array.from(document.querySelectorAll('#gm-students-tbody tr'));
+    if (!rows.length) return;
+
+    let targetRows = [...rows];
+    if (mode === 'random') {
+        targetRows.sort(() => Math.random() - 0.5);
+    }
+
+    targetRows.forEach((r, idx) => {
+        const groupNum = (idx % numGroups) + 1;
+        const input = r.querySelector('.gm-stu-group');
+        if (input) input.value = `Kelompok ${groupNum}`;
+    });
+    updateGroupSummaryBadgesInModal();
+}
+
+function clearAllModalGroups() {
+    document.querySelectorAll('.gm-stu-group').forEach(i => i.value = '');
+    updateGroupSummaryBadgesInModal();
+}
+
+async function createNewGroupPreset() {
+    const name = prompt('Nama daftar kelompok baru:', `Kelompok Baru ${Date.now().toString().slice(-4)}`);
+    if (!name) return;
+    classGroupPresets[name] = {};
+    activePresetKey = name;
+    openGroupManagerModal();
+}
+
+async function deleteCurrentGroupPreset() {
+    const sel = document.getElementById('gm-preset-select');
+    if (!sel) return;
+    const name = sel.value;
+    if (Object.keys(classGroupPresets).length <= 1) {
+        return showToast('Minimal harus ada 1 daftar kelompok!', 'error');
+    }
+    if (!confirm(`Hapus daftar kelompok "${name}"?`)) return;
+
+    const classId = document.getElementById('guru-active-class').value;
+    await db.from('group_presets')
+        .delete()
+        .eq('teacher_id', currentUser.id)
+        .eq('class_id', classId)
+        .eq('preset_name', name);
+
+    delete classGroupPresets[name];
+    activePresetKey = Object.keys(classGroupPresets)[0];
+    openGroupManagerModal();
+    showToast(`Daftar kelompok "${name}" dihapus.`);
+}
+
+async function saveGroupPresetFromModal(andApply = false) {
+    const classId = document.getElementById('guru-active-class').value;
+    const nameInput = document.getElementById('gm-preset-name');
+    const newName = nameInput ? nameInput.value.trim() : activePresetKey;
+    if (!newName) return showToast('Nama daftar kelompok tidak boleh kosong!', 'error');
+
+    const mapping = {};
+    document.querySelectorAll('#gm-students-tbody tr').forEach(r => {
+        const stuId = Number(r.getAttribute('data-stuid'));
+        const g = (r.querySelector('.gm-stu-group')?.value || '').trim();
+        if (g) mapping[stuId] = g;
+    });
+
+    if (newName !== activePresetKey) {
+        await db.from('group_presets')
+            .delete()
+            .eq('teacher_id', currentUser.id)
+            .eq('class_id', classId)
+            .eq('preset_name', activePresetKey);
+        delete classGroupPresets[activePresetKey];
+    }
+
+    classGroupPresets[newName] = mapping;
+    activePresetKey = newName;
+
+    const jsonStr = JSON.stringify(mapping);
+    await db.from('group_presets').upsert([{
+        teacher_id: currentUser.id,
+        class_id: Number(classId),
+        preset_name: newName,
+        mapping_json: jsonStr
+    }], { onConflict: 'teacher_id,class_id,preset_name' });
+
+    await loadGroupPresetsForCurrentClass();
+    closeGroupManagerModal();
+    showToast(`Daftar kelompok "${newName}" berhasil disimpan!`);
+
+    if (andApply) {
+        applySelectedGroupPreset();
+        await loadAssessmentScores();
+    }
+}
+
+// ============================================================================
+// MODERASI PENGAJUAN & SIMPAN NILAI TUGAS
+// ============================================================================
 
 async function loadAssessmentScores() {
     const assId = document.getElementById('active-assessment')?.value;
@@ -2139,7 +2245,7 @@ async function loadAssessmentScores() {
         if (document.getElementById('tgs-stat-submit')) document.getElementById('tgs-stat-submit').innerText = '0%';
         if (document.getElementById('tgs-stat-ungraded')) document.getElementById('tgs-stat-ungraded').innerText = '0';
         if (document.getElementById('tgs-stat-avg')) document.getElementById('tgs-stat-avg').innerText = '0.0';
-        tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400">Silakan buat atau pilih penilaian di atas.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-400">Silakan buat atau pilih penilaian di atas.</td></tr>';
         return;
     }
 
@@ -2155,9 +2261,10 @@ async function loadAssessmentScores() {
                 <th class="p-3 border-b text-left col-nisn">NISN</th>
                 <th class="p-3 border-b text-left col-nama">Nama Siswa</th>
                 <th id="th-kelompok" class="p-3 border-b text-left min-w-[130px] ${!isGroup ? 'hidden' : ''}">Kelompok</th>
+                <th class="p-3 border-b text-center min-w-[140px]">Status Pengajuan Siswa</th>
                 <th class="p-3 border-b text-center min-w-[110px]">Status Kumpul</th>
                 <th class="p-3 border-b text-center min-w-[110px]">Nilai (0-100)</th>
-                <th class="p-3 border-b text-left min-w-[190px]">Link Bukti Siswa</th>
+                <th class="p-3 border-b text-left min-w-[190px]">Link Bukti / Catatan</th>
             </tr>
         `;
     }
@@ -2182,8 +2289,8 @@ async function loadAssessmentScores() {
     let submittedCount = 0, sumScore = 0, gradedCount = 0;
 
     studentsList.forEach(stu => {
-        const sc = scoreMap[stu.id] || { nama_kelompok: '', status_kumpul: false, link_tugas_siswa: '', nilai: null };
-        if (sc.status_kumpul) submittedCount++;
+        const sc = scoreMap[stu.id] || { nama_kelompok: '', status_kumpul: false, status_pengajuan: 'none', link_tugas_siswa: '', nilai: null };
+        if (sc.status_kumpul || sc.status_pengajuan === 'approved') submittedCount++;
         if (sc.nilai !== null && sc.nilai !== undefined) {
             sumScore += Number(sc.nilai);
             gradedCount++;
@@ -2197,6 +2304,23 @@ async function loadAssessmentScores() {
         const safeGroup = String(valGroup).replace(/"/g, '&quot;');
         const safeLink = String(valLink).replace(/"/g, '&quot;');
 
+        let pengajuanBadgeHtml = `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">Belum Mengajukan</span>`;
+        if (sc.status_pengajuan === 'pending') {
+            pengajuanBadgeHtml = `
+                <div class="flex flex-col items-center gap-1">
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800">Menunggu Review</span>
+                    <div class="flex gap-1">
+                        <button type="button" onclick="moderateStudentSubmission(${stu.id}, ${assId}, 'approved')" class="px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-extrabold shadow-sm">✔ Terima</button>
+                        <button type="button" onclick="moderateStudentSubmission(${stu.id}, ${assId}, 'rejected')" class="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-extrabold shadow-sm">✖ Tolak</button>
+                    </div>
+                </div>
+            `;
+        } else if (sc.status_pengajuan === 'approved' || sc.status_kumpul) {
+            pengajuanBadgeHtml = `<span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800">✅ Disetujui Guru</span>`;
+        } else if (sc.status_pengajuan === 'rejected') {
+            pengajuanBadgeHtml = `<span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800">❌ Ditolak / Revisi</span>`;
+        }
+
         tbody.innerHTML += `
             <tr class="hover:bg-slate-50" data-stuid="${stu.id}">
                 <td class="p-3 font-mono text-xs whitespace-nowrap">${stu.nisn}</td>
@@ -2207,9 +2331,10 @@ async function loadAssessmentScores() {
                         oninput="onStudentGroupNameInput(this)"
                         class="sc-group w-full border rounded-lg p-1.5 text-xs font-semibold text-blue-950 bg-white">
                 </td>
+                <td class="p-2 text-center align-middle">${pengajuanBadgeHtml}</td>
                 <td class="p-2 text-center whitespace-nowrap">
                     <label class="inline-flex items-center cursor-pointer select-none">
-                        <input type="checkbox" ${sc.status_kumpul ? 'checked' : ''} onchange="onStatusOrScoreChange(this)" class="sc-status w-4 h-4 accent-blue-600 cursor-pointer">
+                        <input type="checkbox" ${sc.status_kumpul || sc.status_pengajuan === 'approved' ? 'checked' : ''} onchange="onStatusOrScoreChange(this)" class="sc-status w-4 h-4 accent-blue-600 cursor-pointer">
                         <span class="text-xs ml-1.5 font-semibold">Sudah</span>
                     </label>
                 </td>
@@ -2231,534 +2356,212 @@ async function loadAssessmentScores() {
     if (document.getElementById('tgs-stat-ungraded')) document.getElementById('tgs-stat-ungraded').innerText = studentsList.length - gradedCount;
     if (document.getElementById('tgs-stat-avg')) document.getElementById('tgs-stat-avg').innerText = gradedCount > 0 ? (sumScore / gradedCount).toFixed(1) : '0.0';
 }
-// ============================================================================
-// BAGIAN 3 DARI 3: Sinkronisasi Kelompok, Rekap/Grafik & Guru Wali 360° (PA)
-// ============================================================================
-
-function onStudentGroupNameInput(groupInputEl) {
-    const tr = groupInputEl.closest('tr');
-    if (!tr) return;
-    const targetGroup = groupInputEl.value.trim().toLowerCase();
-    if (!targetGroup) return;
-
-    const rows = document.querySelectorAll('#scores-tbody tr');
-    for (const row of rows) {
-        if (row === tr) continue;
-        const g = row.querySelector('.sc-group')?.value.trim().toLowerCase();
-        if (g === targetGroup) {
-            const otherNilai = row.querySelector('.sc-nilai')?.value || '';
-            const otherLink = row.querySelector('.sc-link')?.value || '';
-            const otherStatus = row.querySelector('.sc-status')?.checked || false;
-
-            if (otherNilai !== '' || otherLink !== '' || otherStatus) {
-                tr.querySelector('.sc-nilai').value = otherNilai;
-                tr.querySelector('.sc-link').value = otherLink;
-                tr.querySelector('.sc-status').checked = otherStatus;
-                break;
-            }
-        }
-    }
-}
 
 function onStatusOrScoreChange(inputEl) {
-    const tr = inputEl.closest('tr');
-    const nilaiInput = tr.querySelector('.sc-nilai');
-    const linkInput = tr.querySelector('.sc-link');
-    const statusCheck = tr.querySelector('.sc-status');
+    const row = inputEl.closest('tr');
+    if (!row) return;
+    const assId = document.getElementById('active-assessment')?.value;
+    const assObj = currentAssessments.find(a => a.id == assId);
+    const isGroup = assObj && (assObj.tipe_kerja === 'kelompok' || assObj.kategori === 'tugas_kelompok');
+    if (!isGroup) return;
 
-    if ((inputEl === nilaiInput && nilaiInput.value !== '') || (inputEl === linkInput && linkInput.value.trim() !== '')) {
-        statusCheck.checked = true;
-    }
-    syncGroupRow(tr);
-}
+    const groupVal = (row.querySelector('.sc-group')?.value || '').trim().toLowerCase();
+    if (!groupVal) return;
 
-function syncGroupRow(el) {
-    const tr = el.closest('tr');
-    const groupName = tr.querySelector('.sc-group')?.value.trim().toLowerCase();
-    if (!groupName) return;
+    const isChecked = row.querySelector('.sc-status')?.checked;
+    const valNilai = row.querySelector('.sc-nilai')?.value;
+    const valLink = row.querySelector('.sc-link')?.value;
+    const thisStuId = row.getAttribute('data-stuid');
 
-    const currentNilai = tr.querySelector('.sc-nilai').value;
-    const currentLink = tr.querySelector('.sc-link').value;
-    const currentStatus = tr.querySelector('.sc-status').checked;
-
-    document.querySelectorAll('#scores-tbody tr').forEach(row => {
-        if (row === tr) return;
-        const g = row.querySelector('.sc-group')?.value.trim().toLowerCase();
-        if (g === groupName) {
-            row.querySelector('.sc-nilai').value = currentNilai;
-            row.querySelector('.sc-link').value = currentLink;
-            row.querySelector('.sc-status').checked = currentStatus;
+    document.querySelectorAll('#scores-tbody tr').forEach(r => {
+        if (r.getAttribute('data-stuid') === thisStuId) return;
+        const g = (r.querySelector('.sc-group')?.value || '').trim().toLowerCase();
+        if (g === groupVal) {
+            if (isChecked !== undefined) r.querySelector('.sc-status').checked = isChecked;
+            if (valNilai !== undefined) r.querySelector('.sc-nilai').value = valNilai;
+            if (valLink !== undefined) r.querySelector('.sc-link').value = valLink;
         }
     });
 }
 
-function syncAllGroupsInCurrentTable() {
-    const rows = document.querySelectorAll('#scores-tbody tr');
-    const masterByGroup = {};
+async function moderateStudentSubmission(studentId, assessmentId, decision) {
+    const { data: existing } = await db.from('scores')
+        .select('*')
+        .eq('assessment_id', assessmentId)
+        .eq('student_id', studentId)
+        .single();
 
-    rows.forEach(row => {
-        const g = row.querySelector('.sc-group')?.value.trim().toLowerCase();
-        if (!g) return;
-        const valNilai = row.querySelector('.sc-nilai')?.value || '';
-        const valLink = row.querySelector('.sc-link')?.value || '';
-        const valStatus = row.querySelector('.sc-status')?.checked || false;
+    const isApproved = decision === 'approved';
+    let error = null;
 
-        if (!masterByGroup[g]) {
-            masterByGroup[g] = { nilai: valNilai, link: valLink, status: valStatus };
-        } else {
-            if (masterByGroup[g].nilai === '' && valNilai !== '') masterByGroup[g].nilai = valNilai;
-            if (masterByGroup[g].link === '' && valLink !== '') masterByGroup[g].link = valLink;
-            if (!masterByGroup[g].status && valStatus) masterByGroup[g].status = true;
-        }
-    });
-
-    rows.forEach(row => {
-        const g = row.querySelector('.sc-group')?.value.trim().toLowerCase();
-        if (!g || !masterByGroup[g]) return;
-        const m = masterByGroup[g];
-        if (m.nilai !== '' || m.link !== '' || m.status) {
-            row.querySelector('.sc-nilai').value = m.nilai;
-            row.querySelector('.sc-link').value = m.link;
-            row.querySelector('.sc-status').checked = m.status;
-        }
-    });
-}
-
-function applySelectedGroupPreset() {
-    const sel = document.getElementById('select-group-preset');
-    const presetKey = sel ? sel.value : activePresetKey;
-    if (!presetKey || !classGroupPresets[presetKey]) {
-        return showToast('Pilih daftar kelompok terlebih dahulu!', 'error');
-    }
-
-    activePresetKey = presetKey;
-    const mapObj = classGroupPresets[presetKey] || {};
-    const rows = document.querySelectorAll('#scores-tbody tr');
-    let count = 0;
-
-    rows.forEach(r => {
-        const stuId = r.getAttribute('data-stuid');
-        const gInput = r.querySelector('.sc-group');
-        if (gInput && mapObj[stuId] !== undefined) {
-            gInput.value = mapObj[stuId];
-            if (mapObj[stuId]) count++;
-        }
-    });
-
-    syncAllGroupsInCurrentTable();
-    showToast(`Daftar "${presetKey}" diterapkan (${count} siswa).`);
-}
-
-async function saveCurrentTableAsGroupPreset() {
-    const rows = document.querySelectorAll('#scores-tbody tr');
-    if (!rows.length) return;
-
-    const defaultName = (activePresetKey && !activePresetKey.startsWith('[Riwayat] '))
-        ? activePresetKey
-        : 'Kelompok Default';
-    const nameInput = prompt('Simpan susunan kelompok di tabel ini dengan nama:', defaultName);
-    if (!nameInput || !nameInput.trim()) return;
-
-    const cleanName = nameInput.trim();
-    const mapObj = {};
-    let filledCount = 0;
-
-    rows.forEach(r => {
-        const stuId = r.getAttribute('data-stuid');
-        const gVal = r.querySelector('.sc-group')?.value.trim() || '';
-        if (stuId) {
-            mapObj[stuId] = gVal;
-            if (gVal) filledCount++;
-        }
-    });
-
-    if (filledCount === 0) {
-        return showToast('Belum ada nama kelompok yang diisi pada tabel!', 'error');
-    }
-
-    classGroupPresets[cleanName] = mapObj;
-    activePresetKey = cleanName;
-    await persistClassGroupPresets();
-    showToast(`Daftar kelompok "${cleanName}" (${filledCount} siswa) berhasil disimpan!`);
-}
-
-async function openGroupManagerModal() {
-    const classId = document.getElementById('guru-active-class')?.value;
-    if (!classId) return showToast('Pilih kelas terlebih dahulu!', 'error');
-
-    await loadClassGroupPresets();
-    populateModalPresetSelect();
-    loadPresetIntoModal();
-    document.getElementById('modal-group-manager').classList.remove('hidden');
-}
-
-function closeGroupManagerModal() {
-    document.getElementById('modal-group-manager').classList.add('hidden');
-}
-
-function populateModalPresetSelect() {
-    const sel = document.getElementById('gm-preset-select');
-    if (!sel) return;
-    sel.innerHTML = '';
-    Object.keys(classGroupPresets).forEach(k => {
-        const opt = document.createElement('option');
-        opt.value = k;
-        opt.textContent = k;
-        if (k === activePresetKey) opt.selected = true;
-        sel.appendChild(opt);
-    });
-}
-
-function loadPresetIntoModal() {
-    const sel = document.getElementById('gm-preset-select');
-    const nameInput = document.getElementById('gm-preset-name');
-    const tbody = document.getElementById('gm-students-tbody');
-    if (!tbody) return;
-
-    const key = sel?.value || activePresetKey || 'Kelompok Default';
-    activePresetKey = key;
-
-    if (nameInput) {
-        nameInput.value = key.replace(/^\[Riwayat\]\s*/, '');
-    }
-
-    const mapObj = classGroupPresets[key] || {};
-    tbody.innerHTML = '';
-
-    if (!studentsList.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Belum ada siswa di kelas ini.</td></tr>';
-        renderModalGroupSummary();
-        return;
-    }
-
-    studentsList.forEach((stu, idx) => {
-        const gVal = String(mapObj[stu.id] || '').replace(/"/g, '&quot;');
-        tbody.innerHTML += `
-            <tr class="hover:bg-slate-50" data-gm-stuid="${stu.id}">
-                <td class="p-2.5 text-center text-slate-500">${idx + 1}</td>
-                <td class="p-2.5 font-mono text-slate-600">${stu.nisn}</td>
-                <td class="p-2.5 font-semibold text-slate-800">${stu.nama}</td>
-                <td class="p-2">
-                    <input type="text" list="datalist-kelompok-options" value="${gVal}" placeholder="Contoh: Kelompok 1"
-                        oninput="renderModalGroupSummary()"
-                        class="gm-stu-group w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500">
-                </td>
-            </tr>
-        `;
-    });
-
-    renderModalGroupSummary();
-}
-
-function renderModalGroupSummary() {
-    const box = document.getElementById('gm-summary-badges');
-    if (!box) return;
-
-    const inputs = document.querySelectorAll('#gm-students-tbody .gm-stu-group');
-    const counts = {};
-    let emptyCount = 0;
-
-    inputs.forEach(inp => {
-        const v = inp.value.trim();
-        if (v) counts[v] = (counts[v] || 0) + 1;
-        else emptyCount++;
-    });
-
-    const groups = Object.keys(counts).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    if (!groups.length) {
-        box.innerHTML = `<span class="text-[11px] text-slate-500 italic">Belum ada siswa yang dikelompokkan (${emptyCount} siswa belum memiliki kelompok).</span>`;
-        return;
-    }
-
-    let html = groups.map(g => `
-        <span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200">
-            ${g}: ${counts[g]} siswa
-        </span>
-    `).join('');
-
-    if (emptyCount > 0) {
-        html += `
-            <span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
-                Belum dikelompokkan: ${emptyCount} siswa
-            </span>
-        `;
-    }
-    box.innerHTML = html;
-}
-
-function createNewGroupPreset() {
-    const newName = prompt('Masukkan nama Daftar Kelompok baru:');
-    if (!newName || !newName.trim()) return;
-    const clean = newName.trim();
-    if (!classGroupPresets[clean]) {
-        classGroupPresets[clean] = {};
-    }
-    activePresetKey = clean;
-    populateModalPresetSelect();
-    loadPresetIntoModal();
-}
-
-async function deleteCurrentGroupPreset() {
-    const sel = document.getElementById('gm-preset-select');
-    const key = sel?.value;
-    if (!key) return;
-
-    if (Object.keys(classGroupPresets).length <= 1) {
-        return showToast('Minimal harus ada 1 daftar kelompok.', 'error');
-    }
-    if (!confirm(`Hapus daftar kelompok "${key}"?`)) return;
-
-    delete classGroupPresets[key];
-    activePresetKey = Object.keys(classGroupPresets)[0] || 'Kelompok Default';
-    await persistClassGroupPresets();
-    populateModalPresetSelect();
-    loadPresetIntoModal();
-    showToast(`Daftar kelompok "${key}" dihapus.`);
-}
-
-function autoGenerateGroups(mode = 'random') {
-    const countInput = document.getElementById('gm-auto-count');
-    const numGroups = Math.max(2, parseInt(countInput?.value || 5, 10));
-    const rows = Array.from(document.querySelectorAll('#gm-students-tbody tr[data-gm-stuid]'));
-    if (!rows.length) return;
-
-    const indices = rows.map((_, i) => i);
-    if (mode === 'random') {
-        for (let i = indices.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [indices[i], indices[j]] = [indices[j], indices[i]];
-        }
-    }
-
-    indices.forEach((rowIdx, pos) => {
-        const groupNum = (pos % numGroups) + 1;
-        const inp = rows[rowIdx].querySelector('.gm-stu-group');
-        if (inp) inp.value = `Kelompok ${groupNum}`;
-    });
-
-    renderModalGroupSummary();
-}
-
-function clearAllModalGroups() {
-    document.querySelectorAll('#gm-students-tbody .gm-stu-group').forEach(inp => {
-        inp.value = '';
-    });
-    renderModalGroupSummary();
-}
-
-async function saveGroupPresetFromModal(applyNow = false) {
-    const nameInput = document.getElementById('gm-preset-name');
-    const presetName = (nameInput?.value || '').trim() || 'Kelompok Default';
-    const rows = document.querySelectorAll('#gm-students-tbody tr[data-gm-stuid]');
-    const mapObj = {};
-
-    rows.forEach(r => {
-        const stuId = r.getAttribute('data-gm-stuid');
-        const gVal = r.querySelector('.gm-stu-group')?.value.trim() || '';
-        if (stuId) mapObj[stuId] = gVal;
-    });
-
-    classGroupPresets[presetName] = mapObj;
-    activePresetKey = presetName;
-    await persistClassGroupPresets();
-    populateModalPresetSelect();
-
-    if (applyNow) {
-        const assId = document.getElementById('active-assessment')?.value;
-        const assObj = currentAssessments.find(a => a.id == assId);
-        if (assObj && (assObj.tipe_kerja === 'kelompok' || assObj.kategori === 'tugas_kelompok')) {
-            const selPreset = document.getElementById('select-group-preset');
-            if (selPreset) selPreset.value = presetName;
-            applySelectedGroupPreset();
-        } else {
-            showToast(`Daftar "${presetName}" disimpan! Pilih tugas bertipe Berkelompok.`);
-        }
-        closeGroupManagerModal();
+    if (existing) {
+        const res = await db.from('scores')
+            .update({
+                status_pengajuan: decision,
+                status_kumpul: isApproved
+            })
+            .eq('id', existing.id);
+        error = res.error;
     } else {
-        showToast(`Daftar kelompok "${presetName}" berhasil disimpan!`);
+        const res = await db.from('scores')
+            .insert([{
+                assessment_id: assessmentId,
+                student_id: studentId,
+                status_pengajuan: decision,
+                status_kumpul: isApproved
+            }]);
+        error = res.error;
     }
+
+    if (error) {
+        return showToast('Gagal memproses moderasi: ' + error.message, 'error');
+    }
+
+    showToast(isApproved ? '✅ Pengajuan diterima! Status siswa tuntas.' : '❌ Pengajuan ditolak / minta revisi.');
+    await loadAssessmentScores();
 }
 
 async function saveAssessmentScores() {
-    const assId = Number(document.getElementById('active-assessment')?.value);
-    if (!assId) return;
-
-    const assObj = currentAssessments.find(a => a.id == assId);
-    const isGroup = assObj && (assObj.tipe_kerja === 'kelompok' || assObj.kategori === 'tugas_kelompok');
+    const assId = document.getElementById('active-assessment')?.value;
+    if (!assId) return showToast('Pilih penilaian terlebih dahulu!', 'error');
 
     const rows = document.querySelectorAll('#scores-tbody tr');
     const upserts = [];
-    const currentGroupMap = {};
-    let hasGroupFilled = false;
 
     rows.forEach(r => {
         const student_id = Number(r.getAttribute('data-stuid'));
-        const nama_kelompok = r.querySelector('.sc-group')?.value.trim() || '';
-        const link_tugas_siswa = r.querySelector('.sc-link')?.value.trim() || '';
-        const nilaiRaw = r.querySelector('.sc-nilai')?.value;
-        const nilai = nilaiRaw === '' || nilaiRaw === undefined ? null : Number(nilaiRaw);
-        const status_kumpul = (nilai !== null || link_tugas_siswa !== '') ? true : (r.querySelector('.sc-status')?.checked || false);
+        const nama_kelompok = r.querySelector('.sc-group')?.value || '';
+        const status_kumpul = r.querySelector('.sc-status')?.checked || false;
+        const rawNilai = r.querySelector('.sc-nilai')?.value;
+        const nilai = rawNilai !== '' && rawNilai !== null ? Number(rawNilai) : null;
+        const link_tugas_siswa = r.querySelector('.sc-link')?.value || '';
 
-        if (isGroup && nama_kelompok) {
-            currentGroupMap[student_id] = nama_kelompok;
-            hasGroupFilled = true;
+        const payload = {
+            assessment_id: Number(assId),
+            student_id,
+            nama_kelompok,
+            status_kumpul,
+            nilai,
+            link_tugas_siswa
+        };
+        if (status_kumpul) {
+            payload.status_pengajuan = 'approved';
         }
-
-        upserts.push({ assessment_id: assId, student_id, nama_kelompok, link_tugas_siswa, status_kumpul, nilai });
+        upserts.push(payload);
     });
 
-    if (upserts.length) {
-        await db.from('scores').upsert(upserts, { onConflict: 'assessment_id,student_id' });
-    }
+    const { error } = await db.from('scores').upsert(upserts, { onConflict: 'assessment_id,student_id' });
+    if (error) return showToast('Gagal menyimpan nilai: ' + error.message, 'error');
 
-    if (isGroup && hasGroupFilled) {
-        if (!classGroupPresets['Kelompok Default'] || Object.keys(classGroupPresets['Kelompok Default']).length === 0) {
-            classGroupPresets['Kelompok Default'] = currentGroupMap;
-            await persistClassGroupPresets();
-        }
-    }
-
-    showToast('Nilai & Status pengumpulan disimpan!');
+    showToast('Semua nilai, link & status tugas berhasil disimpan!');
     await loadAssessmentScores();
 }
 
 // ============================================================================
-// 8. TAB REKAP NILAI AKHIR, GRAFIK KOMPONEN, EKSPOR & CETAK KARTU PDF
+// GRAFIK & REKAPITULASI NILAI AKHIR KELAS
 // ============================================================================
-async function calculateAndRenderRekap() {
-    if (!currentSettings) return;
-    const classId = document.getElementById('guru-active-class').value;
-    const classObj = classesList.find(c => c.id == classId);
-    const namaKelas = classObj ? classObj.nama_kelas : '-';
 
-    const infoBobot = document.getElementById('rekap-info-bobot');
-    if (infoBobot) {
-        infoBobot.innerText = `Mapel: ${currentSettings.mapel} | Kelas: ${namaKelas} | KKM: ${currentSettings.kkm} | Bobot: Absen (${currentSettings.w_absen}%), Tugas (${currentSettings.w_tugas}%), Ujian Bab (${currentSettings.w_bab}%), Ujian Smt (${currentSettings.w_uas}%)`;
-    }
+async function calculateAndRenderRekap() {
+    const classId = document.getElementById('guru-active-class')?.value;
+    const tbody = document.getElementById('rekap-tbody');
+    if (!classId || !currentSettings || !tbody) return;
 
     const stuIds = studentsList.map(s => s.id);
-    let absData = [];
-    if (stuIds.length) {
-        const resAbs = await db.from('attendance')
-            .select('*')
-            .eq('teacher_id', currentUser.id)
-            .eq('mapel', currentSettings.mapel)
-            .in('student_id', stuIds);
-        absData = resAbs.data || [];
+    if (!stuIds.length) {
+        tbody.innerHTML = '<tr><td colspan="11" class="p-6 text-center text-slate-400">Belum ada siswa.</td></tr>';
+        return;
     }
-    const absMap = {};
-    absData.forEach(a => absMap[a.student_id] = a);
+
+    const { data: attData } = await db.from('attendance')
+        .select('*')
+        .eq('teacher_id', currentUser.id)
+        .eq('mapel', currentSettings.mapel)
+        .in('student_id', stuIds);
+    const attMap = {};
+    (attData || []).forEach(a => attMap[a.student_id] = a);
 
     const { data: assList } = await db.from('assessments')
         .select('*')
         .eq('teacher_id', currentUser.id)
         .eq('class_id', classId)
-        .eq('mapel', currentSettings.mapel)
-        .order('id');
+        .eq('mapel', currentSettings.mapel);
+    const safeAss = assList || [];
+    const assIds = safeAss.map(a => a.id);
 
-    const assIds = (assList || []).map(a => a.id);
     let scoresList = [];
     if (assIds.length) {
-        const { data: scData } = await db.from('scores').select('*').in('assessment_id', assIds);
-        scoresList = scData || [];
+        const { data: sc } = await db.from('scores').select('*').in('assessment_id', assIds);
+        scoresList = sc || [];
     }
 
-    const tbody = document.getElementById('rekap-tbody');
-    if (!tbody) return;
-    tbody.innerHTML = '';
     latestRekapData = [];
+    tbody.innerHTML = '';
 
-    let countTuntas = 0, countBelum = 0;
-    let sumAbs = 0, sumTgs = 0, sumBab = 0, sumUas = 0;
+    let sumAbsen = 0, sumTugas = 0, sumBab = 0, sumSmt = 0;
+    let tuntasCount = 0;
 
     studentsList.forEach((stu, idx) => {
-        const recAbs = absMap[stu.id] || { hadir: 0, sakit: 0, izin: 0, alpa: 0 };
-        const nAbsen = Number(calcAttendanceScore(recAbs.hadir, recAbs.sakit, recAbs.izin, recAbs.alpa));
+        const att = attMap[stu.id] || { hadir: 0, sakit: 0, izin: 0, alpa: 0 };
+        const nAbsen = Number(calcAttendanceScore(att.hadir, att.sakit, att.izin, att.alpa));
 
-        const avgByFilter = (filterFn) => {
-            const katAss = (assList || []).filter(filterFn);
-            if (!katAss.length) return 0;
-            let total = 0;
-            katAss.forEach(a => {
-                const sc = scoresList.find(s => s.assessment_id === a.id && s.student_id === stu.id);
-                total += (sc && sc.nilai !== null) ? Number(sc.nilai) : 0;
+        const getAvgCat = (filterFn) => {
+            const f = safeAss.filter(filterFn);
+            if (!f.length) return 0;
+            let tot = 0;
+            f.forEach(a => {
+                const s = scoresList.find(sc => sc.assessment_id === a.id && sc.student_id === stu.id);
+                tot += (s && s.nilai !== null) ? Number(s.nilai) : 0;
             });
-            return total / katAss.length;
+            return tot / f.length;
         };
 
-        const nTugas = avgByFilter(a => isKategoriTugas(a.kategori));
-        const nBab   = avgByFilter(a => isKategoriUjianBab(a.kategori));
-        const nUas   = avgByFilter(a => isKategoriUjianSemester(a.kategori));
+        const nTugas = getAvgCat(a => isKategoriTugas(a.kategori));
+        const nBab   = getAvgCat(a => isKategoriUjianBab(a.kategori));
+        const nSmt   = getAvgCat(a => isKategoriUjianSemester(a.kategori));
 
-        sumAbs += nAbsen;
-        sumTgs += nTugas;
+        sumAbsen += nAbsen;
+        sumTugas += nTugas;
         sumBab += nBab;
-        sumUas += nUas;
+        sumSmt += nSmt;
 
-        const totalWeight = currentSettings.w_absen + currentSettings.w_tugas + currentSettings.w_bab + currentSettings.w_uas;
-        const pembagi = totalWeight > 0 ? totalWeight : 100;
+        const totalW = currentSettings.w_absen + currentSettings.w_tugas + currentSettings.w_bab + currentSettings.w_uas;
+        const div = totalW > 0 ? totalW : 100;
+        const nilaiAkhir = ((nAbsen * currentSettings.w_absen) + (nTugas * currentSettings.w_tugas) + (nBab * currentSettings.w_bab) + (nSmt * currentSettings.w_uas)) / div;
 
-        const nilaiAkhir = (
-            (nAbsen * currentSettings.w_absen) +
-            (nTugas * currentSettings.w_tugas) +
-            (nBab * currentSettings.w_bab) +
-            (nUas * currentSettings.w_uas)
-        ) / pembagi;
-
-        const tuntas = nilaiAkhir >= currentSettings.kkm;
-        if (tuntas) countTuntas++; else countBelum++;
-
-        const detailPenilaian = (assList || []).map(a => {
-            const sc = scoresList.find(s => s.assessment_id === a.id && s.student_id === stu.id);
-            return {
-                judul: a.judul,
-                kategori: formatKategoriLabel(a),
-                tipe: a.tipe_kerja === 'kelompok' ? `Kelompok (${sc?.nama_kelompok || '-'})` : 'Individu',
-                status: (sc && sc.status_kumpul) ? 'Sudah Kumpul' : 'Belum Kumpul',
-                nilai: (sc && sc.nilai !== null) ? sc.nilai : '-'
-            };
-        });
+        const isTuntas = nilaiAkhir >= currentSettings.kkm;
+        if (isTuntas) tuntasCount++;
 
         latestRekapData.push({
-            no: idx + 1, id: stu.id, nisn: stu.nisn, nama: stu.nama, kelas: namaKelas,
-            absen: recAbs, nAbsen, nTugas, nBab, nUas, nilaiAkhir, kkm: currentSettings.kkm, tuntas, detailPenilaian
+            student: stu,
+            nAbsen, nTugas, nBab, nSmt, nilaiAkhir, isTuntas
         });
 
         tbody.innerHTML += `
             <tr class="hover:bg-slate-50">
                 <td class="p-3 text-center text-slate-500">${idx + 1}</td>
-                <td class="p-3 font-mono whitespace-nowrap">${stu.nisn}</td>
-                <td class="p-3 font-semibold">${stu.nama}</td>
-                <td class="p-3 text-center">${nAbsen.toFixed(1)}</td>
-                <td class="p-3 text-center">${nTugas.toFixed(1)}</td>
-                <td class="p-3 text-center">${nBab.toFixed(1)}</td>
-                <td class="p-3 text-center">${nUas.toFixed(1)}</td>
-                <td class="p-3 text-center font-extrabold bg-blue-50/70 text-blue-950">${nilaiAkhir.toFixed(2)}</td>
-                <td class="p-3 text-center">${currentSettings.kkm}</td>
-                <td class="p-3 text-center whitespace-nowrap">
-                    <span class="px-2.5 py-1 rounded-full text-xs font-extrabold ${tuntas ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">
-                        ${tuntas ? 'TUNTAS' : 'BELUM TUNTAS'}
-                    </span>
+                <td class="p-3 font-mono">${stu.nisn}</td>
+                <td class="p-3 font-semibold text-slate-900">${stu.nama}</td>
+                <td class="p-3 text-center font-bold">${nAbsen.toFixed(1)}</td>
+                <td class="p-3 text-center font-bold">${nTugas.toFixed(1)}</td>
+                <td class="p-3 text-center font-bold">${nBab.toFixed(1)}</td>
+                <td class="p-3 text-center font-bold">${nSmt.toFixed(1)}</td>
+                <td class="p-3 text-center font-extrabold text-blue-700 bg-blue-50/50">${nilaiAkhir.toFixed(1)}</td>
+                <td class="p-3 text-center font-semibold text-slate-600">${currentSettings.kkm}</td>
+                <td class="p-3 text-center">
+                    ${isTuntas ? '<span class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800">Tuntas</span>' : '<span class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-rose-100 text-rose-800">Belum Tuntas</span>'}
                 </td>
-                <td class="p-3 text-center whitespace-nowrap">
-                    <button type="button" onclick="printStudentCardPDF(${stu.id})" class="bg-blue-600 text-white px-3 py-1 rounded-lg text-xs font-bold hover:bg-blue-700">
-                        📄 Kartu PDF
-                    </button>
+                <td class="p-3 text-center">
+                    <button type="button" onclick="printSingleStudentCardPDF(${stu.id})" class="px-2.5 py-1 bg-rose-50 text-rose-600 border border-rose-200 rounded-lg text-xs font-bold hover:bg-rose-100">🖨️ PDF</button>
                 </td>
             </tr>
         `;
     });
 
-    const nStu = studentsList.length || 1;
-    renderRekapCharts({
-        absen: (sumAbs / nStu).toFixed(1),
-        tugas: (sumTgs / nStu).toFixed(1),
-        bab: (sumBab / nStu).toFixed(1),
-        uas: (sumUas / nStu).toFixed(1)
-    }, countTuntas, countBelum);
+    const totalStu = studentsList.length || 1;
+    renderRekapCharts(sumAbsen/totalStu, sumTugas/totalStu, sumBab/totalStu, sumSmt/totalStu, tuntasCount, totalStu - tuntasCount);
 }
 
-function renderRekapCharts(avgObj, tuntasCount, belumCount) {
+function renderRekapCharts(avgAbs, avgTug, avgBab, avgSmt, tuntas, belum) {
     if (typeof Chart === 'undefined') return;
 
     const ctxComp = document.getElementById('chartRekapComponents');
@@ -2767,12 +2570,13 @@ function renderRekapCharts(avgObj, tuntasCount, belumCount) {
         chartInstances.rekapComp = new Chart(ctxComp, {
             type: 'bar',
             data: {
-                labels: ['Kehadiran', 'Rata2 Tugas', 'Ujian Akhir Bab', 'Ujian Semester'],
+                labels: ['Absensi', 'Tugas', 'Ujian Bab', 'Ujian Semester'],
                 datasets: [{
-                    label: 'Rata-rata Kelas',
-                    data: [Number(avgObj.absen), Number(avgObj.tugas), Number(avgObj.bab), Number(avgObj.uas)],
-                    backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#6366f1'],
-                    borderRadius: 6
+                    label: 'Rata-rata',
+                    data: [avgAbs, avgTug, avgBab, avgSmt],
+                    backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'],
+                    borderRadius: 8,
+                    barPercentage: 0.5
                 }]
             },
             options: {
@@ -2790,955 +2594,617 @@ function renderRekapCharts(avgObj, tuntasCount, belumCount) {
         chartInstances.rekapKKM = new Chart(ctxKKM, {
             type: 'doughnut',
             data: {
-                labels: ['Tuntas (≥ KKM)', 'Belum Tuntas (< KKM)'],
+                labels: ['Tuntas KKM', 'Belum Tuntas'],
                 datasets: [{
-                    data: [tuntasCount, belumCount],
-                    backgroundColor: ['#2563eb', '#f97316'],
+                    data: [tuntas, belum],
+                    backgroundColor: ['#10b981', '#f43f5e'],
                     borderWidth: 0
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                cutout: '65%',
-                plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }
+                cutout: '68%',
+                plugins: { legend: { position: 'bottom' } }
             }
         });
     }
 }
 
-function printStudentCardPDF(studentId) {
-    const d = latestRekapData.find(item => item.id === studentId);
-    if (!d || !currentSettings) return;
-
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
-
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text("KARTU LAPORAN HASIL BELAJAR SISWA", 105, 16, { align: "center" });
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Mata Pelajaran: ${currentSettings.mapel}  |  Guru: ${currentUser.nama_lengkap}`, 105, 22, { align: "center" });
-    doc.line(14, 25, 196, 25);
-
-    doc.text(`Nama Siswa : ${d.nama}`, 14, 33);
-    doc.text(`NISN       : ${d.nisn}`, 14, 39);
-    doc.text(`Kelas      : ${d.kelas}`, 130, 33);
-    doc.text(`KKM Mapel  : ${d.kkm}`, 130, 39);
-
-    doc.autoTable({
-        startY: 45,
-        head: [['Hadir', 'Sakit', 'Izin', 'Alpa', 'Nilai Absen', 'Rata2 Tugas', 'Rata2 Ujian Bab', 'Ujian Semester', 'NILAI AKHIR', 'Status KKM']],
-        body: [[
-            d.absen.hadir, d.absen.sakit, d.absen.izin, d.absen.alpa,
-            d.nAbsen.toFixed(1), d.nTugas.toFixed(1), d.nBab.toFixed(1), d.nUas.toFixed(1),
-            d.nilaiAkhir.toFixed(2), d.tuntas ? 'TUNTAS' : 'BELUM TUNTAS'
-        ]],
-        theme: 'grid',
-        headStyles: { fillColor: [37, 99, 235], fontSize: 8, halign: 'center' },
-        bodyStyles: { fontSize: 9, halign: 'center', fontStyle: 'bold' }
-    });
-
-    const startY2 = doc.lastAutoTable.finalY + 8;
-    doc.setFont("helvetica", "bold");
-    doc.text("Rincian Pengumpulan Tugas & Nilai Ujian:", 14, startY2);
-
-    const detailRows = d.detailPenilaian.map((p, i) => [
-        i + 1, p.judul, p.kategori, p.tipe, p.status, p.nilai
-    ]);
-
-    doc.autoTable({
-        startY: startY2 + 3,
-        head: [['No', 'Nama Tugas / Ujian', 'Kategori', 'Sistem Kerja', 'Status Pengumpulan', 'Nilai']],
-        body: detailRows.length ? detailRows : [['-', 'Belum ada tugas/ujian', '-', '-', '-', '-']],
-        theme: 'striped',
-        headStyles: { fillColor: [51, 65, 85], fontSize: 9 },
-        bodyStyles: { fontSize: 9 }
-    });
-
-    const finalY = doc.lastAutoTable.finalY + 15;
-    const tglCetak = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-    doc.setFont("helvetica", "normal");
-    doc.text(`Dicetak pada: ${tglCetak}`, 140, finalY);
-    doc.text("Guru Mata Pelajaran,", 140, finalY + 6);
-    doc.setFont("helvetica", "bold");
-    doc.text(currentUser.nama_lengkap, 140, finalY + 26);
-
-    doc.save(`Kartu_${currentSettings.mapel}_${d.nama.replace(/\s+/g, '_')}.pdf`);
-}
-
-function printClassRekapPDF() {
-    if (!latestRekapData.length || !currentSettings) return showToast('Buka menu Grafik & Laporan terlebih dahulu!', 'error');
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF('landscape');
-
-    const kelas = latestRekapData[0].kelas;
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text(`REKAPITULASI HASIL BELAJAR SISWA - KELAS ${kelas}`, 148, 15, { align: "center" });
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Mata Pelajaran: ${currentSettings.mapel} | Guru: ${currentUser.nama_lengkap} | KKM: ${currentSettings.kkm}`, 148, 21, { align: "center" });
-
-    const bodyRows = latestRekapData.map(d => [
-        d.no, d.nisn, d.nama,
-        `${d.absen.hadir}H / ${d.absen.sakit}S / ${d.absen.izin}I / ${d.absen.alpa}A`,
-        d.nAbsen.toFixed(1), d.nTugas.toFixed(1), d.nBab.toFixed(1), d.nUas.toFixed(1),
-        d.nilaiAkhir.toFixed(2), d.tuntas ? 'TUNTAS' : 'BELUM TUNTAS'
-    ]);
-
-    doc.autoTable({
-        startY: 27,
-        head: [['No', 'NISN', 'Nama Siswa', 'Rekap Absen', 'Nilai Absen', 'Rata2 Tugas', 'Rata2 Bab', 'Ujian Smt', 'Nilai Akhir', 'Status']],
-        body: bodyRows,
-        theme: 'grid',
-        headStyles: { fillColor: [37, 99, 235], fontSize: 9 },
-        bodyStyles: { fontSize: 9 }
-    });
-
-    doc.save(`Rekap_Kelas_${kelas}_${currentSettings.mapel}.pdf`);
-}
-
-function exportRekapExcel() {
-    if (!latestRekapData.length) return showToast('Belum ada data rekap untuk diekspor!', 'error');
-    const rows = latestRekapData.map(d => ({
-        No: d.no, NISN: d.nisn, 'Nama Siswa': d.nama, Kelas: d.kelas,
-        'Mata Pelajaran': currentSettings ? currentSettings.mapel : '-',
-        Hadir: d.absen.hadir, Sakit: d.absen.sakit, Izin: d.absen.izin, Alpa: d.absen.alpa,
-        'Nilai Kehadiran': Number(d.nAbsen.toFixed(1)),
-        'Rata-rata Tugas': Number(d.nTugas.toFixed(1)),
-        'Rata-rata Ujian Bab': Number(d.nBab.toFixed(1)),
-        'Ujian Semester': Number(d.nUas.toFixed(1)),
-        'Nilai Akhir': Number(d.nilaiAkhir.toFixed(2)),
-        KKM: d.kkm,
-        Status: d.tuntas ? 'TUNTAS' : 'BELUM TUNTAS'
+async function exportRekapExcel() {
+    if (!latestRekapData.length) return showToast('Belum ada data rekap!', 'error');
+    const rows = latestRekapData.map((d, idx) => ({
+        No: idx + 1,
+        NISN: d.student.nisn,
+        Nama: d.student.nama,
+        "Nilai Absen": Number(d.nAbsen.toFixed(1)),
+        "Rata2 Tugas": Number(d.nTugas.toFixed(1)),
+        "Rata2 Bab": Number(d.nBab.toFixed(1)),
+        "Ujian Semester": Number(d.nSmt.toFixed(1)),
+        "Nilai Akhir": Number(d.nilaiAkhir.toFixed(1)),
+        KKM: currentSettings.kkm,
+        Status: d.isTuntas ? 'Tuntas' : 'Belum Tuntas'
     }));
+
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Rekap_Nilai");
-    XLSX.writeFile(wb, `Rekap_Nilai_${currentSettings ? currentSettings.mapel : 'Siswa'}.xlsx`);
+    XLSX.writeFile(wb, `Rekap_Nilai_${currentSettings.mapel}.xlsx`);
+}
+
+async function printClassRekapPDF() {
+    if (typeof window.jspdf === 'undefined') return showToast('Library jsPDF belum termuat!', 'error');
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('p', 'mm', 'a4');
+
+    const classId = document.getElementById('guru-active-class').value;
+    const clsObj = classesList.find(c => c.id == classId);
+
+    doc.setFontSize(16);
+    doc.setTextColor(15, 23, 42);
+    doc.text('LAPORAN REKAPITULASI HASIL BELAJAR SISWA', 14, 18);
+
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Kelas: ${clsObj ? clsObj.nama_kelas : '-'} | Mata Pelajaran: ${currentSettings?.mapel || '-'} | Guru: ${currentUser.nama_lengkap}`, 14, 25);
+    doc.text(`Dicetak pada: ${new Date().toLocaleDateString('id-ID', { dateStyle: 'full' })}`, 14, 30);
+
+    const tableRows = latestRekapData.map((d, idx) => [
+        idx + 1,
+        d.student.nisn,
+        d.student.nama,
+        d.nAbsen.toFixed(1),
+        d.nTugas.toFixed(1),
+        d.nBab.toFixed(1),
+        d.nSmt.toFixed(1),
+        d.nilaiAkhir.toFixed(1),
+        currentSettings.kkm,
+        d.isTuntas ? 'TUNTAS' : 'BELUM'
+    ]);
+
+    doc.autoTable({
+        startY: 36,
+        head: [['No', 'NISN', 'Nama Siswa', 'Absen', 'Tugas', 'Bab', 'Smt', 'Akhir', 'KKM', 'Status']],
+        body: tableRows,
+        theme: 'grid',
+        headStyles: { fillColor: [37, 99, 235], fontSize: 9 },
+        bodyStyles: { fontSize: 8 },
+        columnStyles: { 0: { halign: 'center' }, 7: { fontStyle: 'bold' } }
+    });
+
+    doc.save(`Rekap_Nilai_${clsObj?.nama_kelas || 'Kelas'}_${currentSettings?.mapel || 'Mapel'}.pdf`);
+}
+
+async function printSingleStudentCardPDF(studentId) {
+    if (typeof window.jspdf === 'undefined') return showToast('Library jsPDF belum termuat!', 'error');
+    const stu = studentsList.find(s => s.id === studentId);
+    if (!stu || !currentSettings) return;
+
+    const dataRec = latestRekapData.find(d => d.student.id === studentId);
+    if (!dataRec) return;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('p', 'mm', 'a4');
+
+    doc.setFontSize(16);
+    doc.setTextColor(15, 23, 42);
+    doc.text('KARTU LAPORAN HASIL BELAJAR SISWA', 14, 18);
+
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Nama: ${stu.nama} | NISN: ${stu.nisn} | Mapel: ${currentSettings.mapel}`, 14, 25);
+
+    doc.autoTable({
+        startY: 32,
+        head: [['Komponen Penilaian', 'Capaian Skor', 'Bobot (%)', 'Kontribusi']],
+        body: [
+            ['Kehadiran & Presensi', dataRec.nAbsen.toFixed(1), `${currentSettings.w_absen}%`, ((dataRec.nAbsen * currentSettings.w_absen)/100).toFixed(1)],
+            ['Penugasan (Tugas)', dataRec.nTugas.toFixed(1), `${currentSettings.w_tugas}%`, ((dataRec.nTugas * currentSettings.w_tugas)/100).toFixed(1)],
+            ['Ujian Akhir Bab', dataRec.nBab.toFixed(1), `${currentSettings.w_bab}%`, ((dataRec.nBab * currentSettings.w_bab)/100).toFixed(1)],
+            ['Ujian Semester', dataRec.nSmt.toFixed(1), `${currentSettings.w_uas}%`, ((dataRec.nSmt * currentSettings.w_uas)/100).toFixed(1)],
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: [37, 99, 235] }
+    });
+
+    const finalY = doc.lastAutoTable.finalY + 10;
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Nilai Akhir Rapor: ${dataRec.nilaiAkhir.toFixed(1)} (KKM: ${currentSettings.kkm})`, 14, finalY);
+    doc.text(`Status Kelulusan Mapel: ${dataRec.isTuntas ? 'TUNTAS' : 'BELUM TUNTAS'}`, 14, finalY + 7);
+
+    doc.save(`Rapor_${stu.nama.replace(/\s+/g, '_')}_${currentSettings.mapel}.pdf`);
 }
 
 // ============================================================================
-// 9. GURU WALI (PEMBIMBING AKADEMIK 360° LINTAS MAPEL & LINTAS KELAS)
+// DASHBOARD GURU WALI & BIMBINGAN AKADEMIK (PA 360°)
 // ============================================================================
 
-let waliAllStudents = [];
-let waliAllClassesMap = {};
-let waliAllTeachersMap = {};
-let waliMenteeRecords = {};
-let waliComputedList = [];
-let activeWaliStudentId = null;
-let tempPickedMenteeIds = new Set();
+let waliBinaanList = [];
+let activeWaliStudent360 = null;
 
-function getWaliLocalStorageKey() {
-    return `sipantau_guru_wali_v1_${currentUser ? currentUser.id : 'anon'}`;
+async function loadGuruWaliDashboard() {
+    const { data: bData } = await db.from('wali_binaan')
+        .select('*')
+        .eq('teacher_id', currentUser.id);
+
+    const binaanStudentIds = (bData || []).map(b => b.student_id);
+    if (!binaanStudentIds.length) {
+        waliBinaanList = [];
+        renderGuruWaliRows();
+        return;
+    }
+
+    const { data: stuData } = await db.from('students')
+        .select('*, classes(nama_kelas)')
+        .in('id', binaanStudentIds);
+
+    waliBinaanList = stuData || [];
+    renderGuruWaliRows();
 }
 
-async function renderGuruWaliTable() {
+async function renderGuruWaliRows() {
+    const tbody = document.getElementById('wali-tbody');
+    if (!tbody) return;
+
+    if (!waliBinaanList.length) {
+        document.getElementById('wali-stat-total').innerText = '0 Siswa';
+        document.getElementById('wali-stat-classes').innerText = 'Lintas Kelas';
+        document.getElementById('wali-stat-aman').innerText = '0 Siswa';
+        document.getElementById('wali-stat-waspada').innerText = '0 Siswa';
+        document.getElementById('wali-stat-kritis').innerText = '0 Siswa';
+        tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-400">Belum ada siswa binaan yang dipilih. Klik <b>"Pilih / Kelola Siswa Binaan"</b> di atas.</td></tr>`;
+        return;
+    }
+
+    const stuIds = waliBinaanList.map(s => s.id);
+    const classIds = [...new Set(waliBinaanList.map(s => s.class_id))];
+
+    const [attRes, settingsRes, assRes, scoresRes, logsRes] = await Promise.all([
+        db.from('attendance').select('*').eq('teacher_id', currentUser.id).in('student_id', stuIds),
+        db.from('teacher_settings').select('*').in('class_id', classIds),
+        db.from('assessments').select('*').in('class_id', classIds),
+        db.from('scores').select('*').in('student_id', stuIds),
+        db.from('attendance_logs').select('*').in('class_id', classIds).in('student_id', stuIds)
+    ]);
+
+    const attMap = {};
+    (attRes.data || []).forEach(a => {
+        if (!attMap[a.student_id]) attMap[a.student_id] = {};
+        attMap[a.student_id][a.mapel] = a;
+    });
+
+    const settingsList = settingsRes.data || [];
+    const assessmentsList = assRes.data || [];
+    const scoresList = scoresRes.data || [];
+    const logsList = logsRes.data || [];
+
+    const filterEws = document.getElementById('wali-filter-ews')?.value || 'all';
+    const searchQ = (document.getElementById('wali-search-input')?.value || '').toLowerCase();
+
+    let countAman = 0, countWaspada = 0, countKritis = 0;
+    const uniqueClasses = new Set();
+    tbody.innerHTML = '';
+
+    let displayedCount = 0;
+
+    waliBinaanList.forEach((stu, idx) => {
+        uniqueClasses.add(stu.class_id);
+        const nameMatch = stu.nama.toLowerCase().includes(searchQ) || (stu.classes?.nama_kelas || '').toLowerCase().includes(searchQ);
+        if (!nameMatch) return;
+
+        const stuLogs = logsList.filter(l => l.student_id === stu.id);
+        const totalAlpa = stuLogs.filter(l => l.status === 'A').length;
+        const totalHadir = stuLogs.filter(l => l.status === 'H').length;
+
+        const stuSettings = settingsList.filter(ts => ts.class_id === stu.class_id);
+        let totalUnfinishedTasks = 0;
+        let sumAllFinalScores = 0;
+        let countMapelGraded = 0;
+
+        stuSettings.forEach(ts => {
+            const mapelAss = assessmentsList.filter(a => a.class_id === stu.class_id && a.mapel === ts.mapel);
+            mapelAss.forEach(a => {
+                const sc = scoresList.find(s => s.assessment_id === a.id && s.student_id === stu.id);
+                if (!sc || (!sc.status_kumpul && sc.status_pengajuan !== 'approved')) {
+                    totalUnfinishedTasks++;
+                }
+            });
+
+            const mapelAtt = (attMap[stu.id] && attMap[stu.id][ts.mapel]) || { hadir: 0, sakit: 0, izin: 0, alpa: 0 };
+            const nAbsen = Number(calcAttendanceScore(mapelAtt.hadir, mapelAtt.sakit, mapelAtt.izin, mapelAtt.alpa));
+
+            const getAvgCat = (filterFn) => {
+                const f = mapelAss.filter(filterFn);
+                if (!f.length) return 0;
+                let tot = 0;
+                f.forEach(a => {
+                    const s = scoresList.find(sc => sc.assessment_id === a.id && sc.student_id === stu.id);
+                    tot += (s && s.nilai !== null) ? Number(s.nilai) : 0;
+                });
+                return tot / f.length;
+            };
+
+            const nTugas = getAvgCat(a => isKategoriTugas(a.kategori));
+            const nBab   = getAvgCat(a => isKategoriUjianBab(a.kategori));
+            const nSmt   = getAvgCat(a => isKategoriUjianSemester(a.kategori));
+
+            const totalW = ts.w_absen + ts.w_tugas + ts.w_bab + ts.w_uas;
+            const div = totalW > 0 ? totalW : 100;
+            const na = ((nAbsen * ts.w_absen) + (nTugas * ts.w_tugas) + (nBab * ts.w_bab) + (nSmt * ts.w_uas)) / div;
+            sumAllFinalScores += na;
+            countMapelGraded++;
+        });
+
+        const avgOverall = countMapelGraded > 0 ? (sumAllFinalScores / countMapelGraded) : 0;
+
+        let ewsStatus = 'aman';
+        if (totalAlpa >= 3 || totalUnfinishedTasks >= 4 || avgOverall < 70) {
+            ewsStatus = 'kritis';
+        } else if (totalAlpa >= 1 || totalUnfinishedTasks >= 1 || avgOverall < 75) {
+            ewsStatus = 'waspada';
+        }
+
+        if (ewsStatus === 'kritis') countKritis++;
+        else if (ewsStatus === 'waspada') countWaspada++;
+        else countAman++;
+
+        if (filterEws !== 'all' && filterEws !== ewsStatus) return;
+        displayedCount++;
+
+        let ewsBadge = '';
+        if (ewsStatus === 'kritis') ewsBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800">🔴 Kritis</span>`;
+        else if (ewsStatus === 'waspada') ewsBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800">🟡 Waspada</span>`;
+        else ewsBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800">🟢 Aman</span>`;
+
+        const safeNama = stu.nama.replace(/'/g, "\\'");
+        tbody.innerHTML += `
+            <tr class="hover:bg-slate-50">
+                <td class="p-3 text-center text-slate-500">${displayedCount}</td>
+                <td class="p-3">
+                    <div class="font-bold text-slate-900">${stu.nama}</div>
+                    <div class="text-[11px] text-slate-500">Kelas: <b>${stu.classes?.nama_kelas || '-'}</b> | NISN: ${stu.nisn}</div>
+                </td>
+                <td class="p-3 text-center">
+                    <div class="font-bold text-slate-800">${totalHadir} Hari</div>
+                    <div class="text-[10px] text-rose-600 font-semibold">${totalAlpa} Alpa</div>
+                </td>
+                <td class="p-3 text-center">
+                    <span class="px-2.5 py-1 rounded-lg font-bold text-xs ${totalUnfinishedTasks > 0 ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-slate-50 text-slate-600'}">
+                        ${totalUnfinishedTasks} Tugas
+                    </span>
+                </td>
+                <td class="p-3 text-center font-extrabold text-blue-700">${avgOverall.toFixed(1)}</td>
+                <td class="p-3 text-center">${ewsBadge}</td>
+                <td class="p-3 text-center">
+                    <button type="button" onclick="openWali360Modal(${stu.id})" class="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-extrabold hover:bg-indigo-100 shadow-sm">
+                        🔍 Bedah 360°
+                    </button>
+                </td>
+                <td class="p-3 text-center">
+                    <button type="button" onclick="openWali360Modal(${stu.id})" class="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200">
+                        💬 Jurnal
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    document.getElementById('wali-stat-total').innerText = `${waliBinaanList.length} Siswa`;
+    document.getElementById('wali-stat-classes').innerText = `${uniqueClasses.size} Lintas Kelas`;
+    document.getElementById('wali-stat-aman').innerText = `${countAman} Siswa`;
+    document.getElementById('wali-stat-waspada').innerText = `${countWaspada} Siswa`;
+    document.getElementById('wali-stat-kritis').innerText = `${countKritis} Siswa`;
+}
+
+async function openManageBinaanModal() {
+    const { data: cls } = await db.from('classes').select('*').order('nama_kelas');
+    const sel = document.getElementById('wali-pick-class');
+    if (sel) {
+        sel.innerHTML = '<option value="all">-- Semua Kelas --</option>';
+        (cls || []).forEach(c => {
+            sel.innerHTML += `<option value="${c.id}">${c.nama_kelas}</option>`;
+        });
+    }
+
+    const { data: allStu } = await db.from('students').select('*, classes(nama_kelas)').order('nama');
+    window._allStudentsCache = allStu || [];
+
+    renderBinaanPickerList();
+    document.getElementById('modal-wali-manage').classList.remove('hidden');
+}
+
+function closeManageBinaanModal() {
+    document.getElementById('modal-wali-manage').classList.add('hidden');
+}
+
+async function renderBinaanPickerList() {
+    const classId = document.getElementById('wali-pick-class')?.value;
+    const q = (document.getElementById('wali-pick-search')?.value || '').toLowerCase();
+    const tbody = document.getElementById('wali-picker-tbody');
+    if (!tbody) return;
+
+    const { data: currentBinaan } = await db.from('wali_binaan')
+        .select('student_id')
+        .eq('teacher_id', currentUser.id);
+    const binaanSet = new Set((currentBinaan || []).map(b => b.student_id));
+
+    let list = window._allStudentsCache || [];
+    if (classId && classId !== 'all') {
+        list = list.filter(s => s.class_id == classId);
+    }
+    if (q) {
+        list = list.filter(s => s.nama.toLowerCase().includes(q) || String(s.nisn).includes(q));
+    }
+
+    let pickedCount = binaanSet.size;
+    const badge = document.getElementById('wali-picked-count-badge');
+    if (badge) badge.innerText = `${pickedCount} Siswa Dipilih`;
+
+    tbody.innerHTML = '';
+    if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Tidak ada siswa ditemukan.</td></tr>';
+        return;
+    }
+
+    list.forEach(s => {
+        const isChecked = binaanSet.has(s.id);
+        tbody.innerHTML += `
+            <tr class="hover:bg-slate-50">
+                <td class="p-2.5 text-center">
+                    <input type="checkbox" value="${s.id}" ${isChecked ? 'checked' : ''} onchange="toggleWaliBinaanStudent(${s.id}, this.checked)" class="w-4 h-4 accent-blue-600 rounded cursor-pointer">
+                </td>
+                <td class="p-2.5 font-semibold text-slate-900">${s.nama}</td>
+                <td class="p-2.5 font-mono text-xs">${s.nisn}</td>
+                <td class="p-2.5 text-center font-bold text-slate-600">${s.classes?.nama_kelas || '-'}</td>
+            </tr>
+        `;
+    });
+}
+
+async function toggleWaliBinaanStudent(studentId, checked) {
+    if (checked) {
+        await db.from('wali_binaan').insert([{ teacher_id: currentUser.id, student_id: studentId }]);
+    } else {
+        await db.from('wali_binaan').delete().eq('teacher_id', currentUser.id).eq('student_id', studentId);
+    }
+
+    const { data } = await db.from('wali_binaan').select('student_id').eq('teacher_id', currentUser.id);
+    const badge = document.getElementById('wali-picked-count-badge');
+    if (badge) badge.innerText = `${(data || []).length} Siswa Dipilih`;
+}
+
+async function saveWaliBinaanSelection() {
+    closeManageBinaanModal();
+    showToast('Daftar siswa binaan berhasil disimpan!');
     await loadGuruWaliDashboard();
 }
 
-async function loadGuruWaliDashboard() {
-    if (!currentUser) return;
-    const tbody = document.getElementById('wali-tbody');
-    if (tbody) {
-        tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-400">Sedang memindai data akademik lintas mata pelajaran untuk siswa binaan Anda...</td></tr>`;
+async function openWali360Modal(studentId) {
+    const stu = waliBinaanList.find(s => s.id === studentId);
+    if (!stu) return;
+    activeWaliStudent360 = stu;
+
+    document.getElementById('w360-nama').innerText = stu.nama;
+    document.getElementById('w360-kelas').innerText = `Kelas ${stu.classes?.nama_kelas || '-'}`;
+    document.getElementById('w360-nisn').innerText = `NISN: ${stu.nisn}`;
+    if (document.getElementById('w360-avatar')) {
+        document.getElementById('w360-avatar').innerText = typeof getInitials === 'function' ? getInitials(stu.nama) : 'S';
     }
 
-    const semesterRange = getActiveSemesterDateRange();
-    const semBadge = document.getElementById('wali-semester-badge');
-    if (semBadge) semBadge.innerText = semesterRange.label;
-
-    const [clsRes, tchRes, stuRes] = await Promise.all([
-        db.from('classes').select('*').order('nama_kelas'),
-        db.from('app_users').select('id, nama_lengkap').eq('role', 'guru'),
-        db.from('students').select('*').order('nama')
+    const [logsRes, targetRes, settingsRes, assRes, scoresRes, attRes, counselingRes] = await Promise.all([
+        db.from('attendance_logs').select('*').eq('class_id', stu.class_id).eq('student_id', stu.id),
+        db.from('wali_targets').select('*').eq('student_id', stu.id).single(),
+        db.from('teacher_settings').select('*').eq('class_id', stu.class_id),
+        db.from('assessments').select('*').eq('class_id', stu.class_id),
+        db.from('scores').select('*').eq('student_id', stu.id),
+        db.from('attendance').select('*').eq('student_id', stu.id),
+        db.from('wali_counseling_logs').select('*').eq('student_id', stu.id).order('tanggal', { ascending: false })
     ]);
 
-    waliAllClassesMap = {};
-    (clsRes.data || []).forEach(c => { waliAllClassesMap[c.id] = c.nama_kelas; });
+    const logs = logsRes.data || [];
+    const hCount = logs.filter(l => l.status === 'H').length;
+    const sCount = logs.filter(l => l.status === 'S').length;
+    const iCount = logs.filter(l => l.status === 'I').length;
+    const aCount = logs.filter(l => l.status === 'A').length;
 
-    waliAllTeachersMap = {};
-    (tchRes.data || []).forEach(t => { waliAllTeachersMap[t.id] = t.nama_lengkap; });
+    const pillsContainer = document.getElementById('w360-att-pills');
+    if (pillsContainer) {
+        pillsContainer.innerHTML = `
+            <div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200"><div class="text-[10px] font-bold text-emerald-800 uppercase">Hadir</div><div class="text-lg font-extrabold text-emerald-700">${hCount}</div></div>
+            <div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200"><div class="text-[10px] font-bold text-amber-800 uppercase">Sakit</div><div class="text-lg font-extrabold text-amber-700">${sCount}</div></div>
+            <div class="p-2.5 rounded-xl bg-sky-50 border border-sky-200"><div class="text-[10px] font-bold text-sky-800 uppercase">Izin</div><div class="text-lg font-extrabold text-sky-700">${iCount}</div></div>
+            <div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200"><div class="text-[10px] font-bold text-rose-800 uppercase">Alpa</div><div class="text-lg font-extrabold text-rose-700">${aCount}</div></div>
+        `;
+    }
 
-    waliAllStudents = stuRes.data || [];
+    const absenceDatesBox = document.getElementById('w360-absence-dates');
+    if (absenceDatesBox) {
+        const notPresent = logs.filter(l => l.status !== 'H');
+        absenceDatesBox.innerHTML = notPresent.length 
+            ? `<b>Catatan Ketidakhadiran:</b><br>` + notPresent.map(l => `• ${l.tanggal} (${l.mapel}): <b>${l.status}</b>`).join('<br>')
+            : `<i>Tidak ada catatan sakit/izin/alpa pada log kehadiran.</i>`;
+    }
 
-    await loadWaliMenteeRecords();
+    const targetInput = document.getElementById('w360-target-input');
+    if (targetInput) targetInput.value = targetRes.data?.target_teks || '';
 
-    const menteeIds = Object.keys(waliMenteeRecords).map(Number).filter(id => waliAllStudents.some(s => s.id === id));
+    const settings = settingsRes.data || [];
+    const assessments = assRes.data || [];
+    const scores = scoresRes.data || [];
+    const attMap = {};
+    (attRes.data || []).forEach(a => { attMap[a.mapel] = a; });
 
-    if (menteeIds.length === 0) {
-        updateWaliSummaryCards(0, 0, 0, 0, 0);
-        if (tbody) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="8" class="p-10 text-center space-y-3">
-                        <div class="text-slate-500 font-bold text-sm">Anda belum memilih Siswa Binaan Akademik.</div>
-                        <p class="text-xs text-slate-400 max-w-md mx-auto">Sebagai Guru Wali (Pembimbing Akademik), Anda dapat memilih siswa binaan dari berbagai kelas dan memantau nilai serta kehadiran mereka di seluruh mata pelajaran.</p>
-                        <button type="button" onclick="openManageBinaanModal()" class="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-extrabold shadow-sm hover:bg-blue-700">
-                            + Pilih Siswa Binaan Sekarang
-                        </button>
+    const subjectsTbody = document.getElementById('w360-subjects-tbody');
+    const pendingListContainer = document.getElementById('w360-pending-list');
+    if (subjectsTbody) subjectsTbody.innerHTML = '';
+    if (pendingListContainer) pendingListContainer.innerHTML = '';
+
+    let totalPendingCount = 0;
+
+    settings.forEach(ts => {
+        const mapelAss = assessments.filter(a => a.mapel === ts.mapel);
+        let completedTugas = 0;
+
+        mapelAss.forEach(a => {
+            const sc = scores.find(s => s.assessment_id === a.id && s.student_id === stu.id);
+            const isDone = sc && (sc.status_kumpul || sc.status_pengajuan === 'approved');
+            if (isDone) {
+                completedTugas++;
+            } else {
+                totalPendingCount++;
+                if (pendingListContainer) {
+                    pendingListContainer.innerHTML += `
+                        <div class="p-2.5 rounded-xl bg-rose-50/70 border border-rose-200 text-xs flex justify-between items-center">
+                            <div>
+                                <span class="font-extrabold text-rose-950 block">${a.judul}</span>
+                                <span class="text-[10px] text-slate-500">${ts.mapel}</span>
+                            </div>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">Belum Kumpul</span>
+                        </div>
+                    `;
+                }
+            }
+        });
+
+        const att = attMap[ts.mapel] || { hadir: 0, sakit: 0, izin: 0, alpa: 0 };
+        const nAbsen = Number(calcAttendanceScore(att.hadir, att.sakit, att.izin, att.alpa));
+
+        const getAvgCat = (filterFn) => {
+            const f = mapelAss.filter(filterFn);
+            if (!f.length) return 0;
+            let tot = 0;
+            f.forEach(a => {
+                const s = scores.find(sc => sc.assessment_id === a.id && sc.student_id === stu.id);
+                tot += (s && s.nilai !== null) ? Number(s.nilai) : 0;
+            });
+            return tot / f.length;
+        };
+
+        const nTugas = getAvgCat(a => isKategoriTugas(a.kategori));
+        const nBab   = getAvgCat(a => isKategoriUjianBab(a.kategori));
+        const nSmt   = getAvgCat(a => isKategoriUjianSemester(a.kategori));
+
+        const totalW = ts.w_absen + ts.w_tugas + ts.w_bab + ts.w_uas;
+        const div = totalW > 0 ? totalW : 100;
+        const nilaiAkhir = ((nAbsen * ts.w_absen) + (nTugas * ts.w_tugas) + (nBab * ts.w_bab) + (nSmt * ts.w_uas)) / div;
+        const isTuntas = nilaiAkhir >= ts.kkm;
+
+        if (subjectsTbody) {
+            subjectsTbody.innerHTML += `
+                <tr class="hover:bg-slate-50">
+                    <td class="p-2.5 font-bold text-slate-800">${ts.mapel}</td>
+                    <td class="p-2.5 text-slate-600">-</td>
+                    <td class="p-2.5 text-center font-bold">${att.hadir}H / ${att.alpa}A</td>
+                    <td class="p-2.5 text-center font-bold">${completedTugas}/${mapelAss.length}</td>
+                    <td class="p-2.5 text-center">${nTugas.toFixed(1)}</td>
+                    <td class="p-2.5 text-center">${nBab.toFixed(1)}</td>
+                    <td class="p-2.5 text-center">${nSmt.toFixed(1)}</td>
+                    <td class="p-2.5 text-center font-extrabold text-blue-700 bg-blue-50/50">${nilaiAkhir.toFixed(1)}</td>
+                    <td class="p-2.5 text-center font-semibold text-slate-500">${ts.kkm}</td>
+                    <td class="p-2.5 text-center">
+                        ${isTuntas ? '<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800">Tuntas</span>' : '<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-100 text-rose-800">Remedial</span>'}
                     </td>
                 </tr>
             `;
         }
-        return;
+    });
+
+    if (pendingListContainer && totalPendingCount === 0) {
+        pendingListContainer.innerHTML = `<div class="p-4 text-center text-emerald-700 text-xs font-bold bg-emerald-50 rounded-xl border border-emerald-200">🎉 Luar biasa! Seluruh tugas lintas mapel sudah tuntas dikumpulkan.</div>`;
+    }
+    if (document.getElementById('w360-pending-badge')) {
+        document.getElementById('w360-pending-badge').innerText = `${totalPendingCount} Tunggakan`;
     }
 
-    const mentees = waliAllStudents.filter(s => menteeIds.includes(s.id));
-    const menteeClassIds = [...new Set(mentees.map(s => s.class_id))];
-
-    const [settingsRes, assRes, attSumRes, attLogsRes] = await Promise.all([
-        db.from('teacher_settings').select('*').in('class_id', menteeClassIds),
-        db.from('assessments').select('*').in('class_id', menteeClassIds),
-        db.from('attendance').select('*').in('student_id', menteeIds),
-        db.from('attendance_logs').select('*')
-            .in('student_id', menteeIds)
-            .gte('tanggal', semesterRange.start)
-            .lte('tanggal', semesterRange.end)
-            .order('tanggal', { ascending: false })
-    ]);
-
-    const allSettings = settingsRes.data || [];
-    const allAssessments = assRes.data || [];
-    const allAttSum = attSumRes.data || [];
-    const allAttLogs = attLogsRes.data || [];
-
-    const allAssIds = allAssessments.map(a => a.id);
-    let allScores = [];
-    if (allAssIds.length > 0) {
-        const { data: scData } = await db.from('scores')
-            .select('*')
-            .in('student_id', menteeIds)
-            .in('assessment_id', allAssIds);
-        allScores = scData || [];
-    }
-
-    waliComputedList = mentees.map(stu => {
-        return computeStudent360Profile(stu, allSettings, allAssessments, allScores, allAttSum, allAttLogs);
-    });
-
-    const amanCount = waliComputedList.filter(d => d.ewsStatus === 'aman').length;
-    const waspadaCount = waliComputedList.filter(d => d.ewsStatus === 'waspada').length;
-    const kritisCount = waliComputedList.filter(d => d.ewsStatus === 'kritis').length;
-
-    updateWaliSummaryCards(waliComputedList.length, menteeClassIds.length, amanCount, waspadaCount, kritisCount);
-    renderGuruWaliRows();
-}
-
-async function loadWaliMenteeRecords() {
-    let records = {};
-
-    try {
-        const raw = localStorage.getItem(getWaliLocalStorageKey());
-        if (raw) records = JSON.parse(raw) || {};
-    } catch (e) {}
-
-    try {
-        const { data, error } = await db.from('guru_wali_binaan')
-            .select('*')
-            .eq('teacher_id', currentUser.id);
-        if (!error && data) {
-            const dbRecords = {};
-            data.forEach(row => {
-                dbRecords[row.student_id] = {
-                    target_akademik: row.target_akademik || '',
-                    jurnal_konseling: Array.isArray(row.jurnal_konseling) ? row.jurnal_konseling : []
-                };
-            });
-            if (Object.keys(dbRecords).length > 0 || Object.keys(records).length === 0) {
-                records = { ...records, ...dbRecords };
-            }
-        }
-    } catch (e) {}
-
-    waliMenteeRecords = records;
-    saveWaliToLocalCache();
-}
-
-function saveWaliToLocalCache() {
-    try {
-        localStorage.setItem(getWaliLocalStorageKey(), JSON.stringify(waliMenteeRecords));
-    } catch (e) {}
-}
-
-async function syncSingleMenteeToSupabase(studentId) {
-    saveWaliToLocalCache();
-    const rec = waliMenteeRecords[studentId];
-    if (!rec) return;
-    try {
-        await db.from('guru_wali_binaan').upsert([{
-            teacher_id: currentUser.id,
-            student_id: Number(studentId),
-            target_akademik: rec.target_akademik || '',
-            jurnal_konseling: rec.jurnal_konseling || []
-        }], { onConflict: 'teacher_id,student_id' });
-    } catch (e) {}
-}
-
-function computeStudent360Profile(stu, allSettings, allAssessments, allScores, allAttSum, allAttLogs) {
-    const namaKelas = waliAllClassesMap[stu.class_id] || '-';
-    const stuLogs = allAttLogs.filter(l => l.student_id === stu.id);
-
-    const dateMap = new Map();
-    stuLogs.forEach(l => {
-        if (!dateMap.has(l.tanggal)) dateMap.set(l.tanggal, []);
-        dateMap.get(l.tanggal).push(l);
-    });
-
-    let hariHadir = 0, hariSakit = 0, hariIzin = 0, hariAlpa = 0;
-    const absenceDatesList = [];
-
-    dateMap.forEach((logsOnDay, tgl) => {
-        const statuses = logsOnDay.map(x => x.status);
-        const mapelNames = [...new Set(logsOnDay.map(x => x.mapel || 'Mapel'))].join(', ');
-        if (statuses.includes('A')) {
-            hariAlpa++;
-            absenceDatesList.push({ tanggal: tgl, status: 'Alpa', mapel: mapelNames });
-        } else if (statuses.includes('S')) {
-            hariSakit++;
-            absenceDatesList.push({ tanggal: tgl, status: 'Sakit', mapel: mapelNames });
-        } else if (statuses.includes('I')) {
-            hariIzin++;
-            absenceDatesList.push({ tanggal: tgl, status: 'Izin', mapel: mapelNames });
-        } else {
-            hariHadir++;
-        }
-    });
-
-    const classSettings = allSettings.filter(s => s.class_id === stu.class_id);
-    const classAss = allAssessments.filter(a => a.class_id === stu.class_id);
-    const stuAttSummaries = allAttSum.filter(a => a.student_id === stu.id);
-
-    const subjectKeysMap = new Map();
-    classSettings.forEach(s => {
-        subjectKeysMap.set(`${s.teacher_id}__${s.mapel}`, { teacher_id: s.teacher_id, mapel: s.mapel, setting: s });
-    });
-    classAss.forEach(a => {
-        const key = `${a.teacher_id}__${a.mapel}`;
-        if (!subjectKeysMap.has(key)) {
-            subjectKeysMap.set(key, { teacher_id: a.teacher_id, mapel: a.mapel, setting: null });
-        }
-    });
-
-    const subjectsReport = [];
-    const pendingTasksList = [];
-    let totalTasksAll = 0;
-    let doneTasksAll = 0;
-
-    subjectKeysMap.forEach((info) => {
-        const cfg = info.setting || {
-            kkm: 75, w_absen: 10, w_tugas: 30, w_bab: 30, w_uas: 30,
-            p_hadir: 100, p_sakit: 80, p_izin: 80, p_alpa: 0
-        };
-        const namaGuru = waliAllTeachersMap[info.teacher_id] || 'Guru Mapel';
-        const subjAss = classAss.filter(a => a.teacher_id === info.teacher_id && a.mapel === info.mapel);
-
-        const attRec = stuAttSummaries.find(a => a.teacher_id === info.teacher_id && a.mapel === info.mapel)
-            || { hadir: 0, sakit: 0, izin: 0, alpa: 0 };
-        const totMeet = attRec.hadir + attRec.sakit + attRec.izin + attRec.alpa;
-        const nAbsen = totMeet > 0
-            ? Math.min(100, Math.max(0, ((attRec.hadir * (cfg.p_hadir ?? 100)) + (attRec.sakit * (cfg.p_sakit ?? 80)) + (attRec.izin * (cfg.p_izin ?? 80)) + (attRec.alpa * (cfg.p_alpa ?? 0))) / totMeet))
-            : 100;
-
-        let subjDone = 0;
-        subjAss.forEach(ass => {
-            totalTasksAll++;
-            const sc = allScores.find(s => s.assessment_id === ass.id && s.student_id === stu.id);
-            if (sc && sc.status_kumpul) {
-                subjDone++;
-                doneTasksAll++;
-            } else {
-                pendingTasksList.push({
-                    judul: ass.judul,
-                    mapel: info.mapel,
-                    guru: namaGuru,
-                    kategori: formatKategoriLabel(ass)
-                });
-            }
-        });
-
-        const avgCat = (filterFn) => {
-            const list = subjAss.filter(filterFn);
-            if (!list.length) return 0;
-            let sum = 0;
-            list.forEach(a => {
-                const sc = allScores.find(s => s.assessment_id === a.id && s.student_id === stu.id);
-                sum += (sc && sc.nilai !== null) ? Number(sc.nilai) : 0;
-            });
-            return sum / list.length;
-        };
-
-        const nTugas = avgCat(a => isKategoriTugas(a.kategori));
-        const nBab   = avgCat(a => isKategoriUjianBab(a.kategori));
-        const nSmt   = avgCat(a => isKategoriUjianSemester(a.kategori));
-
-        const totalW = (cfg.w_absen || 0) + (cfg.w_tugas || 0) + (cfg.w_bab || 0) + (cfg.w_uas || 0);
-        const divW = totalW > 0 ? totalW : 100;
-        const nilaiAkhir = ((nAbsen * (cfg.w_absen || 0)) + (nTugas * (cfg.w_tugas || 0)) + (nBab * (cfg.w_bab || 0)) + (nSmt * (cfg.w_uas || 0))) / divW;
-        const kkm = Number(cfg.kkm || 75);
-        const tuntas = subjAss.length === 0 ? true : (nilaiAkhir >= kkm);
-
-        subjectsReport.push({
-            mapel: info.mapel,
-            guru: namaGuru,
-            attRec,
-            nAbsen,
-            tasksDone: subjDone,
-            tasksTotal: subjAss.length,
-            nTugas,
-            nBab,
-            nSmt,
-            nilaiAkhir,
-            kkm,
-            tuntas
-        });
-    });
-
-    const avgAllSubjects = subjectsReport.length > 0
-        ? subjectsReport.reduce((acc, cur) => acc + cur.nilaiAkhir, 0) / subjectsReport.length
-        : 0;
-    const belowKkmCount = subjectsReport.filter(s => !s.tuntas).length;
-    const pendingCount = pendingTasksList.length;
-
-    let ewsStatus = 'aman';
-    let ewsReason = 'Presensi & akademik terkendali';
-    if (hariAlpa >= 3 || pendingCount >= 4 || belowKkmCount >= 2) {
-        ewsStatus = 'kritis';
-        const reasons = [];
-        if (hariAlpa >= 3) reasons.push(`${hariAlpa} hr Alpa`);
-        if (pendingCount >= 4) reasons.push(`${pendingCount} tugas belum kumpul`);
-        if (belowKkmCount >= 2) reasons.push(`${belowKkmCount} mapel < KKM`);
-        ewsReason = reasons.join(' • ');
-    } else if (hariAlpa >= 1 || pendingCount >= 1 || belowKkmCount >= 1) {
-        ewsStatus = 'waspada';
-        const reasons = [];
-        if (hariAlpa >= 1) reasons.push(`${hariAlpa} hr Alpa`);
-        if (pendingCount >= 1) reasons.push(`${pendingCount} tunggakan tugas`);
-        if (belowKkmCount >= 1) reasons.push(`${belowKkmCount} mapel < KKM`);
-        ewsReason = reasons.join(' • ');
-    }
-
-    const menteeMeta = waliMenteeRecords[stu.id] || { target_akademik: '', jurnal_konseling: [] };
-
-    return {
-        id: stu.id,
-        nisn: stu.nisn,
-        nama: stu.nama,
-        class_id: stu.class_id,
-        kelas: namaKelas,
-        hariHadir,
-        hariSakit,
-        hariIzin,
-        hariAlpa,
-        absenceDatesList,
-        subjectsReport,
-        pendingTasksList,
-        totalTasksAll,
-        doneTasksAll,
-        pendingCount,
-        avgAllSubjects,
-        belowKkmCount,
-        ewsStatus,
-        ewsReason,
-        target_akademik: menteeMeta.target_akademik || '',
-        jurnal_konseling: Array.isArray(menteeMeta.jurnal_konseling) ? menteeMeta.jurnal_konseling : []
-    };
-}
-
-function updateWaliSummaryCards(total, classCount, aman, waspada, kritis) {
-    if (document.getElementById('wali-stat-total')) document.getElementById('wali-stat-total').innerText = `${total} Siswa`;
-    if (document.getElementById('wali-stat-classes')) document.getElementById('wali-stat-classes').innerText = `Tersebar di ${classCount} Kelas`;
-    if (document.getElementById('wali-stat-aman')) document.getElementById('wali-stat-aman').innerText = `${aman} Siswa`;
-    if (document.getElementById('wali-stat-waspada')) document.getElementById('wali-stat-waspada').innerText = `${waspada} Siswa`;
-    if (document.getElementById('wali-stat-kritis')) document.getElementById('wali-stat-kritis').innerText = `${kritis} Siswa`;
-}
-
-function renderGuruWaliRows() {
-    const tbody = document.getElementById('wali-tbody');
-    if (!tbody) return;
-
-    const filterEws = document.getElementById('wali-filter-ews')?.value || 'all';
-    const q = (document.getElementById('wali-search-input')?.value || '').trim().toLowerCase();
-
-    const filtered = waliComputedList.filter(d => {
-        const matchEws = filterEws === 'all' || d.ewsStatus === filterEws;
-        const matchQ = !q || d.nama.toLowerCase().includes(q) || String(d.nisn).toLowerCase().includes(q) || d.kelas.toLowerCase().includes(q);
-        return matchEws && matchQ;
-    });
-
-    if (!filtered.length) {
-        tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400">Tidak ada siswa binaan yang sesuai dengan filter.</td></tr>`;
-        return;
-    }
-
-    tbody.innerHTML = '';
-    filtered.forEach((d, idx) => {
-        let ewsBadge = '';
-        if (d.ewsStatus === 'kritis') {
-            ewsBadge = `<span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200 block">🔴 Kritis</span><span class="text-[10px] text-rose-600 font-semibold block mt-0.5">${d.ewsReason}</span>`;
-        } else if (d.ewsStatus === 'waspada') {
-            ewsBadge = `<span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200 block">🟡 Waspada</span><span class="text-[10px] text-amber-700 font-semibold block mt-0.5">${d.ewsReason}</span>`;
-        } else {
-            ewsBadge = `<span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 block">🟢 Aman</span><span class="text-[10px] text-slate-400 block mt-0.5">Tuntas & Aktif</span>`;
-        }
-
-        const logCount = d.jurnal_konseling.length;
-        const lastLog = logCount > 0 ? d.jurnal_konseling[0] : null;
-
-        tbody.innerHTML += `
-            <tr class="hover:bg-slate-50 transition">
-                <td class="p-3 text-center text-slate-500">${idx + 1}</td>
-                <td class="p-3">
-                    <div class="flex items-center gap-2.5">
-                        <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-extrabold text-xs flex items-center justify-center shrink-0">
-                            ${typeof getInitials === 'function' ? getInitials(d.nama) : 'S'}
-                        </div>
-                        <div>
-                            <span class="font-extrabold text-slate-900 block">${d.nama}</span>
-                            <span class="text-[11px] text-slate-500 font-mono">Kelas <b>${d.kelas}</b> • NISN: ${d.nisn}</span>
-                        </div>
-                    </div>
-                </td>
-                <td class="p-3 text-center whitespace-nowrap">
-                    <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold text-xs">${d.hariHadir}H</span>
-                    <span class="px-2 py-0.5 rounded bg-amber-50 text-amber-700 font-bold text-xs">${d.hariSakit}S</span>
-                    <span class="px-2 py-0.5 rounded bg-sky-50 text-sky-700 font-bold text-xs">${d.hariIzin}I</span>
-                    <span class="px-2 py-0.5 rounded ${d.hariAlpa > 0 ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700'} font-extrabold text-xs">${d.hariAlpa}A</span>
-                </td>
-                <td class="p-3 text-center">
-                    ${d.pendingCount > 0
-                        ? `<span class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-rose-100 text-rose-700">${d.pendingCount} Belum Kumpul</span>`
-                        : `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700">Lengkap (${d.doneTasksAll}/${d.totalTasksAll})</span>`
-                    }
-                </td>
-                <td class="p-3 text-center">
-                    <span class="font-extrabold text-sm text-blue-700 block">${d.avgAllSubjects.toFixed(1)}</span>
-                    <span class="text-[10px] text-slate-400">${d.subjectsReport.length} Mapel</span>
-                </td>
-                <td class="p-3 text-center">${ewsBadge}</td>
-                <td class="p-3 text-center">
-                    <span class="font-bold text-xs text-slate-700 block">${logCount} Catatan</span>
-                    <span class="text-[10px] text-slate-400 truncate max-w-[120px] block mx-auto">${lastLog ? lastLog.tanggal : 'Belum ada'}</span>
-                </td>
-                <td class="p-3 text-center whitespace-nowrap space-x-1">
-                    <button type="button" onclick="openWali360Modal(${d.id})" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm">
-                        🔍 Bedah 360° & Konseling
-                    </button>
-                    <button type="button" onclick="sendWhatsAppReport(${d.id})" class="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-extrabold" title="Kirim WA ke Orang Tua">
-                        <i class="fa-brands fa-whatsapp"></i> WA
-                    </button>
-                </td>
-            </tr>
-        `;
-    });
-}
-
-function openManageBinaanModal() {
-    tempPickedMenteeIds = new Set(Object.keys(waliMenteeRecords).map(Number));
-
-    const selClass = document.getElementById('wali-pick-class');
-    if (selClass) {
-        selClass.innerHTML = '<option value="all">-- Semua Kelas --</option>';
-        Object.keys(waliAllClassesMap).forEach(cid => {
-            selClass.innerHTML += `<option value="${cid}">Kelas ${waliAllClassesMap[cid]}</option>`;
-        });
-    }
-
-    renderBinaanPickerList();
-    document.getElementById('modal-wali-manage')?.classList.remove('hidden');
-}
-
-function closeManageBinaanModal() {
-    document.getElementById('modal-wali-manage')?.classList.add('hidden');
-}
-
-function renderBinaanPickerList() {
-    const tbody = document.getElementById('wali-picker-tbody');
-    if (!tbody) return;
-
-    const classFilter = document.getElementById('wali-pick-class')?.value || 'all';
-    const searchQ = (document.getElementById('wali-pick-search')?.value || '').trim().toLowerCase();
-
-    const badge = document.getElementById('wali-picked-count-badge');
-    if (badge) badge.innerText = `${tempPickedMenteeIds.size} Siswa Dipilih`;
-
-    const list = waliAllStudents.filter(s => {
-        const matchCls = classFilter === 'all' || String(s.class_id) === String(classFilter);
-        const matchQ = !searchQ || s.nama.toLowerCase().includes(searchQ) || String(s.nisn).toLowerCase().includes(searchQ);
-        return matchCls && matchQ;
-    });
-
-    if (!list.length) {
-        tbody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-slate-400">Tidak ada siswa ditemukan.</td></tr>`;
-        return;
-    }
-
-    tbody.innerHTML = list.map(s => {
-        const checked = tempPickedMenteeIds.has(s.id);
-        return `
-            <tr class="hover:bg-blue-50/40 cursor-pointer" onclick="togglePickMentee(${s.id})">
-                <td class="p-2.5 text-center">
-                    <input type="checkbox" ${checked ? 'checked' : ''} onclick="event.stopPropagation(); togglePickMentee(${s.id});" class="w-4 h-4 accent-blue-600 rounded cursor-pointer">
-                </td>
-                <td class="p-2.5 font-bold text-slate-800">${s.nama}</td>
-                <td class="p-2.5 font-mono text-slate-500">${s.nisn}</td>
-                <td class="p-2.5 text-center"><span class="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold">${waliAllClassesMap[s.class_id] || '-'}</span></td>
-            </tr>
-        `;
-    }).join('');
-}
-
-function togglePickMentee(studentId) {
-    if (tempPickedMenteeIds.has(studentId)) {
-        tempPickedMenteeIds.delete(studentId);
-    } else {
-        tempPickedMenteeIds.add(studentId);
-    }
-    renderBinaanPickerList();
-}
-
-async function saveWaliBinaanSelection() {
-    const newRecords = {};
-    const removedIds = [];
-
-    Object.keys(waliMenteeRecords).map(Number).forEach(oldId => {
-        if (!tempPickedMenteeIds.has(oldId)) removedIds.push(oldId);
-    });
-
-    tempPickedMenteeIds.forEach(sid => {
-        newRecords[sid] = waliMenteeRecords[sid] || { target_akademik: '', jurnal_konseling: [] };
-    });
-
-    waliMenteeRecords = newRecords;
-    saveWaliToLocalCache();
-
-    try {
-        if (removedIds.length > 0) {
-            await db.from('guru_wali_binaan')
-                .delete()
-                .eq('teacher_id', currentUser.id)
-                .in('student_id', removedIds);
-        }
-        const upserts = Array.from(tempPickedMenteeIds).map(sid => ({
-            teacher_id: currentUser.id,
-            student_id: sid,
-            target_akademik: waliMenteeRecords[sid].target_akademik || '',
-            jurnal_konseling: waliMenteeRecords[sid].jurnal_konseling || []
-        }));
-        if (upserts.length > 0) {
-            await db.from('guru_wali_binaan').upsert(upserts, { onConflict: 'teacher_id,student_id' });
-        }
-    } catch (e) {}
-
-    closeManageBinaanModal();
-    showToast(`Berhasil menyimpan ${tempPickedMenteeIds.size} siswa binaan!`);
-    await loadGuruWaliDashboard();
-}
-
-function openWali360Modal(studentId) {
-    const d = waliComputedList.find(x => x.id === studentId);
-    if (!d) return;
-    activeWaliStudentId = studentId;
-
-    document.getElementById('w360-avatar').innerText = typeof getInitials === 'function' ? getInitials(d.nama) : 'S';
-    document.getElementById('w360-nama').innerText = d.nama;
-    document.getElementById('w360-kelas').innerText = `Kelas ${d.kelas}`;
-    document.getElementById('w360-nisn').innerText = `NISN: ${d.nisn}`;
-    document.getElementById('w360-target-input').value = d.target_akademik || '';
-
-    const logDateInput = document.getElementById('w360-log-date');
-    if (logDateInput) logDateInput.value = getLocalTodayString();
-
-    const btnPdf = document.getElementById('w360-btn-pdf');
-    if (btnPdf) btnPdf.onclick = () => printWali360PortfolioPDF(d.id);
-
-    document.getElementById('w360-att-pills').innerHTML = `
-        <div class="p-2 rounded-xl bg-emerald-50 border border-emerald-200"><span class="text-lg font-extrabold text-emerald-700 block">${d.hariHadir}</span><span class="text-[10px] font-bold text-emerald-800">Hari Hadir</span></div>
-        <div class="p-2 rounded-xl bg-amber-50 border border-amber-200"><span class="text-lg font-extrabold text-amber-600 block">${d.hariSakit}</span><span class="text-[10px] font-bold text-amber-800">Hari Sakit</span></div>
-        <div class="p-2 rounded-xl bg-sky-50 border border-sky-200"><span class="text-lg font-extrabold text-sky-600 block">${d.hariIzin}</span><span class="text-[10px] font-bold text-sky-800">Hari Izin</span></div>
-        <div class="p-2 rounded-xl bg-rose-50 border border-rose-200"><span class="text-lg font-extrabold text-rose-600 block">${d.hariAlpa}</span><span class="text-[10px] font-bold text-rose-800">Hari Alpa</span></div>
-    `;
-
-    const absDatesEl = document.getElementById('w360-absence-dates');
-    if (d.absenceDatesList.length === 0) {
-        absDatesEl.innerHTML = `<span class="text-emerald-700 font-bold">✨ Bersih dari catatan ketidakhadiran (Sakit/Izin/Alpa) pada semester ini.</span>`;
-    } else {
-        absDatesEl.innerHTML = d.absenceDatesList.map(item =>
-            `<div class="py-0.5 border-b last:border-b-0 border-slate-200 flex justify-between"><span>📅 <b>${item.tanggal}</b> — <b class="${item.status === 'Alpa' ? 'text-rose-600' : 'text-amber-700'}">${item.status}</b></span><span class="text-slate-500">${item.mapel}</span></div>`
-        ).join('');
-    }
-
-    const subjTbody = document.getElementById('w360-subjects-tbody');
-    if (!d.subjectsReport.length) {
-        subjTbody.innerHTML = `<tr><td colspan="10" class="p-4 text-center text-slate-400">Belum ada data mata pelajaran di kelas siswa ini.</td></tr>`;
-    } else {
-        subjTbody.innerHTML = d.subjectsReport.map(s => `
-            <tr class="hover:bg-slate-50">
-                <td class="p-2.5 font-extrabold text-slate-900">📘 ${s.mapel}</td>
-                <td class="p-2.5 text-slate-600">${s.guru}</td>
-                <td class="p-2.5 text-center font-mono text-[11px]">${s.attRec.hadir}H/${s.attRec.sakit}S/${s.attRec.izin}I/${s.attRec.alpa}A</td>
-                <td class="p-2.5 text-center font-bold ${s.tasksDone < s.tasksTotal ? 'text-rose-600' : 'text-emerald-700'}">${s.tasksDone}/${s.tasksTotal}</td>
-                <td class="p-2.5 text-center">${s.nTugas.toFixed(1)}</td>
-                <td class="p-2.5 text-center">${s.nBab.toFixed(1)}</td>
-                <td class="p-2.5 text-center">${s.nSmt.toFixed(1)}</td>
-                <td class="p-2.5 text-center font-extrabold text-blue-700 bg-blue-50/50">${s.nilaiAkhir.toFixed(1)}</td>
-                <td class="p-2.5 text-center">${s.kkm}</td>
-                <td class="p-2.5 text-center">
-                    <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${s.tuntas ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">
-                        ${s.tuntas ? 'TUNTAS' : 'BELUM TUNTAS'}
-                    </span>
-                </td>
-            </tr>
-        `).join('');
-    }
-
-    document.getElementById('w360-pending-badge').innerText = `${d.pendingTasksList.length} Tugas`;
-    const pendingBox = document.getElementById('w360-pending-list');
-    if (d.pendingTasksList.length === 0) {
-        pendingBox.innerHTML = `<div class="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold text-center">🎉 Luar biasa! Seluruh tugas dari semua guru telah dikumpulkan.</div>`;
-    } else {
-        pendingBox.innerHTML = d.pendingTasksList.map(t => `
-            <div class="p-2.5 rounded-xl bg-rose-50/60 border border-rose-200 text-xs">
-                <div class="flex justify-between font-bold text-rose-900">
-                    <span>${t.mapel}</span>
-                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-200 text-rose-900">${t.kategori}</span>
-                </div>
-                <div class="font-extrabold text-slate-900 mt-0.5">${t.judul}</div>
-                <div class="text-[11px] text-slate-500">Guru: ${t.guru}</div>
-            </div>
-        `).join('');
-    }
-
-    renderWali360CounselingLogs(d);
-    document.getElementById('modal-wali-360')?.classList.remove('hidden');
+    renderWaliCounselingLogs(counselingRes.data || []);
+    document.getElementById('modal-wali-360').classList.remove('hidden');
 }
 
 function closeWali360Modal() {
-    document.getElementById('modal-wali-360')?.classList.add('hidden');
+    activeWaliStudent360 = null;
+    document.getElementById('modal-wali-360').classList.add('hidden');
 }
 
 async function saveWaliTargetAkademik() {
-    if (!activeWaliStudentId) return;
-    const val = document.getElementById('w360-target-input').value.trim();
-    if (!waliMenteeRecords[activeWaliStudentId]) {
-        waliMenteeRecords[activeWaliStudentId] = { target_akademik: '', jurnal_konseling: [] };
-    }
-    waliMenteeRecords[activeWaliStudentId].target_akademik = val;
+    if (!activeWaliStudent360) return;
+    const target_teks = document.getElementById('w360-target-input')?.value.trim() || '';
 
-    const item = waliComputedList.find(x => x.id === activeWaliStudentId);
-    if (item) item.target_akademik = val;
+    await db.from('wali_targets').upsert([{
+        teacher_id: currentUser.id,
+        student_id: activeWaliStudent360.id,
+        target_teks
+    }], { onConflict: 'teacher_id,student_id' });
 
-    await syncSingleMenteeToSupabase(activeWaliStudentId);
-    showToast('Target & catatan akademik siswa binaan disimpan!');
+    showToast('Target akademik siswa binaan berhasil disimpan!');
 }
 
 async function addWaliCounselingLog(e) {
     e.preventDefault();
-    if (!activeWaliStudentId) return;
+    if (!activeWaliStudent360) return;
 
     const tanggal = document.getElementById('w360-log-date').value;
     const topik = document.getElementById('w360-log-topic').value;
-    const tindak = document.getElementById('w360-log-tindak').value.trim();
     const catatan = document.getElementById('w360-log-note').value.trim();
+    const tindak_lanjut = document.getElementById('w360-log-tindak').value.trim();
 
-    if (!waliMenteeRecords[activeWaliStudentId]) {
-        waliMenteeRecords[activeWaliStudentId] = { target_akademik: '', jurnal_konseling: [] };
-    }
-
-    const newEntry = {
-        id: Date.now(),
+    const { error } = await db.from('wali_counseling_logs').insert([{
+        teacher_id: currentUser.id,
+        student_id: activeWaliStudent360.id,
         tanggal,
         topik,
         catatan,
-        tindak_lanjut: tindak || '-'
-    };
+        tindak_lanjut
+    }]);
 
-    waliMenteeRecords[activeWaliStudentId].jurnal_konseling.unshift(newEntry);
-
-    const item = waliComputedList.find(x => x.id === activeWaliStudentId);
-    if (item) {
-        item.jurnal_konseling = waliMenteeRecords[activeWaliStudentId].jurnal_konseling;
-        renderWali360CounselingLogs(item);
-    }
+    if (error) return showToast('Gagal mencatat jurnal: ' + error.message, 'error');
 
     document.getElementById('w360-log-note').value = '';
     document.getElementById('w360-log-tindak').value = '';
+    showToast('Jurnal bimbingan berhasil dicatat!');
 
-    await syncSingleMenteeToSupabase(activeWaliStudentId);
-    renderGuruWaliRows();
-    showToast('Jurnal konseling berhasil dicatat!');
+    const { data } = await db.from('wali_counseling_logs')
+        .select('*')
+        .eq('student_id', activeWaliStudent360.id)
+        .order('tanggal', { ascending: false });
+    renderWaliCounselingLogs(data || []);
 }
 
-async function deleteWaliCounselingLog(logId) {
-    if (!activeWaliStudentId || !waliMenteeRecords[activeWaliStudentId]) return;
-    waliMenteeRecords[activeWaliStudentId].jurnal_konseling =
-        waliMenteeRecords[activeWaliStudentId].jurnal_konseling.filter(l => l.id !== logId);
+function renderWaliCounselingLogs(logs) {
+    const container = document.getElementById('w360-logs-list');
+    if (!container) return;
 
-    const item = waliComputedList.find(x => x.id === activeWaliStudentId);
-    if (item) {
-        item.jurnal_konseling = waliMenteeRecords[activeWaliStudentId].jurnal_konseling;
-        renderWali360CounselingLogs(item);
-    }
-
-    await syncSingleMenteeToSupabase(activeWaliStudentId);
-    renderGuruWaliRows();
-}
-
-function renderWali360CounselingLogs(d) {
-    const box = document.getElementById('w360-logs-list');
-    if (!box) return;
-
-    if (!d.jurnal_konseling.length) {
-        box.innerHTML = `<p class="text-xs text-slate-400 italic text-center py-4">Belum ada riwayat catatan bimbingan akademik.</p>`;
+    container.innerHTML = '';
+    if (!logs.length) {
+        container.innerHTML = `<p class="text-xs text-slate-400 italic text-center py-4">Belum ada catatan jurnal bimbingan.</p>`;
         return;
     }
 
-    box.innerHTML = d.jurnal_konseling.map(l => `
-        <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex justify-between items-start gap-2">
-            <div class="space-y-1">
-                <div class="flex items-center gap-2">
-                    <span class="font-mono font-bold text-indigo-700">${l.tanggal}</span>
-                    <span class="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 font-bold text-[10px]">${l.topik}</span>
+    logs.forEach(l => {
+        container.innerHTML += `
+            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+                <div class="flex items-center justify-between">
+                    <span class="font-extrabold text-blue-900">📌 ${l.topik}</span>
+                    <span class="text-[10px] text-slate-400">${l.tanggal}</span>
                 </div>
-                <p class="font-semibold text-slate-800">${l.catatan}</p>
-                <p class="text-[11px] text-slate-500"><b>Tindak Lanjut:</b> ${l.tindak_lanjut}</p>
+                <p class="text-slate-700">${l.catatan}</p>
+                ${l.tindak_lanjut ? `<p class="text-[11px] text-indigo-700 font-semibold">Tindak Lanjut: ${l.tindak_lanjut}</p>` : ''}
             </div>
-            <button type="button" onclick="deleteWaliCounselingLog(${l.id})" class="text-rose-500 hover:text-rose-700 font-bold text-xs">🗑️</button>
-        </div>
-    `).join('');
+        `;
+    });
 }
 
-function printWali360PortfolioPDF(studentId) {
-    const d = waliComputedList.find(x => x.id === studentId);
-    if (!d) return;
-
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
-    const semRange = getActiveSemesterDateRange();
-
-    doc.setFontSize(13);
-    doc.setFont("helvetica", "bold");
-    doc.text("LAPORAN PEMANTAUAN & BIMBINGAN AKADEMIK (GURU WALI)", 105, 15, { align: "center" });
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Periode: ${semRange.label}  |  Guru Wali / Pembimbing Akademik: ${currentUser.nama_lengkap}`, 105, 21, { align: "center" });
-    doc.line(14, 24, 196, 24);
-
-    doc.text(`Nama Siswa : ${d.nama}`, 14, 31);
-    doc.text(`NISN       : ${d.nisn}`, 14, 36);
-    doc.text(`Kelas      : ${d.kelas}`, 130, 31);
-    doc.text(`Status EWS : ${d.ewsStatus.toUpperCase()} (${d.ewsReason})`, 130, 36);
-
-    doc.autoTable({
-        startY: 41,
-        head: [['Hadir (Hari)', 'Sakit (Hari)', 'Izin (Hari)', 'Alpa (Hari)', 'Tugas Selesai', 'Tunggakan Tugas', 'Rata2 Lintas Mapel']],
-        body: [[
-            `${d.hariHadir} Hari`, `${d.hariSakit} Hari`, `${d.hariIzin} Hari`, `${d.hariAlpa} Hari`,
-            `${d.doneTasksAll}/${d.totalTasksAll}`, `${d.pendingCount} Tugas`, d.avgAllSubjects.toFixed(1)
-        ]],
-        theme: 'grid',
-        headStyles: { fillColor: [30, 41, 59], fontSize: 8, halign: 'center' },
-        bodyStyles: { fontSize: 8, halign: 'center', fontStyle: 'bold' }
-    });
-
-    let curY = doc.lastAutoTable.finalY + 7;
-    doc.setFont("helvetica", "bold");
-    doc.text("1. Capaian Akademik Lintas Mata Pelajaran:", 14, curY);
-
-    const subjRows = d.subjectsReport.map((s, i) => [
-        i + 1, s.mapel, s.guru, `${s.tasksDone}/${s.tasksTotal}`,
-        s.nTugas.toFixed(1), s.nBab.toFixed(1), s.nSmt.toFixed(1),
-        s.nilaiAkhir.toFixed(1), s.kkm, s.tuntas ? 'TUNTAS' : 'BELUM TUNTAS'
-    ]);
-
-    doc.autoTable({
-        startY: curY + 2,
-        head: [['No', 'Mata Pelajaran', 'Guru Pengampu', 'Tugas', 'Rata2 Tugas', 'Ujian Bab', 'Ujian Smt', 'Nilai Akhir', 'KKM', 'Status']],
-        body: subjRows.length ? subjRows : [['-', 'Belum ada data', '-', '-', '-', '-', '-', '-', '-', '-']],
-        theme: 'striped',
-        headStyles: { fillColor: [37, 99, 235], fontSize: 8 },
-        bodyStyles: { fontSize: 8 }
-    });
-
-    curY = doc.lastAutoTable.finalY + 7;
-    doc.setFont("helvetica", "bold");
-    doc.text("2. Jurnal Konseling & Pembinaan Akademik:", 14, curY);
-
-    const logRows = d.jurnal_konseling.map((l, i) => [i + 1, l.tanggal, l.topik, l.catatan, l.tindak_lanjut]);
-    doc.autoTable({
-        startY: curY + 2,
-        head: [['No', 'Tanggal', 'Topik Pembinaan', 'Catatan Konseling', 'Tindak Lanjut']],
-        body: logRows.length ? logRows : [['-', '-', '-', 'Belum ada catatan konseling', '-']],
-        theme: 'grid',
-        headStyles: { fillColor: [79, 70, 229], fontSize: 8 },
-        bodyStyles: { fontSize: 8 }
-    });
-
-    const finalY = doc.lastAutoTable.finalY + 12;
-    const tglCetak = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-    doc.setFont("helvetica", "normal");
-    doc.text(`Dicetak pada: ${tglCetak}`, 135, finalY);
-    doc.text("Guru Wali / Pembimbing Akademik,", 135, finalY + 5);
-    doc.setFont("helvetica", "bold");
-    doc.text(currentUser.nama_lengkap, 135, finalY + 23);
-
-    doc.save(`Portofolio_GuruWali_${d.nama.replace(/\s+/g, '_')}.pdf`);
-}
-
-function exportWaliBinaanExcel() {
-    if (!waliComputedList.length) return showToast('Belum ada siswa binaan untuk diekspor!', 'error');
-    const semRange = getActiveSemesterDateRange();
-
-    const rows = waliComputedList.map((d, i) => ({
-        No: i + 1,
-        NISN: d.nisn,
-        'Nama Siswa Binaan': d.nama,
-        Kelas: d.kelas,
-        Periode: semRange.label,
-        'Hadir (Hari)': d.hariHadir,
-        'Sakit (Hari)': d.hariSakit,
-        'Izin (Hari)': d.hariIzin,
-        'Alpa (Hari)': d.hariAlpa,
-        'Tugas Terkumpul': `${d.doneTasksAll}/${d.totalTasksAll}`,
-        'Tunggakan Tugas': d.pendingCount,
-        'Rata2 Lintas Mapel': Number(d.avgAllSubjects.toFixed(1)),
-        'Mapel Di Bawah KKM': d.belowKkmCount,
-        'Status EWS': d.ewsStatus.toUpperCase(),
-        'Keterangan EWS': d.ewsReason,
-        'Target Akademik': d.target_akademik || '-',
-        'Jumlah Sesi Konseling': d.jurnal_konseling.length
+async function exportWaliBinaanExcel() {
+    if (!waliBinaanList.length) return showToast('Tidak ada data siswa binaan!', 'error');
+    const rows = waliBinaanList.map((s, idx) => ({
+        No: idx + 1,
+        NISN: s.nisn,
+        Nama: s.nama,
+        Kelas: s.classes?.nama_kelas || '-'
     }));
 
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Rekap_Guru_Wali");
-    XLSX.writeFile(wb, `Laporan_Guru_Wali_${currentUser.username}_${semRange.label.replace(/\s+/g, '_')}.xlsx`);
-}
-
-function sendWhatsAppReport(studentId) {
-    let d = waliComputedList.find(item => item.id === studentId);
-
-    // Fallback jika dipanggil dari luar menu Guru Wali
-    if (!d) {
-        const rekapItem = latestRekapData.find(item => item.id === studentId);
-        if (!rekapItem || !currentSettings) return;
-        const pesanMapel = `Assalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *${rekapItem.nama}* (Kelas ${rekapItem.kelas} - NISN: ${rekapItem.nisn}),\n\nBerikut laporan perkembangan hasil belajar pada mata pelajaran *${currentSettings.mapel}*:\n• Rekap Kehadiran: ${rekapItem.absen.hadir}H, ${rekapItem.absen.sakit}S, ${rekapItem.absen.izin}I, ${rekapItem.absen.alpa}A\n• Rata-rata Tugas: *${rekapItem.nTugas.toFixed(1)}*\n• Nilai Akhir Sementara: *${rekapItem.nilaiAkhir.toFixed(2)}* (KKM: ${rekapItem.kkm})\n\nTerima kasih.\n— _${currentUser.nama_lengkap}_`;
-        window.open(`https://wa.me/?text=${encodeURIComponent(pesanMapel)}`, '_blank');
-        return;
-    }
-
-    const rincianMapel = d.subjectsReport.map(s =>
-        `  • *${s.mapel}*: Nilai *${s.nilaiAkhir.toFixed(1)}* (Tugas: ${s.tasksDone}/${s.tasksTotal}) — _${s.tuntas ? 'Tuntas' : 'Perlu Perhatian'}_`
-    ).join('\n') || '  • Belum ada data nilai mata pelajaran.';
-
-    const rincianTunggakan = d.pendingTasksList.length > 0
-        ? `\n*Daftar Tugas Belum Dikumpulkan (${d.pendingCount} Tugas):*\n` + d.pendingTasksList.slice(0, 5).map(t => `  - [${t.mapel}] ${t.judul}`).join('\n')
-        : `\n✅ *Seluruh tugas mata pelajaran telah dikumpulkan dengan lengkap.*`;
-
-    const pesan = `Assalamu'alaikum Wr. Wb.\nYth. Bapak/Ibu Orang Tua/Wali dari *${d.nama}* (Kelas ${d.kelas} — NISN: ${d.nisn}),\n\nSaya *${currentUser.nama_lengkap}* selaku *Guru Wali (Pembimbing Akademik)* menyampaikan laporan perkembangan belajar ananda secara menyeluruh:\n\n*1. Kehadiran Sekolah (Semester Aktif):*\n• Hadir: ${d.hariHadir} Hari | Sakit: ${d.hariSakit} Hari | Izin: ${d.hariIzin} Hari | Alpa: ${d.hariAlpa} Hari\n\n*2. Capaian Lintas Mata Pelajaran:*\n${rincianMapel}\n${rincianTunggakan}\n\nMohon kerja sama Bapak/Ibu untuk terus memotivasi ananda di rumah. Terima kasih.\n— _${currentUser.nama_lengkap} (Guru Wali - PantauBelajar)_`;
-
-    window.open(`https://wa.me/?text=${encodeURIComponent(pesan)}`, '_blank');
+    XLSX.utils.book_append_sheet(wb, ws, "Siswa_Binaan");
+    XLSX.writeFile(wb, "Daftar_Siswa_Binaan_PA.xlsx");
 }
