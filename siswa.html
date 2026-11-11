@@ -8,7 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=4.8">
+    <link rel="stylesheet" href="style.css?v=4.9">
 </head>
 <body class="min-h-screen flex flex-col bg-[#f8fafc] text-slate-800">
 
@@ -71,7 +71,7 @@
             <!-- KOTAK GRAFIK / CHART CAPAIAN -->
             <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
                 <h3 class="font-extrabold text-xs sm:text-sm text-slate-900">📊 Grafik Status Penyelesaian Tugas Anda</h3>
-                <div class="h-40 relative max-w-xs mx-auto">
+                <div class="h-48 relative max-w-sm mx-auto">
                     <canvas id="chartStudentTaskStatus"></canvas>
                 </div>
             </div>
@@ -112,7 +112,7 @@
     </div>
 
     <!-- SCRIPTS -->
-    <script src="config.js?v=4.8"></script>
+    <script src="config.js?v=4.9"></script>
     <script>
         let allStudentsCache = [];
         let classesCache = [];
@@ -189,6 +189,10 @@
 
         function backToSearch() {
             currentPortalStudent = null;
+            if (studentChartInstance) {
+                studentChartInstance.destroy();
+                studentChartInstance = null;
+            }
             document.getElementById('portal-content-area').classList.add('hidden');
             document.getElementById('portal-search-card').classList.remove('hidden');
             document.getElementById('input-search-query').value = '';
@@ -241,7 +245,6 @@
 
                 if (isApproved) {
                     badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800">✅ Selesai (Disetujui Guru)</span>`;
-                    // Nilai disengaja tidak ditampilkan ke siswa, hanya status tuntas
                     actionBtn = `<span class="text-xs font-extrabold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">Tuntas</span>`;
                 } else if (isPending) {
                     badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-800">⏳ Menunggu Verifikasi Guru</span>`;
@@ -279,13 +282,20 @@
 
             document.getElementById('portal-stat-done').innerText = `${doneCount} / ${assessments.length}`;
             document.getElementById('portal-stat-pending').innerText = pendingCount;
-            renderStudentChart(doneCount, pendingCount, assessments.length - (doneCount + pendingCount));
+            
+            // Render Chart dengan jeda microtask agar DOM sudah sepenuhnya tampil
+            setTimeout(() => {
+                renderStudentChart(doneCount, pendingCount, assessments.length - (doneCount + pendingCount));
+            }, 50);
         }
 
         function renderStudentChart(done, pending, belum) {
             const ctx = document.getElementById('chartStudentTaskStatus');
             if (!ctx) return;
-            if (studentChartInstance) studentChartInstance.destroy();
+            if (studentChartInstance) {
+                studentChartInstance.destroy();
+                studentChartInstance = null;
+            }
 
             studentChartInstance = new Chart(ctx, {
                 type: 'doughnut',
@@ -301,7 +311,12 @@
                     responsive: true,
                     maintainAspectRatio: false,
                     cutout: '70%',
-                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
+                    plugins: { 
+                        legend: { 
+                            position: 'bottom', 
+                            labels: { boxWidth: 12, font: { size: 11 } } 
+                        } 
+                    }
                 }
             });
         }
