@@ -8,7 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=4.9">
+    <link rel="stylesheet" href="style.css?v=5.1">
 </head>
 <body class="min-h-screen flex flex-col bg-[#f8fafc] text-slate-800">
 
@@ -68,11 +68,19 @@
                 </div>
             </div>
 
-            <!-- KOTAK GRAFIK / CHART CAPAIAN -->
-            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                <h3 class="font-extrabold text-xs sm:text-sm text-slate-900">📊 Grafik Status Penyelesaian Tugas Anda</h3>
-                <div class="h-48 relative max-w-sm mx-auto">
-                    <canvas id="chartStudentTaskStatus"></canvas>
+            <!-- KOTAK GRAFIK / CHART CAPAIAN (TUGAS & KEHADIRAN) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                    <h3 class="font-extrabold text-xs sm:text-sm text-slate-900">📊 Grafik Status Tugas</h3>
+                    <div class="h-44 relative max-w-xs mx-auto">
+                        <canvas id="chartStudentTaskStatus"></canvas>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                    <h3 class="font-extrabold text-xs sm:text-sm text-slate-900">📅 Grafik Kehadiran</h3>
+                    <div class="h-44 relative max-w-xs mx-auto">
+                        <canvas id="chartStudentAttendance"></canvas>
+                    </div>
                 </div>
             </div>
 
@@ -112,13 +120,14 @@
     </div>
 
     <!-- SCRIPTS -->
-    <script src="config.js?v=4.9"></script>
+    <script src="config.js?v=5.1"></script>
     <script>
         let allStudentsCache = [];
         let classesCache = [];
         let currentPortalStudent = null;
         let selectedAssessmentForSubmit = null;
-        let studentChartInstance = null;
+        let studentTaskChartInstance = null;
+        let studentAttChartInstance = null;
 
         window.onload = async () => {
             await initPortalSearch();
@@ -184,14 +193,18 @@
             document.getElementById('portal-stu-name').innerText = currentPortalStudent.nama;
             document.getElementById('portal-stu-nisn').innerText = `NISN: ${currentPortalStudent.nisn} | Kelas: ${className}`;
 
-            await loadPortalStudentTasks();
+            await loadPortalStudentData();
         }
 
         function backToSearch() {
             currentPortalStudent = null;
-            if (studentChartInstance) {
-                studentChartInstance.destroy();
-                studentChartInstance = null;
+            if (studentTaskChartInstance) {
+                studentTaskChartInstance.destroy();
+                studentTaskChartInstance = null;
+            }
+            if (studentAttChartInstance) {
+                studentAttChartInstance.destroy();
+                studentAttChartInstance = null;
             }
             document.getElementById('portal-content-area').classList.add('hidden');
             document.getElementById('portal-search-card').classList.remove('hidden');
@@ -199,18 +212,27 @@
             document.getElementById('search-results-container').classList.add('hidden');
         }
 
-        async function loadPortalStudentTasks() {
+        async function loadPortalStudentData() {
             if (!currentPortalStudent) return;
 
-            const [settingsRes, assRes, scoresRes] = await Promise.all([
-                db.from('teacher_settings').select('*').eq('class_id', currentPortalStudent.class_id),
+            const [assRes, scoresRes, attLogsRes] = await Promise.all([
                 db.from('assessments').select('*').eq('class_id', currentPortalStudent.class_id).eq('tampil_publik', true),
-                db.from('scores').select('*').eq('student_id', currentPortalStudent.id)
+                db.from('scores').select('*').eq('student_id', currentPortalStudent.id),
+                db.from('attendance_logs').select('*').eq('class_id', currentPortalStudent.class_id).eq('student_id', currentPortalStudent.id)
             ]);
 
-            const settings = settingsRes.data || [];
             const assessments = assRes.data || [];
             const scores = scoresRes.data || [];
+            const attLogs = attLogsRes.data || [];
+
+            // Hitung data kehadiran dari attendance_logs
+            let hadirCount = 0, sakitCount = 0, izinCount = 0, alpaCount = 0;
+            attLogs.forEach(l => {
+                if (l.status === 'H') hadirCount++;
+                else if (l.status === 'S') sakitCount++;
+                else if (l.status === 'I') izinCount++;
+                else if (l.status === 'A') alpaCount++;
+            });
 
             const container = document.getElementById('portal-tasks-container');
             if (!container) return;
@@ -219,7 +241,9 @@
                 container.innerHTML = `<p class="text-xs text-slate-400 italic text-center py-6">Belum ada tugas atau ujian yang dipublikasikan oleh guru.</p>`;
                 document.getElementById('portal-stat-done').innerText = '0 / 0';
                 document.getElementById('portal-stat-pending').innerText = '0';
-                renderStudentChart(0, 0, 0);
+                setTimeout(() => {
+                    renderStudentCharts(0, 0, 0, hadirCount, sakitCount, izinCount, alpaCount);
+                }, 50);
                 return;
             }
 
@@ -228,7 +252,6 @@
             let rejectedCount = 0;
 
             container.innerHTML = assessments.map(a => {
-                const setting = settings.find(s => s.teacher_id == a.teacher_id && s.mapel === a.mapel);
                 const mapelName = a.mapel || 'Mata Pelajaran';
                 const sc = scores.find(s => s.assessment_id === a.id) || { status_kumpul: false, status_pengajuan: 'none' };
 
@@ -283,42 +306,68 @@
             document.getElementById('portal-stat-done').innerText = `${doneCount} / ${assessments.length}`;
             document.getElementById('portal-stat-pending').innerText = pendingCount;
             
-            // Render Chart dengan jeda microtask agar DOM sudah sepenuhnya tampil
             setTimeout(() => {
-                renderStudentChart(doneCount, pendingCount, assessments.length - (doneCount + pendingCount));
+                renderStudentCharts(doneCount, pendingCount, assessments.length - (doneCount + pendingCount), hadirCount, sakitCount, izinCount, alpaCount);
             }, 50);
         }
 
-        function renderStudentChart(done, pending, belum) {
-            const ctx = document.getElementById('chartStudentTaskStatus');
-            if (!ctx) return;
-            if (studentChartInstance) {
-                studentChartInstance.destroy();
-                studentChartInstance = null;
+        function renderStudentCharts(done, pending, belum, hadir, sakit, izin, alpa) {
+            // Chart Tugas
+            const ctxTask = document.getElementById('chartStudentTaskStatus');
+            if (ctxTask) {
+                if (studentTaskChartInstance) {
+                    studentTaskChartInstance.destroy();
+                    studentTaskChartInstance = null;
+                }
+                studentTaskChartInstance = new Chart(ctxTask, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Selesai', 'Pending', 'Belum'],
+                        datasets: [{
+                            data: [done, pending, belum],
+                            backgroundColor: ['#10b981', '#f59e0b', '#cbd5e1'],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '70%',
+                        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } }
+                    }
+                });
             }
 
-            studentChartInstance = new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Selesai', 'Pending', 'Belum'],
-                    datasets: [{
-                        data: [done, pending, belum],
-                        backgroundColor: ['#10b981', '#f59e0b', '#cbd5e1'],
-                        borderWidth: 0
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    cutout: '70%',
-                    plugins: { 
-                        legend: { 
-                            position: 'bottom', 
-                            labels: { boxWidth: 12, font: { size: 11 } } 
-                        } 
-                    }
+            // Chart Kehadiran
+            const ctxAtt = document.getElementById('chartStudentAttendance');
+            if (ctxAtt) {
+                if (studentAttChartInstance) {
+                    studentAttChartInstance.destroy();
+                    studentAttChartInstance = null;
                 }
-            });
+                const totalAtt = hadir + sakit + izin + alpa;
+                const attData = totalAtt > 0 ? [hadir, sakit, izin, alpa] : [1, 0, 0, 0];
+                const attLabels = totalAtt > 0 ? ['Hadir', 'Sakit', 'Izin', 'Alpa'] : ['Belum Ada Data'];
+                const attColors = totalAtt > 0 ? ['#10b981', '#f59e0b', '#3b82f6', '#f43f5e'] : ['#e2e8f0'];
+
+                studentAttChartInstance = new Chart(ctxAtt, {
+                    type: 'doughnut',
+                    data: {
+                        labels: attLabels,
+                        datasets: [{
+                            data: attData,
+                            backgroundColor: attColors,
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '70%',
+                        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } }
+                    }
+                });
+            }
         }
 
         function openPortalSubmitModal(assessmentId, taskTitle) {
@@ -364,7 +413,7 @@
             }
 
             showToast('✅ Berhasil mengajukan tugas! Menunggu verifikasi guru.');
-            await loadPortalStudentTasks();
+            await loadPortalStudentData();
         }
 
         function showToast(msg, type = 'success') {
