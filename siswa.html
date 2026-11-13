@@ -174,7 +174,7 @@
             const [clsRes, stuRes, tchRes] = await Promise.all([
                 db.from('classes').select('*'),
                 db.from('students').select('*, classes(nama_kelas)').order('nama'),
-                db.from('app_users').select('id, nama, gdrive_email')
+                db.from('app_users').select('id, nama_lengkap, gdrive_email')
             ]);
             classesCache = clsRes.data || [];
             allStudentsCache = stuRes.data || [];
@@ -258,7 +258,7 @@
                 db.from('assessments').select('*').eq('class_id', currentPortalStudent.class_id).eq('tampil_publik', true).order('id'),
                 db.from('scores').select('*').eq('student_id', currentPortalStudent.id),
                 db.from('attendance_logs').select('*').eq('class_id', currentPortalStudent.class_id).eq('student_id', currentPortalStudent.id),
-                db.from('attendance_recap').select('*').eq('class_id', currentPortalStudent.class_id).eq('student_id', currentPortalStudent.id)
+                db.from('attendance').select('*').eq('student_id', currentPortalStudent.id)
             ]);
 
             currentAssessmentsList = assRes.data || [];
@@ -351,7 +351,7 @@
                                 ${nilaiBadge}
                             </div>
                             <h4 class="font-extrabold text-sm sm:text-base text-slate-900">${a.judul}</h4>
-                            <p class="text-[11px] text-slate-500">Guru: ${teacher?.nama || 'Pengampu'}</p>
+                            <p class="text-[11px] text-slate-500">Guru: ${teacher?.nama_lengkap || 'Pengampu'}</p>
                             ${a.link_pengumpulan ? `
                                 <div class="pt-1">
                                     <a href="${a.link_pengumpulan}" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-200/80 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition">
