@@ -8,7 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=5.2">
+    <link rel="stylesheet" href="style.css?v=5.3">
 </head>
 <body class="min-h-screen flex flex-col bg-[#f8fafc] text-slate-800">
 
@@ -91,7 +91,7 @@
             <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                 <div class="border-b pb-3">
                     <h3 class="font-extrabold text-sm sm:text-base text-slate-900">📚 Daftar Tugas & Pengumpulan File</h3>
-                    <p class="text-xs text-slate-500">Klik tombol <b>"📤 Kirim File Tugas"</b> untuk mengunggah langsung ke Google Drive guru (100% privat, teman sekelas tidak dapat melihat file Anda).</p>
+                    <p class="text-xs text-slate-500">Klik tombol <b>"📤 Kirim File Tugas"</b> untuk mengunggah satu atau beberapa file sekaligus langsung ke Google Drive guru.</p>
                 </div>
                 <div id="portal-tasks-container" class="space-y-3"></div>
             </div>
@@ -100,11 +100,13 @@
     </main>
 
     <!-- FOOTER -->
-    <footer class="bg-white border-t border-slate-200 text-center py-4 text-xs text-slate-500">
-        PantauBelajar &copy; 2026 — Sistem Pemantauan Akademik Terpadu
+    <footer class="bg-white border-t border-slate-200 text-center py-4 text-xs text-slate-500 space-x-2">
+        <span>PantauBelajar &copy; 2026</span>
+        <span>•</span>
+        <a href="privacy.html" class="text-blue-600 hover:underline">Kebijakan Privasi</a>
     </footer>
 
-    <!-- MODAL UPLOAD FILE LANGSUNG KE GOOGLE DRIVE GURU -->
+    <!-- MODAL UPLOAD MULTI-FILE LANGSUNG KE GOOGLE DRIVE GURU -->
     <div id="modal-portal-submit" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 border border-slate-100 space-y-4">
             <div class="flex items-center justify-between border-b pb-3">
@@ -127,9 +129,10 @@
                 </div>
 
                 <div id="upload-file-box">
-                    <label class="block font-bold text-slate-700 mb-1.5">Pilih File Tugas dari Perangkat Anda</label>
-                    <input type="file" id="portal-file-input" class="w-full border border-slate-300 rounded-xl p-2.5 text-xs bg-white file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-extrabold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-                    <p class="text-[11px] text-slate-400 mt-1.5">Mendukung PDF, Word, Excel, PPT, Gambar, ZIP, maupun Video.</p>
+                    <label class="block font-bold text-slate-700 mb-1.5">Pilih File Tugas (Bisa Lebih dari 1 File)</label>
+                    <input type="file" id="portal-file-input" multiple onchange="previewSelectedFiles()" class="w-full border border-slate-300 rounded-xl p-2.5 text-xs bg-white file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-extrabold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    <div id="selected-files-preview" class="mt-2 space-y-1 text-[11px] text-slate-600 max-h-32 overflow-y-auto"></div>
+                    <p class="text-[11px] text-slate-400 mt-1.5">Mendukung PDF, Word, Excel, PPT, Gambar, ZIP, maupun Video. Tahan <b>Ctrl</b> (PC) atau pilih beberapa file di HP.</p>
                 </div>
 
                 <!-- PROGRESS BAR UPLOAD -->
@@ -154,7 +157,7 @@
     </div>
 
     <!-- SCRIPTS -->
-    <script src="config.js?v=5.2"></script>
+    <script src="config.js?v=5.3"></script>
     <script>
         let allStudentsCache = [];
         let classesCache = [];
@@ -179,6 +182,19 @@
             classesCache = clsRes.data || [];
             allStudentsCache = stuRes.data || [];
             teachersCache = tchRes.data || [];
+        }
+
+        function parseSubmittedFiles(raw) {
+            if (!raw) return [];
+            try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) return parsed;
+            } catch {
+                if (typeof raw === 'string' && raw.startsWith('http')) {
+                    return [{ name: 'File Tugas', url: raw }];
+                }
+            }
+            return [];
         }
 
         async function handleStudentSearch(e) {
@@ -266,7 +282,6 @@
             const attLogs = attLogsRes.data || [];
             const attRecaps = attRecapRes.data || [];
 
-            // Hitung kehadiran dari attendance_logs (atau fallback ke attendance_recap jika guru pakai rekap manual)
             let hadirCount = 0, sakitCount = 0, izinCount = 0, alpaCount = 0;
             if (attLogs.length > 0) {
                 attLogs.forEach(l => {
@@ -317,13 +332,18 @@
                 if (isApproved) doneCount++;
                 if (isPending) pendingCount++;
 
+                const existingFiles = parseSubmittedFiles(sc.link_tugas_siswa);
+                const filesBadgeHtml = existingFiles.length > 0
+                    ? `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">📎 ${existingFiles.length} File Terunggah</span>`
+                    : '';
+
                 let badgeHtml = '';
                 let actionBtn = '';
 
                 if (isApproved) {
                     badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800">✅ Terkumpul</span>`;
                     actionBtn = hasDriveConnected
-                        ? `<button type="button" onclick="openPortalSubmitModal(${a.id})" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition">🔄 Ganti File</button>`
+                        ? `<button type="button" onclick="openPortalSubmitModal(${a.id})" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition">➕ Tambah File</button>`
                         : `<span class="text-xs font-extrabold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">Selesai</span>`;
                 } else if (isPending) {
                     badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-800">⏳ Menunggu Verifikasi</span>`;
@@ -348,6 +368,7 @@
                             <div class="flex items-center gap-2 flex-wrap">
                                 <span class="px-2.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-100 text-blue-800">📘 ${mapelName}</span>
                                 ${badgeHtml}
+                                ${filesBadgeHtml}
                                 ${nilaiBadge}
                             </div>
                             <h4 class="font-extrabold text-sm sm:text-base text-slate-900">${a.judul}</h4>
@@ -376,7 +397,6 @@
         }
 
         function renderStudentCharts(done, pending, belum, hadir, sakit, izin, alpa) {
-            // Chart Tugas
             const ctxTask = document.getElementById('chartStudentTaskStatus');
             if (ctxTask) {
                 if (studentTaskChartInstance) {
@@ -402,7 +422,6 @@
                 });
             }
 
-            // Chart Kehadiran
             const ctxAtt = document.getElementById('chartStudentAttendance');
             if (ctxAtt) {
                 if (studentAttChartInstance) {
@@ -434,7 +453,19 @@
             }
         }
 
-        // ==================== MODAL & UPLOAD LANGSUNG KE GOOGLE DRIVE ====================
+        // ==================== MODAL & UPLOAD MULTI-FILE KE GOOGLE DRIVE ====================
+        function previewSelectedFiles() {
+            const files = [...(document.getElementById('portal-file-input')?.files || [])];
+            const box = document.getElementById('selected-files-preview');
+            if (!box) return;
+            if (!files.length) {
+                box.innerHTML = '';
+                return;
+            }
+            box.innerHTML = `<div class="font-bold text-blue-700">Dipilih ${files.length} file:</div>` +
+                files.map((f, i) => `<div class="truncate bg-slate-50 px-2 py-1 rounded border border-slate-200">${i + 1}. ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB)</div>`).join('');
+        }
+
         function openPortalSubmitModal(assessmentId) {
             selectedAssessmentObj = currentAssessmentsList.find(a => Number(a.id) === Number(assessmentId));
             if (!selectedAssessmentObj) return;
@@ -444,6 +475,7 @@
 
             document.getElementById('modal-task-title').innerText = `${selectedAssessmentObj.mapel} — ${selectedAssessmentObj.judul}`;
             document.getElementById('portal-file-input').value = '';
+            document.getElementById('selected-files-preview').innerHTML = '';
             document.getElementById('upload-progress-box').classList.add('hidden');
             document.getElementById('upload-progress-bar').style.width = '0%';
             document.getElementById('upload-percent-text').innerText = '0%';
@@ -453,7 +485,7 @@
 
             if (hasDrive) {
                 fileBox.classList.remove('hidden');
-                document.getElementById('modal-task-subtitle').innerText = 'File otomatis tersimpan rapi ke Google Drive guru';
+                document.getElementById('modal-task-subtitle').innerText = 'Semua file otomatis tersimpan rapi ke folder tugas guru';
                 confirmBtn.innerHTML = `<i class="fa-solid fa-cloud-arrow-up"></i> Unggah & Kumpulkan`;
             } else {
                 fileBox.classList.add('hidden');
@@ -476,16 +508,15 @@
             const teacher = teachersCache.find(t => Number(t.id) === Number(selectedAssessmentObj.teacher_id));
             const hasDrive = Boolean(teacher?.gdrive_email);
 
-            // Fallback jika guru belum menghubungkan Google Drive
             if (!hasDrive) {
-                await recordSubmissionToSupabase(null, 'pending');
+                await recordSubmissionToSupabase([], 'pending');
                 return;
             }
 
             const fileInput = document.getElementById('portal-file-input');
-            const file = fileInput?.files?.[0];
-            if (!file) {
-                return showToast('Silakan pilih file tugas dari perangkat Anda terlebih dahulu!', 'error');
+            const files = [...(fileInput?.files || [])];
+            if (!files.length) {
+                return showToast('Silakan pilih minimal 1 file tugas terlebih dahulu!', 'error');
             }
 
             isUploadingNow = true;
@@ -498,49 +529,53 @@
             progBox.classList.remove('hidden');
 
             try {
-                // 1. Format nama file standar: NISN_NamaSiswa_JudulTugas.ext
-                const ext = file.name.includes('.') ? '.' + file.name.split('.').pop() : '';
                 const cleanStudentName = currentPortalStudent.nama.replace(/[^a-zA-Z0-9\s]/g, '').trim().replace(/\s+/g, '_');
                 const cleanTaskTitle = selectedAssessmentObj.judul.replace(/[^a-zA-Z0-9\s]/g, '').trim().replace(/\s+/g, '_');
-                const formattedFileName = `${currentPortalStudent.nisn}_${cleanStudentName}_${cleanTaskTitle}${ext}`;
                 const className = currentPortalStudent.classes?.nama_kelas || 'Kelas';
+                const uploadedResults = [];
 
-                // 2. Minta tiket Resumable Upload & pembuatan folder otomatis ke Edge Function
-                progTxt.innerText = 'Menyiapkan folder di Google Drive guru...';
-                progBar.style.width = '15%';
-                progPct.innerText = '15%';
+                for (let idx = 0; idx < files.length; idx++) {
+                    const file = files[idx];
+                    const ext = file.name.includes('.') ? '.' + file.name.split('.').pop() : '';
+                    const suffix = files.length > 1 ? `_File${idx + 1}` : '';
+                    const formattedFileName = `${currentPortalStudent.nisn}_${cleanStudentName}_${cleanTaskTitle}${suffix}${ext}`;
 
-                const { data: initData, error: initErr } = await db.functions.invoke('gdrive-bridge', {
-                    body: {
-                        action: 'init_upload',
-                        teacher_id: selectedAssessmentObj.teacher_id,
-                        class_name: className,
-                        mapel: selectedAssessmentObj.mapel,
-                        task_title: selectedAssessmentObj.judul,
-                        file_name: formattedFileName,
-                        mime_type: file.type || 'application/octet-stream'
+                    progTxt.innerText = `Menyiapkan file ${idx + 1} dari ${files.length}...`;
+
+                    const { data: initData, error: initErr } = await db.functions.invoke('gdrive-bridge', {
+                        body: {
+                            action: 'init_upload',
+                            teacher_id: selectedAssessmentObj.teacher_id,
+                            class_name: className,
+                            mapel: selectedAssessmentObj.mapel,
+                            task_title: selectedAssessmentObj.judul,
+                            file_name: formattedFileName,
+                            mime_type: file.type || 'application/octet-stream'
+                        }
+                    });
+
+                    if (initErr || !initData?.success || !initData?.uploadUrl) {
+                        throw new Error(initData?.error || initErr?.message || `Gagal menyiapkan file ke-${idx + 1}.`);
                     }
-                });
 
-                if (initErr || !initData?.success || !initData?.uploadUrl) {
-                    throw new Error(initData?.error || initErr?.message || 'Gagal menyiapkan folder tujuan di Google Drive.');
+                    progTxt.innerText = `Mengunggah file ${idx + 1} dari ${files.length} (${file.name})...`;
+                    const driveResponse = await uploadFileWithProgress(initData.uploadUrl, file, (filePct) => {
+                        const overallPct = Math.round(((idx + filePct / 100) / files.length) * 95);
+                        progBar.style.width = `${overallPct}%`;
+                        progPct.innerText = `${overallPct}%`;
+                    });
+
+                    const fileViewUrl = driveResponse.webViewLink || (driveResponse.id ? `https://drive.google.com/file/d/${driveResponse.id}/view` : null);
+                    if (fileViewUrl) {
+                        uploadedResults.push({ name: formattedFileName, url: fileViewUrl });
+                    }
                 }
 
-                // 3. Unggah file langsung dari HP/Laptop siswa ke Google Drive guru (mendukung file besar + progress real-time)
-                progTxt.innerText = 'Mengunggah file ke Google Drive...';
-                const driveResponse = await uploadFileWithProgress(initData.uploadUrl, file, (percent) => {
-                    const scaled = 15 + Math.round(percent * 0.8);
-                    progBar.style.width = `${scaled}%`;
-                    progPct.innerText = `${scaled}%`;
-                });
-
-                // 4. Catat status otomatis Terkumpul + Link File ke database Supabase
-                progTxt.innerText = 'Mencatat bukti pengumpulan...';
+                progTxt.innerText = 'Mencatat semua bukti pengumpulan...';
                 progBar.style.width = '100%';
                 progPct.innerText = '100%';
 
-                const fileViewUrl = driveResponse.webViewLink || (driveResponse.id ? `https://drive.google.com/file/d/${driveResponse.id}/view` : null);
-                await recordSubmissionToSupabase(fileViewUrl, 'approved');
+                await recordSubmissionToSupabase(uploadedResults, 'approved');
 
             } catch (err) {
                 console.error(err);
@@ -580,7 +615,7 @@
             });
         }
 
-        async function recordSubmissionToSupabase(fileLink, statusPengajuan) {
+        async function recordSubmissionToSupabase(newFilesArray, statusPengajuan) {
             const isApproved = statusPengajuan === 'approved';
             const { data: existing } = await db.from('scores')
                 .select('*')
@@ -588,13 +623,17 @@
                 .eq('student_id', currentPortalStudent.id)
                 .maybeSingle();
 
+            const prevFiles = parseSubmittedFiles(existing?.link_tugas_siswa);
+            const mergedFiles = [...prevFiles, ...newFilesArray];
+            const serializedLinks = mergedFiles.length > 0 ? JSON.stringify(mergedFiles) : null;
+
             let error = null;
             if (existing) {
                 const res = await db.from('scores')
                     .update({
                         status_pengajuan: statusPengajuan,
                         status_kumpul: isApproved,
-                        link_tugas_siswa: fileLink || existing.link_tugas_siswa || null
+                        link_tugas_siswa: serializedLinks
                     })
                     .eq('id', existing.id);
                 error = res.error;
@@ -605,7 +644,7 @@
                         student_id: currentPortalStudent.id,
                         status_pengajuan: statusPengajuan,
                         status_kumpul: isApproved,
-                        link_tugas_siswa: fileLink
+                        link_tugas_siswa: serializedLinks
                     }]);
                 error = res.error;
             }
@@ -619,7 +658,7 @@
             }
 
             showToast(isApproved
-                ? '✅ File berhasil masuk ke Google Drive guru & status Anda otomatis Terkumpul!'
+                ? `✅ ${newFilesArray.length} file berhasil masuk ke Google Drive guru!`
                 : '✅ Pengajuan berhasil dikirim! Menunggu verifikasi guru.');
             await loadPortalStudentData();
         }
