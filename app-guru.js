@@ -1,5 +1,5 @@
 // ============================================================================
-// PANTAU BELAJAR — APP-GURU.JS (DISESUAIKAN DENGAN SKEMA SUPABASE ASLI)
+// PANTAU BELAJAR — APP-GURU.JS (MULTI-FILE SUPPORT & SKEMA SUPABASE ASLI)
 // ============================================================================
 const GOOGLE_OAUTH_CLIENT_ID = '565864753824-3ahjeunj19r6am2fgg2n1fv721kqfp77.apps.googleusercontent.com';
 
@@ -16,7 +16,6 @@ let scoresCache = [];
 let attLogsCache = [];
 let attRecapCache = [];
 let selectedStudentIds = new Set();
-let deleteMode = 'selected';
 let deleteTargetIds = [];
 let groupPresetsCache = [];
 let modalGroupMap = {};
@@ -31,7 +30,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (saved) {
         try {
             currentUser = JSON.parse(saved);
-            // Sinkronkan data terbaru user dari database
             const { data: freshUser } = await db.from('app_users').select('*').eq('id', currentUser.id).single();
             if (freshUser) {
                 currentUser = freshUser;
@@ -1084,6 +1082,19 @@ function renderAssessmentsDropdown() {
     loadAssessmentScores();
 }
 
+function parseStudentSubmittedFiles(raw) {
+    if (!raw) return [];
+    try {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) return arr;
+    } catch {
+        if (String(raw).startsWith('http')) {
+            return [{ name: 'File 1', url: raw }];
+        }
+    }
+    return [];
+}
+
 function loadAssessmentScores() {
     const assId = Number(document.getElementById('active-assessment')?.value);
     const ass = assessmentsCache.find(a => Number(a.id) === assId);
@@ -1146,8 +1157,15 @@ function loadAssessmentScores() {
         if (isDone && val === '') ungraded++;
         if (val !== '') { sumScore += Number(val); gradedCount++; }
 
-        const fileLinkHtml = sc.link_tugas_siswa
-            ? `<a href="${sc.link_tugas_siswa}" target="_blank" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] font-extrabold">📂 Buka File ↗</a>`
+        const parsedFiles = parseStudentSubmittedFiles(sc.link_tugas_siswa);
+        const fileLinkHtml = parsedFiles.length > 0
+            ? `<div class="flex flex-wrap items-center justify-center gap-1">
+                ${parsedFiles.map((f, fIdx) => `
+                    <a href="${f.url}" target="_blank" title="${f.name}" class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] font-extrabold">
+                        📂 File ${fIdx + 1} ↗
+                    </a>
+                `).join('')}
+               </div>`
             : `<span class="text-[11px] text-slate-400">-</span>`;
 
         return `
@@ -1268,7 +1286,7 @@ async function deleteCurrentAssessment() {
     await loadWorkspaceData();
 }
 
-// Preset Kelompok (menggunakan kolom kelompok_template pada teacher_settings)
+// Preset Kelompok (kolom kelompok_template pada teacher_settings)
 function loadGroupPresetsDropdown() {
     const amp = getActiveAmpuan();
     const raw = amp?.kelompok_template;
