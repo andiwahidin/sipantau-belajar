@@ -1,5 +1,5 @@
 // ============================================================================
-// PANTAU BELAJAR — APP-GURU.JS (v5.2 + GOOGLE DRIVE OAUTH)
+// PANTAU BELAJAR — APP-GURU.JS (DISESUAIKAN DENGAN SKEMA SUPABASE ASLI)
 // ============================================================================
 const GOOGLE_OAUTH_CLIENT_ID = '565864753824-3ahjeunj19r6am2fgg2n1fv721kqfp77.apps.googleusercontent.com';
 
@@ -31,6 +31,12 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (saved) {
         try {
             currentUser = JSON.parse(saved);
+            // Sinkronkan data terbaru user dari database
+            const { data: freshUser } = await db.from('app_users').select('*').eq('id', currentUser.id).single();
+            if (freshUser) {
+                currentUser = freshUser;
+                localStorage.setItem('sipantau_user', JSON.stringify(currentUser));
+            }
             await routeByRole();
         } catch (e) {
             localStorage.removeItem('sipantau_user');
@@ -69,7 +75,7 @@ async function handleLogin(e) {
 
     currentUser = data;
     localStorage.setItem('sipantau_user', JSON.stringify(currentUser));
-    showToast(`Selamat datang, ${currentUser.nama}!`);
+    showToast(`Selamat datang, ${currentUser.nama_lengkap}!`);
     await routeByRole();
 }
 
@@ -94,9 +100,10 @@ function setupTopbarUser() {
         badge.classList.remove('hidden');
         badge.classList.add('flex');
     }
-    const initials = (currentUser.nama || 'GR').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+    const fullName = currentUser.nama_lengkap || currentUser.username || 'Guru';
+    const initials = fullName.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
     document.getElementById('topbar-avatar').innerText = initials;
-    document.getElementById('user-display-name').innerText = currentUser.nama;
+    document.getElementById('user-display-name').innerText = fullName;
     document.getElementById('user-role-subtitle').innerText = currentUser.role === 'admin' ? 'Administrator' : 'Guru & Pembimbing';
     updateGDriveConnectionUI();
 }
@@ -107,7 +114,6 @@ function logout() {
     showSection('view-login');
 }
 
-// Ubah Password
 function openPasswordModal() { document.getElementById('modal-password').classList.remove('hidden'); }
 function closePasswordModal() { document.getElementById('modal-password').classList.add('hidden'); }
 
@@ -143,6 +149,13 @@ async function switchAdminMode(mode) {
         setupTopbarUser();
         document.getElementById('admin-student-mode-banner').classList.remove('hidden');
         await loadAllClasses();
+        const clsSel = document.getElementById('guru-active-class');
+        clsSel.innerHTML = classesCache.map(c => `<option value="${c.id}">${c.nama_kelas}</option>`).join('');
+        if (classesCache.length) {
+            activeClassId = classesCache[0].id;
+            clsSel.value = activeClassId;
+            await loadWorkspaceData();
+        }
         switchGuruTab('kelas');
     }
 }
@@ -153,12 +166,12 @@ async function loadAdminUsers() {
     if (!tbody) return;
     tbody.innerHTML = (data || []).map(u => `
         <tr>
-            <td class="p-3 font-bold text-slate-900">${u.nama}</td>
+            <td class="p-3 font-bold text-slate-900">${u.nama_lengkap || '-'}</td>
             <td class="p-3 font-mono text-xs">${u.username}</td>
             <td class="p-3 text-xs">${u.gdrive_email ? `<span class="text-emerald-600 font-bold">✅ Drive: ${u.gdrive_email}</span>` : '<span class="text-slate-400">Standar</span>'}</td>
             <td class="p-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${u.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}">${u.role}</span></td>
             <td class="p-3 text-right space-x-1">
-                <button onclick="openEditTeacherModal(${u.id}, '${u.nama.replace(/'/g, "\\'")}', '${u.username}')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold">Edit</button>
+                <button onclick="openEditTeacherModal(${u.id}, '${(u.nama_lengkap || '').replace(/'/g, "\\'")}', '${u.username}')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold">Edit</button>
                 <button onclick="resetTeacherPassword(${u.id})" class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold">Reset PW</button>
                 ${u.role !== 'admin' ? `<button onclick="deleteTeacher(${u.id})" class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 text-xs font-bold">Hapus</button>` : ''}
             </td>
@@ -168,9 +181,9 @@ async function loadAdminUsers() {
 
 async function addTeacher(e) {
     e.preventDefault();
-    const nama = document.getElementById('adm-nama').value.trim();
+    const nama_lengkap = document.getElementById('adm-nama').value.trim();
     const username = document.getElementById('adm-user').value.trim().toLowerCase();
-    const { error } = await db.from('app_users').insert([{ nama, username, password: '123', role: 'guru' }]);
+    const { error } = await db.from('app_users').insert([{ nama_lengkap, username, password: '123', role: 'guru' }]);
     if (error) return showToast('Gagal menambah guru: ' + error.message, 'error');
     e.target.reset();
     showToast('✅ Akun guru dibuat (Password default: 123)');
@@ -188,9 +201,9 @@ function closeEditTeacherModal() { document.getElementById('modal-edit-teacher')
 async function handleUpdateTeacher(e) {
     e.preventDefault();
     const id = document.getElementById('edit-tch-id').value;
-    const nama = document.getElementById('edit-tch-nama').value.trim();
+    const nama_lengkap = document.getElementById('edit-tch-nama').value.trim();
     const username = document.getElementById('edit-tch-user').value.trim();
-    const { error } = await db.from('app_users').update({ nama, username }).eq('id', id);
+    const { error } = await db.from('app_users').update({ nama_lengkap, username }).eq('id', id);
     if (error) return showToast('Gagal update: ' + error.message, 'error');
     closeEditTeacherModal();
     showToast('✅ Data guru diperbarui');
@@ -210,7 +223,7 @@ async function deleteTeacher(id) {
     await loadAdminUsers();
 }
 
-// ==================== 3. WORKSPACE GURU (KELAS & MAPEL) ====================
+// ==================== 3. WORKSPACE GURU (teacher_settings) ====================
 async function initGuruWorkspace() {
     document.getElementById('admin-student-mode-banner').classList.add('hidden');
     await loadAllClasses();
@@ -227,15 +240,15 @@ async function loadAllClasses() {
 }
 
 async function loadTeacherAmpuan() {
-    const { data } = await db.from('teacher_subjects')
+    const { data } = await db.from('teacher_settings')
         .select('*, classes(nama_kelas)')
         .eq('teacher_id', currentUser.id)
         .order('id');
     ampuanCache = data || [];
 
     const clsSel = document.getElementById('guru-active-class');
-    const uniqueClassIds = [...new Set(ampuanCache.map(a => a.class_id))];
-    const availableClasses = classesCache.filter(c => uniqueClassIds.includes(c.id));
+    const uniqueClassIds = [...new Set(ampuanCache.map(a => Number(a.class_id)))];
+    const availableClasses = classesCache.filter(c => uniqueClassIds.includes(Number(c.id)));
 
     clsSel.innerHTML = availableClasses.length
         ? availableClasses.map(c => `<option value="${c.id}">${c.nama_kelas}</option>`).join('')
@@ -278,6 +291,11 @@ async function selectAmpuanShortcut(classId, ampuanId) {
 async function onGuruClassDropdownChange(keepAmpuan = false) {
     const clsVal = document.getElementById('guru-active-class').value;
     activeClassId = clsVal ? Number(clsVal) : null;
+
+    if (adminMode === 'students' && currentUser.role === 'admin') {
+        await loadWorkspaceData();
+        return;
+    }
 
     const mapelSel = document.getElementById('guru-active-mapel');
     const classAmpuans = ampuanCache.filter(a => Number(a.class_id) === Number(activeClassId));
@@ -331,7 +349,7 @@ async function handleAddAmpuan(e) {
     const mapel = document.getElementById('amp-mapel').value.trim();
     const kkm = Number(document.getElementById('amp-kkm').value) || 75;
 
-    const { data, error } = await db.from('teacher_subjects').insert([{
+    const { data, error } = await db.from('teacher_settings').insert([{
         teacher_id: currentUser.id,
         class_id,
         mapel,
@@ -343,7 +361,8 @@ async function handleAddAmpuan(e) {
         p_hadir: 100,
         p_sakit: 80,
         p_izin: 80,
-        p_alpa: 0
+        p_alpa: 0,
+        kelompok_template: []
     }]).select().single();
 
     if (error) return showToast('Gagal menambah ampuan: ' + error.message, 'error');
@@ -359,7 +378,7 @@ async function deleteCurrentAmpuan() {
     const amp = getActiveAmpuan();
     if (!amp) return;
     if (!confirm(`Hapus mata pelajaran "${amp.mapel}" dari kelas ini?`)) return;
-    await db.from('teacher_subjects').delete().eq('id', amp.id);
+    await db.from('teacher_settings').delete().eq('id', amp.id);
     activeAmpuanId = null;
     showToast('Mata pelajaran dihapus dari daftar ampuan.');
     await loadTeacherAmpuan();
@@ -369,11 +388,8 @@ async function deleteCurrentAmpuan() {
 function toggleMobileSidebar(forceClose = false) {
     const sb = document.getElementById('main-sidebar');
     if (!sb) return;
-    if (forceClose) {
-        sb.classList.add('hidden');
-    } else {
-        sb.classList.toggle('hidden');
-    }
+    if (forceClose) sb.classList.add('hidden');
+    else sb.classList.toggle('hidden');
 }
 
 function switchGuruTab(tab) {
@@ -423,6 +439,7 @@ async function loadWorkspaceData() {
         assessmentsCache = [];
         scoresCache = [];
         attLogsCache = [];
+        attRecapCache = [];
         renderDashboard();
         return;
     }
@@ -430,17 +447,23 @@ async function loadWorkspaceData() {
     const activeAmp = getActiveAmpuan();
     const mapelName = activeAmp?.mapel || '';
 
-    const [stuRes, assRes, attRes, recapRes] = await Promise.all([
+    const [stuRes, assRes, attLogsRes] = await Promise.all([
         db.from('students').select('*').eq('class_id', activeClassId).order('nama'),
         db.from('assessments').select('*').eq('class_id', activeClassId).eq('mapel', mapelName).order('id'),
-        db.from('attendance_logs').select('*').eq('class_id', activeClassId),
-        db.from('attendance_recap').select('*').eq('class_id', activeClassId).eq('mapel', mapelName)
+        db.from('attendance_logs').select('*').eq('class_id', activeClassId)
     ]);
 
     studentsCache = stuRes.data || [];
     assessmentsCache = assRes.data || [];
-    attLogsCache = (attRes.data || []).filter(l => !l.mapel || l.mapel === mapelName);
-    attRecapCache = recapRes.data || [];
+    attLogsCache = (attLogsRes.data || []).filter(l => !l.mapel || l.mapel === mapelName);
+
+    const stuIds = studentsCache.map(s => s.id);
+    if (stuIds.length > 0 && mapelName) {
+        const recapRes = await db.from('attendance').select('*').in('student_id', stuIds).eq('mapel', mapelName);
+        attRecapCache = recapRes.data || [];
+    } else {
+        attRecapCache = [];
+    }
 
     const assIds = assessmentsCache.map(a => a.id);
     if (assIds.length > 0) {
@@ -460,23 +483,22 @@ async function loadWorkspaceData() {
 function computeStudentMetrics(studentId) {
     const amp = getActiveAmpuan() || { kkm: 75, w_absen: 10, w_tugas: 30, w_bab: 30, w_uas: 30, p_hadir: 100, p_sakit: 80, p_izin: 80, p_alpa: 0 };
 
-    // Hitung kehadiran dari log atau rekap manual
     const logs = attLogsCache.filter(l => Number(l.student_id) === Number(studentId));
     const manual = attRecapCache.find(r => Number(r.student_id) === Number(studentId));
 
     let h = 0, s = 0, i = 0, a = 0;
-    if (manual && (manual.hadir || manual.sakit || manual.izin || manual.alpa)) {
-        h = Number(manual.hadir || 0);
-        s = Number(manual.sakit || 0);
-        i = Number(manual.izin || 0);
-        a = Number(manual.alpa || 0);
-    } else {
+    if (logs.length > 0) {
         logs.forEach(l => {
             if (l.status === 'H') h++;
             else if (l.status === 'S') s++;
             else if (l.status === 'I') i++;
             else if (l.status === 'A') a++;
         });
+    } else if (manual) {
+        h = Number(manual.hadir || 0);
+        s = Number(manual.sakit || 0);
+        i = Number(manual.izin || 0);
+        a = Number(manual.alpa || 0);
     }
 
     const totalPertemuan = h + s + i + a;
@@ -485,7 +507,6 @@ function computeStudentMetrics(studentId) {
         : 100;
     const attRate = totalPertemuan > 0 ? (h / totalPertemuan) * 100 : 100;
 
-    // Hitung rata-rata per kategori penilaian
     const calcCatAvg = (cats) => {
         const list = assessmentsCache.filter(as => cats.includes(as.kategori));
         if (!list.length) return 0;
@@ -773,19 +794,9 @@ async function handleUpdateStudent(e) {
     await loadWorkspaceData();
 }
 
-// Konfirmasi Hapus Siswa 2 Langkah
-function initiateSingleStudentDelete(id) {
-    deleteTargetIds = [id];
-    openDeleteConfirmModal();
-}
-function initiateBulkDeleteSelected() {
-    deleteTargetIds = [...selectedStudentIds];
-    openDeleteConfirmModal();
-}
-function initiateDeleteAllInClass() {
-    deleteTargetIds = studentsCache.map(s => s.id);
-    openDeleteConfirmModal();
-}
+function initiateSingleStudentDelete(id) { deleteTargetIds = [id]; openDeleteConfirmModal(); }
+function initiateBulkDeleteSelected() { deleteTargetIds = [...selectedStudentIds]; openDeleteConfirmModal(); }
+function initiateDeleteAllInClass() { deleteTargetIds = studentsCache.map(s => s.id); openDeleteConfirmModal(); }
 
 function openDeleteConfirmModal() {
     if (!deleteTargetIds.length) return;
@@ -885,7 +896,6 @@ function refreshDailyAttStats() {
         else if (val === 'S' || val === 'I') si++;
         else if (val === 'A') a++;
 
-        // Update warna label radio
         document.querySelectorAll(`input[name="att_${s.id}"]`).forEach(inp => {
             const lbl = inp.parentElement;
             if (inp.checked) {
@@ -920,6 +930,7 @@ async function saveDailyAttendance() {
     const payload = studentsCache.map(s => {
         const checked = document.querySelector(`input[name="att_${s.id}"]:checked`);
         return {
+            teacher_id: currentUser.id,
             class_id: activeClassId,
             student_id: s.id,
             mapel: amp.mapel,
@@ -987,9 +998,12 @@ function renderAttendanceRecapTable() {
 async function saveAttendanceManual() {
     const amp = getActiveAmpuan();
     if (!activeClassId || !amp) return;
-    await db.from('attendance_recap').delete().eq('class_id', activeClassId).eq('mapel', amp.mapel);
+    const stuIds = studentsCache.map(s => s.id);
+    if (stuIds.length) {
+        await db.from('attendance').delete().in('student_id', stuIds).eq('mapel', amp.mapel);
+    }
     const payload = [...document.querySelectorAll('#absen-tbody tr')].map(tr => ({
-        class_id: activeClassId,
+        teacher_id: currentUser.id,
         student_id: Number(tr.dataset.recapStu),
         mapel: amp.mapel,
         hadir: Number(tr.querySelector('.recap-h').value || 0),
@@ -997,7 +1011,7 @@ async function saveAttendanceManual() {
         izin: Number(tr.querySelector('.recap-i').value || 0),
         alpa: Number(tr.querySelector('.recap-a').value || 0)
     }));
-    await db.from('attendance_recap').insert(payload);
+    await db.from('attendance').insert(payload);
     showToast('✅ Rekap kehadiran manual disimpan!');
     await loadWorkspaceData();
     renderAttendanceRecapTable();
@@ -1046,7 +1060,7 @@ async function createAssessment(e) {
         mapel: amp.mapel,
         judul: document.getElementById('ass-judul').value.trim(),
         kategori: document.getElementById('ass-kategori').value,
-        tipe: document.getElementById('ass-tipe').value,
+        tipe_kerja: document.getElementById('ass-tipe').value,
         tampil_publik: document.getElementById('ass-publik').value === 'true',
         link_pengumpulan: document.getElementById('ass-link').value.trim() || null
     };
@@ -1088,7 +1102,7 @@ function loadAssessmentScores() {
     editor.classList.remove('hidden');
     document.getElementById('edit-ass-judul').value = ass.judul;
     document.getElementById('edit-ass-kategori').value = ass.kategori;
-    document.getElementById('edit-ass-tipe').value = ass.tipe || 'individu';
+    document.getElementById('edit-ass-tipe').value = ass.tipe_kerja || 'individu';
     document.getElementById('edit-ass-link').value = ass.link_pengumpulan || '';
 
     const btnPub = document.getElementById('btn-toggle-public');
@@ -1105,7 +1119,7 @@ function loadAssessmentScores() {
         testLink.classList.add('hidden');
     }
 
-    const isGroup = ass.tipe === 'kelompok';
+    const isGroup = ass.tipe_kerja === 'kelompok';
     grpBanner.classList.toggle('hidden', !isGroup);
     if (isGroup) loadGroupPresetsDropdown();
 
@@ -1143,7 +1157,7 @@ function loadAssessmentScores() {
                     <div class="font-bold text-slate-900">${s.nama}</div>
                     <div class="text-[10px] font-mono text-slate-400">${s.nisn}</div>
                 </td>
-                ${isGroup ? `<td class="p-2.5"><input type="text" list="datalist-kelompok-options" value="${sc.kelompok || ''}" oninput="syncGroupRowChange(${s.id})" class="sc-kelompok w-full border rounded-lg p-1.5 text-xs font-bold"></td>` : ''}
+                ${isGroup ? `<td class="p-2.5"><input type="text" list="datalist-kelompok-options" value="${sc.nama_kelompok || ''}" oninput="syncGroupRowChange(${s.id})" class="sc-kelompok w-full border rounded-lg p-1.5 text-xs font-bold"></td>` : ''}
                 <td class="p-2.5 text-center">${fileLinkHtml}</td>
                 <td class="p-2.5 text-center">
                     <label class="inline-flex items-center gap-1.5 cursor-pointer">
@@ -1169,7 +1183,7 @@ function loadAssessmentScores() {
 function syncGroupRowChange(changedStuId) {
     const assId = Number(document.getElementById('active-assessment')?.value);
     const ass = assessmentsCache.find(a => Number(a.id) === assId);
-    if (!ass || ass.tipe !== 'kelompok') return;
+    if (!ass || ass.tipe_kerja !== 'kelompok') return;
 
     const sourceTr = document.querySelector(`tr[data-score-stu="${changedStuId}"]`);
     if (!sourceTr) return;
@@ -1198,7 +1212,7 @@ async function saveAssessmentScores() {
         const kumpul = tr.querySelector('.sc-kumpul').checked;
         const rawVal = tr.querySelector('.sc-nilai').value;
         const nilai = rawVal !== '' ? Number(rawVal) : null;
-        const kelompok = tr.querySelector('.sc-kelompok')?.value.trim() || null;
+        const nama_kelompok = tr.querySelector('.sc-kelompok')?.value.trim() || null;
 
         const existing = scoresCache.find(x => Number(x.assessment_id) === assId && Number(x.student_id) === stuId);
         if (existing) {
@@ -1206,7 +1220,7 @@ async function saveAssessmentScores() {
                 status_kumpul: kumpul,
                 status_pengajuan: kumpul ? 'approved' : 'none',
                 nilai,
-                kelompok
+                nama_kelompok
             }).eq('id', existing.id);
         } else {
             await db.from('scores').insert([{
@@ -1215,7 +1229,7 @@ async function saveAssessmentScores() {
                 status_kumpul: kumpul,
                 status_pengajuan: kumpul ? 'approved' : 'none',
                 nilai,
-                kelompok
+                nama_kelompok
             }]);
         }
     }
@@ -1230,7 +1244,7 @@ async function updateAssessmentLink() {
     await db.from('assessments').update({
         judul: document.getElementById('edit-ass-judul').value.trim(),
         kategori: document.getElementById('edit-ass-kategori').value,
-        tipe: document.getElementById('edit-ass-tipe').value,
+        tipe_kerja: document.getElementById('edit-ass-tipe').value,
         link_pengumpulan: document.getElementById('edit-ass-link').value.trim() || null
     }).eq('id', assId);
     showToast('✅ Detail tugas diperbarui');
@@ -1254,20 +1268,22 @@ async function deleteCurrentAssessment() {
     await loadWorkspaceData();
 }
 
-// Preset Kelompok
-async function loadGroupPresetsDropdown() {
-    const { data } = await db.from('group_presets').select('*').eq('class_id', activeClassId);
-    groupPresetsCache = data || [];
+// Preset Kelompok (menggunakan kolom kelompok_template pada teacher_settings)
+function loadGroupPresetsDropdown() {
+    const amp = getActiveAmpuan();
+    const raw = amp?.kelompok_template;
+    groupPresetsCache = Array.isArray(raw) ? raw : [];
     const sel = document.getElementById('select-group-preset');
     if (sel) {
-        sel.innerHTML = `<option value="">-- Pilih Preset Kelompok --</option>` + groupPresetsCache.map(p => `<option value="${p.id}">${p.nama_preset}</option>`).join('');
+        sel.innerHTML = `<option value="">-- Pilih Preset Kelompok --</option>` + groupPresetsCache.map((p, idx) => `<option value="${idx}">${p.nama_preset}</option>`).join('');
     }
 }
 
 function applySelectedGroupPreset() {
-    const pid = Number(document.getElementById('select-group-preset').value);
-    const preset = groupPresetsCache.find(p => Number(p.id) === pid);
-    if (!preset) return showToast('Pilih preset kelompok terlebih dahulu!', 'error');
+    const idx = document.getElementById('select-group-preset').value;
+    if (idx === '') return showToast('Pilih preset kelompok terlebih dahulu!', 'error');
+    const preset = groupPresetsCache[Number(idx)];
+    if (!preset) return;
     const mapping = preset.mapping || {};
     document.querySelectorAll('#scores-tbody tr[data-score-stu]').forEach(tr => {
         const stuId = tr.dataset.scoreStu;
@@ -1278,30 +1294,34 @@ function applySelectedGroupPreset() {
 }
 
 async function saveCurrentTableAsGroupPreset() {
-    const nama = prompt('Masukkan nama preset kelompok (Contoh: Kelompok Praktikum 1):');
+    const amp = getActiveAmpuan();
+    if (!amp) return;
+    const nama = prompt('Masukkan nama preset kelompok:');
     if (!nama) return;
     const mapping = {};
     document.querySelectorAll('#scores-tbody tr[data-score-stu]').forEach(tr => {
         const g = tr.querySelector('.sc-kelompok')?.value.trim();
         if (g) mapping[tr.dataset.scoreStu] = g;
     });
-    await db.from('group_presets').insert([{ class_id: activeClassId, nama_preset: nama, mapping }]);
+    const updatedList = [...groupPresetsCache, { nama_preset: nama, mapping }];
+    await db.from('teacher_settings').update({ kelompok_template: updatedList }).eq('id', amp.id);
+    amp.kelompok_template = updatedList;
     showToast('✅ Preset kelompok disimpan!');
-    await loadGroupPresetsDropdown();
+    loadGroupPresetsDropdown();
 }
 
 function openGroupManagerModal() {
     document.getElementById('modal-group-manager').classList.remove('hidden');
     const sel = document.getElementById('gm-preset-select');
-    sel.innerHTML = `<option value="">-- Preset Baru --</option>` + groupPresetsCache.map(p => `<option value="${p.id}">${p.nama_preset}</option>`).join('');
+    sel.innerHTML = `<option value="">-- Preset Baru --</option>` + groupPresetsCache.map((p, idx) => `<option value="${idx}">${p.nama_preset}</option>`).join('');
     modalGroupMap = {};
     renderGroupManagerRows();
 }
 function closeGroupManagerModal() { document.getElementById('modal-group-manager').classList.add('hidden'); }
 
 function loadPresetIntoModal() {
-    const pid = Number(document.getElementById('gm-preset-select').value);
-    const p = groupPresetsCache.find(x => Number(x.id) === pid);
+    const idx = document.getElementById('gm-preset-select').value;
+    const p = idx !== '' ? groupPresetsCache[Number(idx)] : null;
     document.getElementById('gm-preset-name').value = p ? p.nama_preset : '';
     modalGroupMap = p ? { ...(p.mapping || {}) } : {};
     renderGroupManagerRows();
@@ -1315,10 +1335,13 @@ function createNewGroupPreset() {
 }
 
 async function deleteCurrentGroupPreset() {
-    const pid = Number(document.getElementById('gm-preset-select').value);
-    if (!pid || !confirm('Hapus preset kelompok ini?')) return;
-    await db.from('group_presets').delete().eq('id', pid);
-    await loadGroupPresetsDropdown();
+    const idx = document.getElementById('gm-preset-select').value;
+    const amp = getActiveAmpuan();
+    if (idx === '' || !amp || !confirm('Hapus preset kelompok ini?')) return;
+    const updatedList = groupPresetsCache.filter((_, i) => i !== Number(idx));
+    await db.from('teacher_settings').update({ kelompok_template: updatedList }).eq('id', amp.id);
+    amp.kelompok_template = updatedList;
+    loadGroupPresetsDropdown();
     createNewGroupPreset();
 }
 
@@ -1327,16 +1350,11 @@ function autoGenerateGroups(mode) {
     let list = [...studentsCache];
     if (mode === 'random') list.sort(() => Math.random() - 0.5);
     modalGroupMap = {};
-    list.forEach((s, idx) => {
-        modalGroupMap[s.id] = `Kelompok ${(idx % count) + 1}`;
-    });
+    list.forEach((s, idx) => { modalGroupMap[s.id] = `Kelompok ${(idx % count) + 1}`; });
     renderGroupManagerRows();
 }
 
-function clearAllModalGroups() {
-    modalGroupMap = {};
-    renderGroupManagerRows();
-}
+function clearAllModalGroups() { modalGroupMap = {}; renderGroupManagerRows(); }
 
 function renderGroupManagerRows() {
     const tbody = document.getElementById('gm-students-tbody');
@@ -1351,14 +1369,18 @@ function renderGroupManagerRows() {
 }
 
 async function saveGroupPresetFromModal(andApply) {
+    const amp = getActiveAmpuan();
+    if (!amp) return;
     const name = document.getElementById('gm-preset-name').value.trim() || 'Kelompok Kelas';
-    const pid = Number(document.getElementById('gm-preset-select').value);
-    if (pid) {
-        await db.from('group_presets').update({ nama_preset: name, mapping: modalGroupMap }).eq('id', pid);
-    } else {
-        await db.from('group_presets').insert([{ class_id: activeClassId, nama_preset: name, mapping: modalGroupMap }]);
-    }
-    await loadGroupPresetsDropdown();
+    const idx = document.getElementById('gm-preset-select').value;
+    let updatedList = [...groupPresetsCache];
+    if (idx !== '') updatedList[Number(idx)] = { nama_preset: name, mapping: modalGroupMap };
+    else updatedList.push({ nama_preset: name, mapping: modalGroupMap });
+
+    await db.from('teacher_settings').update({ kelompok_template: updatedList }).eq('id', amp.id);
+    amp.kelompok_template = updatedList;
+    loadGroupPresetsDropdown();
+
     if (andApply) {
         document.querySelectorAll('#scores-tbody tr[data-score-stu]').forEach(tr => {
             const inp = tr.querySelector('.sc-kelompok');
@@ -1592,9 +1614,7 @@ async function addWaliCounselingLog(e) {
     openWali360Modal(activeWaliStudentId);
 }
 
-function saveWaliTargetAkademik() {
-    showToast('✅ Target akademik siswa disimpan!');
-}
+function saveWaliTargetAkademik() { showToast('✅ Target akademik siswa disimpan!'); }
 
 function exportWaliBinaanExcel() {
     const list = allStudentsGlobal.filter(s => binaanIdsCache.has(Number(s.id)));
@@ -1624,7 +1644,7 @@ async function saveSettings(e) {
     e.preventDefault();
     const amp = getActiveAmpuan();
     if (!amp) return;
-    await db.from('teacher_subjects').update({
+    await db.from('teacher_settings').update({
         mapel: document.getElementById('set-mapel').value.trim(),
         kkm: Number(document.getElementById('set-kkm').value),
         w_absen: Number(document.getElementById('set-wabsen').value),
@@ -1758,7 +1778,6 @@ function updateGDriveConnectionUI() {
     }
 }
 
-// ==================== 13. TOAST NOTIFICATION ====================
 function showToast(msg, type = 'success') {
     const t = document.getElementById('toast');
     if (!t) return;
