@@ -8,7 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=5.1">
+    <link rel="stylesheet" href="style.css?v=5.2">
 </head>
 <body class="min-h-screen flex flex-col bg-[#f8fafc] text-slate-800">
 
@@ -23,7 +23,7 @@
             </div>
             <div>
                 <span class="font-extrabold text-base tracking-tight text-slate-900 block">Portal Siswa</span>
-                <span class="text-[11px] text-slate-500 block">Cari Nama & Ajukan Tugas Mandiri</span>
+                <span class="text-[11px] text-slate-500 block">Pantau Kehadiran & Kirim Tugas Mandiri</span>
             </div>
         </div>
         <a href="index.html" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">
@@ -34,11 +34,11 @@
     <!-- KONTEN UTAMA -->
     <main class="max-w-4xl w-full mx-auto p-4 sm:p-6 space-y-5 flex-1">
 
-        <!-- KARTU PENCARIAN SISWA (HALAMAN AWAL BERSIH) -->
+        <!-- KARTU PENCARIAN SISWA -->
         <div id="portal-search-card" class="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-4 text-center">
             <div class="max-w-md mx-auto space-y-2">
                 <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900">🔍 Cari Nama / NISN Anda</h1>
-                <p class="text-xs sm:text-sm text-slate-500">Masukkan nama lengkap atau NISN Anda untuk mulai melihat daftar tugas.</p>
+                <p class="text-xs sm:text-sm text-slate-500">Masukkan nama lengkap atau NISN Anda untuk melihat rekap kehadiran dan mengirim file tugas.</p>
             </div>
             <form onsubmit="handleStudentSearch(event)" class="max-w-md mx-auto flex gap-2 pt-2">
                 <input type="text" id="input-search-query" required placeholder="Contoh: Andi Pratama atau NISN..." class="w-full border border-slate-300 rounded-xl p-3 text-xs sm:text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
@@ -51,7 +51,7 @@
             </div>
         </div>
 
-        <!-- PROFIL & DETAIL TUGAS SISWA (MUNCUL SETELAH KLIK LIHAT DETAIL) -->
+        <!-- PROFIL & DETAIL TUGAS SISWA -->
         <div id="portal-content-area" class="hidden space-y-5">
             <div class="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-5 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
@@ -62,9 +62,9 @@
                     <h2 id="portal-stu-name" class="text-lg sm:text-xl font-extrabold mt-1">Nama Siswa</h2>
                     <p id="portal-stu-nisn" class="text-xs text-blue-100 font-mono mt-0.5">NISN: - | Kelas: -</p>
                 </div>
-                <div class="bg-white/10 p-3 rounded-xl border border-white/20 text-xs space-y-1">
-                    <div>Tugas Selesai: <b id="portal-stat-done">0 / 0</b></div>
-                    <div>Menunggu Verifikasi: <b id="portal-stat-pending">0</b></div>
+                <div class="bg-white/10 p-3.5 rounded-xl border border-white/20 text-xs space-y-1">
+                    <div>Tugas Terkumpul: <b id="portal-stat-done">0 / 0</b></div>
+                    <div>Tingkat Kehadiran: <b id="portal-stat-att">100%</b></div>
                 </div>
             </div>
 
@@ -77,7 +77,10 @@
                     </div>
                 </div>
                 <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                    <h3 class="font-extrabold text-xs sm:text-sm text-slate-900">📅 Grafik Kehadiran</h3>
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-extrabold text-xs sm:text-sm text-slate-900">📅 Grafik Kehadiran</h3>
+                        <span id="portal-att-summary-pill" class="text-[10px] font-bold text-slate-500">H:0 S:0 I:0 A:0</span>
+                    </div>
                     <div class="h-44 relative max-w-xs mx-auto">
                         <canvas id="chartStudentAttendance"></canvas>
                     </div>
@@ -87,8 +90,8 @@
             <!-- DAFTAR TUGAS -->
             <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                 <div class="border-b pb-3">
-                    <h3 class="font-extrabold text-sm sm:text-base text-slate-900">📚 Daftar Tugas & Pengajuan Selesai</h3>
-                    <p class="text-xs text-slate-500">Klik tombol link OneDrive guru untuk mengunggah file, lalu klik <b>"Ajukan Selesai"</b>.</p>
+                    <h3 class="font-extrabold text-sm sm:text-base text-slate-900">📚 Daftar Tugas & Pengumpulan File</h3>
+                    <p class="text-xs text-slate-500">Klik tombol <b>"📤 Kirim File Tugas"</b> untuk mengunggah langsung ke Google Drive guru (100% privat, teman sekelas tidak dapat melihat file Anda).</p>
                 </div>
                 <div id="portal-tasks-container" class="space-y-3"></div>
             </div>
@@ -101,45 +104,81 @@
         PantauBelajar &copy; 2026 — Sistem Pemantauan Akademik Terpadu
     </footer>
 
-    <!-- MODAL KONFIRMASI PENGAJUAN -->
-    <div id="modal-portal-submit" class="hidden fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 modal-card border border-slate-100 space-y-4">
-            <div class="flex items-center gap-3 border-b pb-3">
-                <div class="w-9 h-9 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold">📤</div>
-                <div>
-                    <h3 class="font-extrabold text-sm text-slate-900">Konfirmasi Pengajuan</h3>
-                    <p class="text-[11px] text-slate-500">Pastikan Anda sudah mengunggah file ke OneDrive.</p>
+    <!-- MODAL UPLOAD FILE LANGSUNG KE GOOGLE DRIVE GURU -->
+    <div id="modal-portal-submit" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 border border-slate-100 space-y-4">
+            <div class="flex items-center justify-between border-b pb-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
+                        <i class="fa-brands fa-google-drive"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-extrabold text-sm text-slate-900">Kirim File Tugas</h3>
+                        <p id="modal-task-subtitle" class="text-[11px] text-slate-500">Otomatis tersimpan ke folder tugas guru</p>
+                    </div>
+                </div>
+                <button type="button" id="btn-close-upload-modal" onclick="closePortalSubmitModal()" class="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            <div class="space-y-3 text-xs">
+                <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                    <span class="text-[10px] font-bold uppercase text-slate-400 block">Judul Penilaian</span>
+                    <b id="modal-task-title" class="text-sm text-slate-900"></b>
+                </div>
+
+                <div id="upload-file-box">
+                    <label class="block font-bold text-slate-700 mb-1.5">Pilih File Tugas dari Perangkat Anda</label>
+                    <input type="file" id="portal-file-input" class="w-full border border-slate-300 rounded-xl p-2.5 text-xs bg-white file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-extrabold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    <p class="text-[11px] text-slate-400 mt-1.5">Mendukung PDF, Word, Excel, PPT, Gambar, ZIP, maupun Video.</p>
+                </div>
+
+                <!-- PROGRESS BAR UPLOAD -->
+                <div id="upload-progress-box" class="hidden space-y-2 pt-1">
+                    <div class="flex justify-between text-xs font-extrabold text-blue-700">
+                        <span id="upload-status-text">Menyiapkan folder Google Drive...</span>
+                        <span id="upload-percent-text">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden border border-slate-200">
+                        <div id="upload-progress-bar" class="bg-blue-600 h-full transition-all duration-200" style="width: 0%"></div>
+                    </div>
                 </div>
             </div>
-            <p class="text-xs text-slate-600">Ajukan tugas <b id="modal-task-title" class="text-slate-900"></b> ke guru pengampu?</p>
+
             <div class="flex justify-end gap-2 pt-2 border-t">
-                <button type="button" onclick="closePortalSubmitModal()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-600">Batal</button>
-                <button type="button" onclick="executeSubmitTask()" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-md">Ya, Ajukan Selesai</button>
+                <button type="button" id="btn-cancel-upload" onclick="closePortalSubmitModal()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-600">Batal</button>
+                <button type="button" id="btn-confirm-upload" onclick="executeDirectDriveUpload()" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center gap-1.5">
+                    <i class="fa-solid fa-cloud-arrow-up"></i> Unggah & Kumpulkan
+                </button>
             </div>
         </div>
     </div>
 
     <!-- SCRIPTS -->
-    <script src="config.js?v=5.1"></script>
+    <script src="config.js?v=5.2"></script>
     <script>
         let allStudentsCache = [];
         let classesCache = [];
+        let teachersCache = [];
         let currentPortalStudent = null;
-        let selectedAssessmentForSubmit = null;
+        let currentAssessmentsList = [];
+        let selectedAssessmentObj = null;
         let studentTaskChartInstance = null;
         let studentAttChartInstance = null;
+        let isUploadingNow = false;
 
         window.onload = async () => {
             await initPortalSearch();
         };
 
         async function initPortalSearch() {
-            const [clsRes, stuRes] = await Promise.all([
+            const [clsRes, stuRes, tchRes] = await Promise.all([
                 db.from('classes').select('*'),
-                db.from('students').select('*, classes(nama_kelas)').order('nama')
+                db.from('students').select('*, classes(nama_kelas)').order('nama'),
+                db.from('app_users').select('id, nama, gdrive_email')
             ]);
             classesCache = clsRes.data || [];
             allStudentsCache = stuRes.data || [];
+            teachersCache = tchRes.data || [];
         }
 
         async function handleStudentSearch(e) {
@@ -154,7 +193,7 @@
                 return;
             }
 
-            const matched = allStudentsCache.filter(s => 
+            const matched = allStudentsCache.filter(s =>
                 s.nama.toLowerCase().includes(q) || String(s.nisn).toLowerCase().includes(q)
             );
 
@@ -183,7 +222,7 @@
         }
 
         async function selectStudentProfile(studentId) {
-            currentPortalStudent = allStudentsCache.find(s => s.id === studentId);
+            currentPortalStudent = allStudentsCache.find(s => Number(s.id) === Number(studentId));
             if (!currentPortalStudent) return;
 
             document.getElementById('portal-search-card').classList.add('hidden');
@@ -215,32 +254,47 @@
         async function loadPortalStudentData() {
             if (!currentPortalStudent) return;
 
-            const [assRes, scoresRes, attLogsRes] = await Promise.all([
-                db.from('assessments').select('*').eq('class_id', currentPortalStudent.class_id).eq('tampil_publik', true),
+            const [assRes, scoresRes, attLogsRes, attRecapRes] = await Promise.all([
+                db.from('assessments').select('*').eq('class_id', currentPortalStudent.class_id).eq('tampil_publik', true).order('id'),
                 db.from('scores').select('*').eq('student_id', currentPortalStudent.id),
-                db.from('attendance_logs').select('*').eq('class_id', currentPortalStudent.class_id).eq('student_id', currentPortalStudent.id)
+                db.from('attendance_logs').select('*').eq('class_id', currentPortalStudent.class_id).eq('student_id', currentPortalStudent.id),
+                db.from('attendance_recap').select('*').eq('class_id', currentPortalStudent.class_id).eq('student_id', currentPortalStudent.id)
             ]);
 
-            const assessments = assRes.data || [];
+            currentAssessmentsList = assRes.data || [];
             const scores = scoresRes.data || [];
             const attLogs = attLogsRes.data || [];
+            const attRecaps = attRecapRes.data || [];
 
-            // Hitung data kehadiran dari attendance_logs
+            // Hitung kehadiran dari attendance_logs (atau fallback ke attendance_recap jika guru pakai rekap manual)
             let hadirCount = 0, sakitCount = 0, izinCount = 0, alpaCount = 0;
-            attLogs.forEach(l => {
-                if (l.status === 'H') hadirCount++;
-                else if (l.status === 'S') sakitCount++;
-                else if (l.status === 'I') izinCount++;
-                else if (l.status === 'A') alpaCount++;
-            });
+            if (attLogs.length > 0) {
+                attLogs.forEach(l => {
+                    if (l.status === 'H') hadirCount++;
+                    else if (l.status === 'S') sakitCount++;
+                    else if (l.status === 'I') izinCount++;
+                    else if (l.status === 'A') alpaCount++;
+                });
+            } else if (attRecaps.length > 0) {
+                attRecaps.forEach(r => {
+                    hadirCount += Number(r.hadir || 0);
+                    sakitCount += Number(r.sakit || 0);
+                    izinCount += Number(r.izin || 0);
+                    alpaCount += Number(r.alpa || 0);
+                });
+            }
+
+            const totalPertemuan = hadirCount + sakitCount + izinCount + alpaCount;
+            const attRatePct = totalPertemuan > 0 ? Math.round((hadirCount / totalPertemuan) * 100) : 100;
+            document.getElementById('portal-stat-att').innerText = `${attRatePct}%`;
+            document.getElementById('portal-att-summary-pill').innerText = `H:${hadirCount} S:${sakitCount} I:${izinCount} A:${alpaCount}`;
 
             const container = document.getElementById('portal-tasks-container');
             if (!container) return;
 
-            if (!assessments.length) {
+            if (!currentAssessmentsList.length) {
                 container.innerHTML = `<p class="text-xs text-slate-400 italic text-center py-6">Belum ada tugas atau ujian yang dipublikasikan oleh guru.</p>`;
                 document.getElementById('portal-stat-done').innerText = '0 / 0';
-                document.getElementById('portal-stat-pending').innerText = '0';
                 setTimeout(() => {
                     renderStudentCharts(0, 0, 0, hadirCount, sakitCount, izinCount, alpaCount);
                 }, 50);
@@ -249,36 +303,44 @@
 
             let doneCount = 0;
             let pendingCount = 0;
-            let rejectedCount = 0;
 
-            container.innerHTML = assessments.map(a => {
+            container.innerHTML = currentAssessmentsList.map(a => {
                 const mapelName = a.mapel || 'Mata Pelajaran';
-                const sc = scores.find(s => s.assessment_id === a.id) || { status_kumpul: false, status_pengajuan: 'none' };
+                const teacher = teachersCache.find(t => Number(t.id) === Number(a.teacher_id));
+                const hasDriveConnected = Boolean(teacher?.gdrive_email);
 
+                const sc = scores.find(s => Number(s.assessment_id) === Number(a.id)) || { status_kumpul: false, status_pengajuan: 'none' };
                 const isApproved = sc.status_kumpul === true || sc.status_pengajuan === 'approved';
                 const isPending = sc.status_pengajuan === 'pending' && !isApproved;
                 const isRejected = sc.status_pengajuan === 'rejected';
 
                 if (isApproved) doneCount++;
                 if (isPending) pendingCount++;
-                if (isRejected) rejectedCount++;
 
                 let badgeHtml = '';
                 let actionBtn = '';
 
                 if (isApproved) {
-                    badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800">✅ Selesai (Disetujui Guru)</span>`;
-                    actionBtn = `<span class="text-xs font-extrabold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">Selesai</span>`;
+                    badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800">✅ Terkumpul</span>`;
+                    actionBtn = hasDriveConnected
+                        ? `<button type="button" onclick="openPortalSubmitModal(${a.id})" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition">🔄 Ganti File</button>`
+                        : `<span class="text-xs font-extrabold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">Selesai</span>`;
                 } else if (isPending) {
-                    badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-800">⏳ Menunggu Verifikasi Guru</span>`;
-                    actionBtn = `<button type="button" disabled class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-400 cursor-not-allowed">Pengajuan Dikirim</button>`;
+                    badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-800">⏳ Menunggu Verifikasi</span>`;
+                    actionBtn = `<button type="button" onclick="openPortalSubmitModal(${a.id})" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200">Unggah Ulang</button>`;
                 } else if (isRejected) {
-                    badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-rose-100 text-rose-800">❌ Perlu Revisi / Ditolak</span>`;
-                    actionBtn = `<button type="button" onclick="openPortalSubmitModal(${a.id}, '${a.judul.replace(/'/g, "\\'")}')" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-sm">Ajukan Ulang</button>`;
+                    badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-rose-100 text-rose-800">❌ Perlu Revisi</span>`;
+                    actionBtn = `<button type="button" onclick="openPortalSubmitModal(${a.id})" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-sm">📤 Unggah Revisi</button>`;
                 } else {
-                    badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-slate-100 text-slate-600">Belum Mengajukan</span>`;
-                    actionBtn = `<button type="button" onclick="openPortalSubmitModal(${a.id}, '${a.judul.replace(/'/g, "\\'")}')" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-sm">📤 Ajukan Selesai</button>`;
+                    badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-slate-100 text-slate-600">Belum Mengumpulkan</span>`;
+                    actionBtn = `<button type="button" onclick="openPortalSubmitModal(${a.id})" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-1.5">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> ${hasDriveConnected ? 'Kirim File Tugas' : 'Ajukan Selesai'}
+                    </button>`;
                 }
+
+                const nilaiBadge = (sc.nilai !== null && sc.nilai !== undefined)
+                    ? `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-indigo-100 text-indigo-800">Nilai: ${sc.nilai}</span>`
+                    : '';
 
                 return `
                     <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -286,12 +348,14 @@
                             <div class="flex items-center gap-2 flex-wrap">
                                 <span class="px-2.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-100 text-blue-800">📘 ${mapelName}</span>
                                 ${badgeHtml}
+                                ${nilaiBadge}
                             </div>
                             <h4 class="font-extrabold text-sm sm:text-base text-slate-900">${a.judul}</h4>
+                            <p class="text-[11px] text-slate-500">Guru: ${teacher?.nama || 'Pengampu'}</p>
                             ${a.link_pengumpulan ? `
-                                <div>
-                                    <a href="${a.link_pengumpulan}" target="_blank" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-sm transition">
-                                        <span>📂</span> Buka Link OneDrive Request Files Guru ↗
+                                <div class="pt-1">
+                                    <a href="${a.link_pengumpulan}" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-200/80 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition">
+                                        🔗 Tautan Eksternal Guru ↗
                                     </a>
                                 </div>
                             ` : ''}
@@ -303,11 +367,11 @@
                 `;
             }).join('');
 
-            document.getElementById('portal-stat-done').innerText = `${doneCount} / ${assessments.length}`;
-            document.getElementById('portal-stat-pending').innerText = pendingCount;
-            
+            document.getElementById('portal-stat-done').innerText = `${doneCount} / ${currentAssessmentsList.length}`;
+            const belumCount = Math.max(0, currentAssessmentsList.length - (doneCount + pendingCount));
+
             setTimeout(() => {
-                renderStudentCharts(doneCount, pendingCount, assessments.length - (doneCount + pendingCount), hadirCount, sakitCount, izinCount, alpaCount);
+                renderStudentCharts(doneCount, pendingCount, belumCount, hadirCount, sakitCount, izinCount, alpaCount);
             }, 50);
         }
 
@@ -322,7 +386,7 @@
                 studentTaskChartInstance = new Chart(ctxTask, {
                     type: 'doughnut',
                     data: {
-                        labels: ['Selesai', 'Pending', 'Belum'],
+                        labels: ['Terkumpul', 'Pending', 'Belum'],
                         datasets: [{
                             data: [done, pending, belum],
                             backgroundColor: ['#10b981', '#f59e0b', '#cbd5e1'],
@@ -346,7 +410,7 @@
                     studentAttChartInstance = null;
                 }
                 const totalAtt = hadir + sakit + izin + alpa;
-                const attData = totalAtt > 0 ? [hadir, sakit, izin, alpa] : [1, 0, 0, 0];
+                const attData = totalAtt > 0 ? [hadir, sakit, izin, alpa] : [1];
                 const attLabels = totalAtt > 0 ? ['Hadir', 'Sakit', 'Izin', 'Alpa'] : ['Belum Ada Data'];
                 const attColors = totalAtt > 0 ? ['#10b981', '#f59e0b', '#3b82f6', '#f43f5e'] : ['#e2e8f0'];
 
@@ -370,50 +434,200 @@
             }
         }
 
-        function openPortalSubmitModal(assessmentId, taskTitle) {
-            selectedAssessmentForSubmit = assessmentId;
-            document.getElementById('modal-task-title').innerText = taskTitle;
+        // ==================== MODAL & UPLOAD LANGSUNG KE GOOGLE DRIVE ====================
+        function openPortalSubmitModal(assessmentId) {
+            selectedAssessmentObj = currentAssessmentsList.find(a => Number(a.id) === Number(assessmentId));
+            if (!selectedAssessmentObj) return;
+
+            const teacher = teachersCache.find(t => Number(t.id) === Number(selectedAssessmentObj.teacher_id));
+            const hasDrive = Boolean(teacher?.gdrive_email);
+
+            document.getElementById('modal-task-title').innerText = `${selectedAssessmentObj.mapel} — ${selectedAssessmentObj.judul}`;
+            document.getElementById('portal-file-input').value = '';
+            document.getElementById('upload-progress-box').classList.add('hidden');
+            document.getElementById('upload-progress-bar').style.width = '0%';
+            document.getElementById('upload-percent-text').innerText = '0%';
+
+            const fileBox = document.getElementById('upload-file-box');
+            const confirmBtn = document.getElementById('btn-confirm-upload');
+
+            if (hasDrive) {
+                fileBox.classList.remove('hidden');
+                document.getElementById('modal-task-subtitle').innerText = 'File otomatis tersimpan rapi ke Google Drive guru';
+                confirmBtn.innerHTML = `<i class="fa-solid fa-cloud-arrow-up"></i> Unggah & Kumpulkan`;
+            } else {
+                fileBox.classList.add('hidden');
+                document.getElementById('modal-task-subtitle').innerText = 'Guru belum menautkan Google Drive — Konfirmasi manual';
+                confirmBtn.innerHTML = `✅ Konfirmasi Selesai`;
+            }
+
             document.getElementById('modal-portal-submit').classList.remove('hidden');
         }
 
         function closePortalSubmitModal() {
-            selectedAssessmentForSubmit = null;
+            if (isUploadingNow) return;
+            selectedAssessmentObj = null;
             document.getElementById('modal-portal-submit').classList.add('hidden');
         }
 
-        async function executeSubmitTask() {
-            if (!currentPortalStudent || !selectedAssessmentForSubmit) return;
+        async function executeDirectDriveUpload() {
+            if (!currentPortalStudent || !selectedAssessmentObj || isUploadingNow) return;
 
+            const teacher = teachersCache.find(t => Number(t.id) === Number(selectedAssessmentObj.teacher_id));
+            const hasDrive = Boolean(teacher?.gdrive_email);
+
+            // Fallback jika guru belum menghubungkan Google Drive
+            if (!hasDrive) {
+                await recordSubmissionToSupabase(null, 'pending');
+                return;
+            }
+
+            const fileInput = document.getElementById('portal-file-input');
+            const file = fileInput?.files?.[0];
+            if (!file) {
+                return showToast('Silakan pilih file tugas dari perangkat Anda terlebih dahulu!', 'error');
+            }
+
+            isUploadingNow = true;
+            setUploadControlsDisabled(true);
+
+            const progBox = document.getElementById('upload-progress-box');
+            const progBar = document.getElementById('upload-progress-bar');
+            const progPct = document.getElementById('upload-percent-text');
+            const progTxt = document.getElementById('upload-status-text');
+            progBox.classList.remove('hidden');
+
+            try {
+                // 1. Format nama file standar: NISN_NamaSiswa_JudulTugas.ext
+                const ext = file.name.includes('.') ? '.' + file.name.split('.').pop() : '';
+                const cleanStudentName = currentPortalStudent.nama.replace(/[^a-zA-Z0-9\s]/g, '').trim().replace(/\s+/g, '_');
+                const cleanTaskTitle = selectedAssessmentObj.judul.replace(/[^a-zA-Z0-9\s]/g, '').trim().replace(/\s+/g, '_');
+                const formattedFileName = `${currentPortalStudent.nisn}_${cleanStudentName}_${cleanTaskTitle}${ext}`;
+                const className = currentPortalStudent.classes?.nama_kelas || 'Kelas';
+
+                // 2. Minta tiket Resumable Upload & pembuatan folder otomatis ke Edge Function
+                progTxt.innerText = 'Menyiapkan folder di Google Drive guru...';
+                progBar.style.width = '15%';
+                progPct.innerText = '15%';
+
+                const { data: initData, error: initErr } = await db.functions.invoke('gdrive-bridge', {
+                    body: {
+                        action: 'init_upload',
+                        teacher_id: selectedAssessmentObj.teacher_id,
+                        class_name: className,
+                        mapel: selectedAssessmentObj.mapel,
+                        task_title: selectedAssessmentObj.judul,
+                        file_name: formattedFileName,
+                        mime_type: file.type || 'application/octet-stream'
+                    }
+                });
+
+                if (initErr || !initData?.success || !initData?.uploadUrl) {
+                    throw new Error(initData?.error || initErr?.message || 'Gagal menyiapkan folder tujuan di Google Drive.');
+                }
+
+                // 3. Unggah file langsung dari HP/Laptop siswa ke Google Drive guru (mendukung file besar + progress real-time)
+                progTxt.innerText = 'Mengunggah file ke Google Drive...';
+                const driveResponse = await uploadFileWithProgress(initData.uploadUrl, file, (percent) => {
+                    const scaled = 15 + Math.round(percent * 0.8);
+                    progBar.style.width = `${scaled}%`;
+                    progPct.innerText = `${scaled}%`;
+                });
+
+                // 4. Catat status otomatis Terkumpul + Link File ke database Supabase
+                progTxt.innerText = 'Mencatat bukti pengumpulan...';
+                progBar.style.width = '100%';
+                progPct.innerText = '100%';
+
+                const fileViewUrl = driveResponse.webViewLink || (driveResponse.id ? `https://drive.google.com/file/d/${driveResponse.id}/view` : null);
+                await recordSubmissionToSupabase(fileViewUrl, 'approved');
+
+            } catch (err) {
+                console.error(err);
+                showToast('❌ Gagal mengunggah: ' + err.message, 'error');
+                isUploadingNow = false;
+                setUploadControlsDisabled(false);
+            }
+        }
+
+        function uploadFileWithProgress(uploadUrl, file, onProgress) {
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('PUT', uploadUrl, true);
+                xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        const pct = Math.round((e.loaded / e.total) * 100);
+                        onProgress(pct);
+                    }
+                };
+
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        try {
+                            resolve(JSON.parse(xhr.responseText));
+                        } catch {
+                            resolve({});
+                        }
+                    } else {
+                        reject(new Error(`Google Drive menolak file (HTTP ${xhr.status})`));
+                    }
+                };
+
+                xhr.onerror = () => reject(new Error('Koneksi internet terputus saat mengunggah file.'));
+                xhr.send(file);
+            });
+        }
+
+        async function recordSubmissionToSupabase(fileLink, statusPengajuan) {
+            const isApproved = statusPengajuan === 'approved';
             const { data: existing } = await db.from('scores')
                 .select('*')
-                .eq('assessment_id', selectedAssessmentForSubmit)
+                .eq('assessment_id', selectedAssessmentObj.id)
                 .eq('student_id', currentPortalStudent.id)
-                .single();
+                .maybeSingle();
 
             let error = null;
             if (existing) {
                 const res = await db.from('scores')
-                    .update({ status_pengajuan: 'pending' })
+                    .update({
+                        status_pengajuan: statusPengajuan,
+                        status_kumpul: isApproved,
+                        link_tugas_siswa: fileLink || existing.link_tugas_siswa || null
+                    })
                     .eq('id', existing.id);
                 error = res.error;
             } else {
                 const res = await db.from('scores')
                     .insert([{
-                        assessment_id: selectedAssessmentForSubmit,
+                        assessment_id: selectedAssessmentObj.id,
                         student_id: currentPortalStudent.id,
-                        status_pengajuan: 'pending',
-                        status_kumpul: false
+                        status_pengajuan: statusPengajuan,
+                        status_kumpul: isApproved,
+                        link_tugas_siswa: fileLink
                     }]);
                 error = res.error;
             }
 
+            isUploadingNow = false;
+            setUploadControlsDisabled(false);
             closePortalSubmitModal();
+
             if (error) {
-                return showToast('Gagal mengajukan tugas: ' + error.message, 'error');
+                return showToast('Gagal mencatat pengumpulan: ' + error.message, 'error');
             }
 
-            showToast('✅ Berhasil mengajukan tugas! Menunggu verifikasi guru.');
+            showToast(isApproved
+                ? '✅ File berhasil masuk ke Google Drive guru & status Anda otomatis Terkumpul!'
+                : '✅ Pengajuan berhasil dikirim! Menunggu verifikasi guru.');
             await loadPortalStudentData();
+        }
+
+        function setUploadControlsDisabled(disabled) {
+            document.getElementById('btn-confirm-upload').disabled = disabled;
+            document.getElementById('btn-cancel-upload').disabled = disabled;
+            document.getElementById('portal-file-input').disabled = disabled;
         }
 
         function showToast(msg, type = 'success') {
@@ -422,7 +636,7 @@
             t.innerText = msg;
             t.className = `fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg text-white transition-all duration-300 ${type === 'error' ? 'bg-rose-600' : 'bg-slate-900'}`;
             t.classList.remove('hidden');
-            setTimeout(() => t.classList.add('hidden'), 3500);
+            setTimeout(() => t.classList.add('hidden'), 4000);
         }
     </script>
 </body>
