@@ -4,11 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
     <title>LMS Siswa — PantauBelajar</title>
-    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
-    <script src="[https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2](https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2)"></script>
-    <script src="[https://cdn.jsdelivr.net/npm/chart.js](https://cdn.jsdelivr.net/npm/chart.js)"></script>
-    <link rel="stylesheet" href="[https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css](https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css)">
-    <link rel="stylesheet" href="style.css?v=8.1">
+    <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css?v=8.2">
+    <style>
+        /* Fallback CSS Inti jika CDN Tailwind terblokir oleh browser/AdBlock */
+        .hidden { display: none !important; }
+        body { font-family: system-ui, -apple-system, sans-serif; background-color: #f8fafc; color: #1e293b; margin: 0; }
+        input, select, textarea { border: 1px solid #cbd5e1; border-radius: 0.75rem; padding: 0.6rem 0.75rem; font-size: 0.875rem; }
+        button { cursor: pointer; border-radius: 0.75rem; }
+    </style>
 </head>
 <body class="min-h-screen flex flex-col bg-[#f8fafc] text-slate-800 antialiased">
 
@@ -433,7 +440,7 @@
     </div>
 
     <!-- SCRIPTS -->
-    <script src="config.js?v=8.1"></script>
+    <script src="config.js?v=8.2"></script>
     <script>
         let teachersCache = [];
         let currentPortalStudent = null;
@@ -745,7 +752,7 @@
 
         function renderStudentCharts(done, pending, belum, hadir, sakit, izin, alpa) {
             const ctxTask = document.getElementById('chartStudentTaskStatus');
-            if (ctxTask) {
+            if (ctxTask && typeof Chart !== 'undefined') {
                 if (studentTaskChartInstance) { studentTaskChartInstance.destroy(); studentTaskChartInstance = null; }
                 studentTaskChartInstance = new Chart(ctxTask, {
                     type: 'doughnut',
@@ -758,7 +765,7 @@
             }
 
             const ctxAtt = document.getElementById('chartStudentAttendance');
-            if (ctxAtt) {
+            if (ctxAtt && typeof Chart !== 'undefined') {
                 if (studentAttChartInstance) { studentAttChartInstance.destroy(); studentAttChartInstance = null; }
                 const totalAtt = hadir + sakit + izin + alpa;
                 studentAttChartInstance = new Chart(ctxAtt, {
@@ -1215,7 +1222,7 @@
                         progPct.innerText = `${overallPct}%`;
                     });
 
-                    const fileViewUrl = driveResponse.webViewLink || (driveResponse.id ? `[https://drive.google.com/file/d/$](https://drive.google.com/file/d/$){driveResponse.id}/view` : null);
+                    const fileViewUrl = driveResponse.webViewLink || (driveResponse.id ? `https://drive.google.com/file/d/${driveResponse.id}/view` : null);
                     if (fileViewUrl) uploadedResults.push({ name: formattedFileName, url: fileViewUrl });
                 }
 
