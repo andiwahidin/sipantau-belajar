@@ -11,7 +11,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=5.4">
+    <link rel="stylesheet" href="style.css?v=6.0">
 </head>
 <body class="bg-[#f8fafc] text-slate-800 antialiased">
 
@@ -41,7 +41,7 @@
                 </button>
             </form>
             <div class="pt-3 border-t border-slate-100 text-center">
-                <a href="siswa.html" class="text-xs font-bold text-blue-600 hover:underline">🎓 Buka Portal Siswa (Cek & Kumpul Tugas) ↗</a>
+                <a href="siswa.html" class="text-xs font-bold text-blue-600 hover:underline">🎓 Buka Portal LMS Siswa ↗</a>
             </div>
         </div>
     </section>
@@ -141,7 +141,7 @@
 
             <div class="p-3.5 border-t border-slate-100">
                 <button type="button" onclick="copyStudentPortalLink()" class="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold flex items-center justify-center gap-2 transition">
-                    <i class="fa-solid fa-link"></i> Salin Link Portal Siswa
+                    <i class="fa-solid fa-link"></i> Salin Link LMS Siswa
                 </button>
             </div>
         </aside>
@@ -177,7 +177,7 @@
             <!-- WORKSPACE SELECTOR (KELAS & MAPEL) -->
             <div id="guru-only-header" class="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 space-y-2.5">
                 <div id="admin-student-mode-banner" class="hidden bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center justify-between">
-                    <span class="text-xs font-bold text-amber-800">🛡️ Mode Administrator: Kelola Master Kelas & Siswa</span>
+                    <span class="text-xs font-bold text-amber-800">🛡️ Mode Administrator: Kelola Master Kelas, Siswa & Reset Password Siswa</span>
                     <button type="button" onclick="switchAdminMode('teachers')" class="px-3 py-1 rounded-lg bg-amber-600 text-white text-xs font-bold">← Kembali ke Akun Guru</button>
                 </div>
 
@@ -549,17 +549,24 @@
                     </div>
                 </div>
 
-                <!-- TAB 5: GRAFIK & LAPORAN -->
+                <!-- TAB 5: GRAFIK, LAPORAN & PUBLIKASI NILAI AKHIR -->
                 <div id="gcontent-rekap" class="hidden space-y-5">
                     <div class="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                            <h2 class="text-lg font-extrabold text-slate-900">Rekapitulasi Nilai Akhir & Rapor</h2>
-                            <p class="text-xs text-slate-500">Perhitungan otomatis berdasarkan bobot presensi, tugas, ujian bab, dan ujian semester.</p>
+                            <h2 class="text-lg font-extrabold text-slate-900">Rekapitulasi Nilai Akhir & Publikasi LMS Siswa</h2>
+                            <p class="text-xs text-slate-500">Anda dapat mengisi kolom <b>Nilai Akhir Manual / Tambahan</b> (opsional) lalu klik <b>Publikasikan ke LMS Siswa</b>.</p>
                         </div>
-                        <div class="flex gap-2">
-                            <button type="button" onclick="exportRekapExcel()" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-sm">📥 Ekspor Excel</button>
-                            <button type="button" onclick="printClassRekapPDF()" class="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-sm">🖨️ Cetak PDF Kelas</button>
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" onclick="publishFinalGradesToLMS(true)" class="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-sm">🌐 Simpan & Publikasikan ke Siswa</button>
+                            <button type="button" onclick="publishFinalGradesToLMS(false)" class="px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold">🔒 Tarik Publikasi</button>
+                            <button type="button" onclick="exportRekapExcel()" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-sm">📥 Excel</button>
+                            <button type="button" onclick="printClassRekapPDF()" class="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-sm">🖨️ PDF</button>
                         </div>
+                    </div>
+
+                    <div id="rekap-publish-status-banner" class="bg-slate-100 border border-slate-200 rounded-xl px-4 py-2.5 text-xs flex items-center justify-between">
+                        <span>Status Publikasi Mata Pelajaran Ini di LMS Siswa: <b id="rekap-pub-label" class="text-slate-700">Belum Dipublikasikan</b></span>
+                        <span class="text-[11px] text-slate-500">Kosongkan kolom Manual jika ingin memakai Nilai Otomatis sistem.</span>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -585,8 +592,9 @@
                                         <th class="p-3 text-center">Tugas</th>
                                         <th class="p-3 text-center">Bab</th>
                                         <th class="p-3 text-center">Smt</th>
-                                        <th class="p-3 text-center bg-blue-50 text-blue-800">Akhir</th>
-                                        <th class="p-3 text-center">KKM</th>
+                                        <th class="p-3 text-center bg-slate-100">Otomatis</th>
+                                        <th class="p-3 text-center bg-amber-50 text-amber-900 w-28">Manual / Tambahan</th>
+                                        <th class="p-3 text-center bg-blue-50 text-blue-800">Final LMS</th>
                                         <th class="p-3 text-center">Status</th>
                                         <th class="p-3 text-center">Rapor</th>
                                     </tr>
@@ -997,7 +1005,7 @@
         </div>
     </div>
 
-    <script src="config.js?v=5.4"></script>
-    <script src="app-guru.js?v=5.4"></script>
+    <script src="config.js?v=6.0"></script>
+    <script src="app-guru.js?v=6.0"></script>
 </body>
 </html>
