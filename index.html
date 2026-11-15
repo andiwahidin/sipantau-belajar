@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-    <title>PantauBelajar — Panel Guru, Guru Wali & Admin</title>
+    <title>PantauBelajar — Panel LMS Guru, Guru Wali & Admin</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -11,7 +11,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=6.0">
+    <link rel="stylesheet" href="style.css?v=7.0">
 </head>
 <body class="bg-[#f8fafc] text-slate-800 antialiased">
 
@@ -25,7 +25,7 @@
                     <i class="fa-solid fa-graduation-cap"></i>
                 </div>
                 <h1 class="text-2xl font-extrabold tracking-tight text-slate-900">Pantau<span class="text-blue-600">Belajar</span></h1>
-                <p class="text-xs text-slate-500">Sistem Pemantauan Akademik, Presensi & Bimbingan Wali</p>
+                <p class="text-xs text-slate-500">Learning Management System, Presensi & Bimbingan Wali</p>
             </div>
             <form onsubmit="handleLogin(event)" class="space-y-4">
                 <div>
@@ -119,17 +119,23 @@
                 <button type="button" id="gtab-dashboard" onclick="switchGuruTab('dashboard'); toggleMobileSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-blue-50 text-blue-700 transition">
                     <i class="fa-solid fa-table-columns w-4 text-center"></i> Dashboard
                 </button>
-                <button type="button" id="gtab-kelas" onclick="switchGuruTab('kelas'); toggleMobileSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
-                    <i class="fa-solid fa-users w-4 text-center"></i> Data Siswa
-                </button>
-                <button type="button" id="gtab-absen" onclick="switchGuruTab('absen'); toggleMobileSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
-                    <i class="fa-regular fa-calendar-check w-4 text-center"></i> Kehadiran
+                <button type="button" id="gtab-materi" onclick="switchGuruTab('materi'); toggleMobileSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
+                    <i class="fa-solid fa-book-open w-4 text-center"></i> Materi Belajar
                 </button>
                 <button type="button" id="gtab-nilai" onclick="switchGuruTab('nilai'); toggleMobileSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
                     <i class="fa-solid fa-file-signature w-4 text-center"></i> Tugas & Ujian
                 </button>
+                <button type="button" id="gtab-absen" onclick="switchGuruTab('absen'); toggleMobileSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
+                    <i class="fa-regular fa-calendar-check w-4 text-center"></i> Kehadiran
+                </button>
+                <button type="button" id="gtab-pengumuman" onclick="switchGuruTab('pengumuman'); toggleMobileSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
+                    <i class="fa-solid fa-bullhorn w-4 text-center"></i> Pengumuman & Diskusi
+                </button>
                 <button type="button" id="gtab-rekap" onclick="switchGuruTab('rekap'); toggleMobileSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
                     <i class="fa-solid fa-chart-line w-4 text-center"></i> Grafik & Laporan
+                </button>
+                <button type="button" id="gtab-kelas" onclick="switchGuruTab('kelas'); toggleMobileSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
+                    <i class="fa-solid fa-users w-4 text-center"></i> Data Siswa
                 </button>
                 <button type="button" id="gtab-wali" onclick="switchGuruTab('wali'); toggleMobileSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
                     <i class="fa-solid fa-user-graduate w-4 text-center"></i> Guru Wali (PA)
@@ -278,6 +284,62 @@
                     </div>
                 </div>
 
+                <!-- TAB BARU: MATERI PEMBELAJARAN -->
+                <div id="gcontent-materi" class="hidden space-y-5">
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                        <h3 class="font-extrabold text-sm text-slate-900">📘 Bagikan Materi / Modul Pembelajaran Baru</h3>
+                        <form onsubmit="createMaterial(event)" class="space-y-3 text-xs">
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                <input type="text" id="mat-judul" required placeholder="Judul Bab / Topik Materi..." class="sm:col-span-2 border border-slate-300 rounded-xl p-2.5 font-bold">
+                                <select id="mat-publik" class="border border-slate-300 rounded-xl p-2.5 font-bold">
+                                    <option value="true">🌐 Tampilkan di LMS Siswa</option>
+                                    <option value="false">🔒 Simpan sebagai Draf</option>
+                                </select>
+                            </div>
+                            <textarea id="mat-deskripsi" rows="3" placeholder="Tuliskan ringkasan materi, tujuan pembelajaran, atau catatan untuk siswa..." class="w-full border border-slate-300 rounded-xl p-2.5"></textarea>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                <div>
+                                    <label class="block font-bold text-slate-600 mb-1">Tautan Video / Referensi Eksternal (Opsional)</label>
+                                    <input type="url" id="mat-link" placeholder="https://youtube.com/... atau link referensi" class="w-full border border-slate-300 rounded-xl p-2">
+                                </div>
+                                <div>
+                                    <label class="block font-bold text-slate-600 mb-1">Unggah File Modul PDF / PPT / Word (Otomatis ke Drive Anda)</label>
+                                    <input type="file" id="mat-files" multiple class="w-full border border-slate-300 rounded-xl p-1.5 bg-slate-50">
+                                </div>
+                            </div>
+                            <div id="mat-upload-status" class="hidden text-xs font-extrabold text-blue-700 bg-blue-50 p-2.5 rounded-xl border border-blue-200"></div>
+                            <div class="flex justify-end">
+                                <button type="submit" id="btn-submit-material" class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold shadow-sm">
+                                    📤 Publikasikan Materi
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                        <h3 class="font-extrabold text-sm text-slate-900">📚 Daftar Materi Kelas & Mata Pelajaran Ini</h3>
+                        <div id="guru-materials-list" class="space-y-3"></div>
+                    </div>
+                </div>
+
+                <!-- TAB BARU: PENGUMUMAN & DISKUSI KELAS -->
+                <div id="gcontent-pengumuman" class="hidden space-y-5">
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                        <h3 class="font-extrabold text-sm text-slate-900">📢 Buat Pengumuman atau Topik Diskusi Kelas</h3>
+                        <form onsubmit="createAnnouncement(event)" class="space-y-3 text-xs">
+                            <input type="text" id="ann-judul" required placeholder="Judul Pengumuman / Topik Diskusi..." class="w-full border border-slate-300 rounded-xl p-2.5 font-bold">
+                            <textarea id="ann-isi" required rows="3" placeholder="Tulis isi pengumuman atau pertanyaan pemantik diskusi untuk siswa di kelas ini..." class="w-full border border-slate-300 rounded-xl p-2.5"></textarea>
+                            <div class="flex justify-end">
+                                <button type="submit" class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold shadow-sm">
+                                    📣 Kirim ke Papan Kelas
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div id="guru-announcements-list" class="space-y-4"></div>
+                </div>
+
                 <!-- TAB 2: DATA SISWA & KELAS -->
                 <div id="gcontent-kelas" class="hidden space-y-5">
                     <div id="shared-class-lock-banner" class="hidden bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900">
@@ -415,7 +477,6 @@
                         </div>
                     </div>
 
-                    <!-- REKAP AKUMULASI SEMESTER -->
                     <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
                         <div class="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
                             <div>
@@ -448,7 +509,7 @@
                     </div>
                 </div>
 
-                <!-- TAB 4: TUGAS & UJIAN -->
+                <!-- TAB 4: TUGAS & UJIAN (DENGAN DESKRIPSI, DEADLINE & LAMPIRAN FILE GURU) -->
                 <div id="gcontent-nilai" class="hidden space-y-5">
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
@@ -472,23 +533,41 @@
                     <!-- BUAT PENILAIAN BARU -->
                     <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
                         <h3 class="font-extrabold text-xs text-slate-900">➕ Buat Tugas / Ujian Baru</h3>
-                        <form onsubmit="createAssessment(event)" class="grid grid-cols-1 sm:grid-cols-6 gap-2.5">
-                            <input type="text" id="ass-judul" required placeholder="Judul Tugas / Bab / Ujian..." class="sm:col-span-2 border border-slate-300 rounded-xl p-2 text-xs">
-                            <select id="ass-kategori" class="border border-slate-300 rounded-xl p-2 text-xs font-bold">
-                                <option value="tugas">Tugas</option>
-                                <option value="ujian_bab">Ujian Akhir Bab</option>
-                                <option value="ujian_semester">Ujian Semester</option>
-                            </select>
-                            <select id="ass-tipe" class="border border-slate-300 rounded-xl p-2 text-xs">
-                                <option value="individu">Kerja Individu</option>
-                                <option value="kelompok">Kerja Kelompok</option>
-                            </select>
-                            <select id="ass-publik" class="border border-slate-300 rounded-xl p-2 text-xs">
-                                <option value="true">🌐 Tampil di Siswa</option>
-                                <option value="false">🔒 Sembunyikan</option>
-                            </select>
-                            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl py-2 px-3 text-xs shadow-sm">+ Tambah</button>
-                            <input type="url" id="ass-link" placeholder="Opsional: Link eksternal tambahan (jika tidak memakai Google Drive otomatis)..." class="sm:col-span-6 border border-slate-200 rounded-xl p-2 text-xs bg-slate-50">
+                        <form onsubmit="createAssessment(event)" class="space-y-2.5 text-xs">
+                            <div class="grid grid-cols-1 sm:grid-cols-6 gap-2">
+                                <input type="text" id="ass-judul" required placeholder="Judul Tugas / Bab / Ujian..." class="sm:col-span-2 border border-slate-300 rounded-xl p-2 font-bold">
+                                <select id="ass-kategori" class="border border-slate-300 rounded-xl p-2 font-bold">
+                                    <option value="tugas">Tugas</option>
+                                    <option value="ujian_bab">Ujian Akhir Bab</option>
+                                    <option value="ujian_semester">Ujian Semester</option>
+                                </select>
+                                <select id="ass-tipe" class="border border-slate-300 rounded-xl p-2">
+                                    <option value="individu">Kerja Individu</option>
+                                    <option value="kelompok">Kerja Kelompok</option>
+                                </select>
+                                <select id="ass-publik" class="border border-slate-300 rounded-xl p-2">
+                                    <option value="true">🌐 Tampil di Siswa</option>
+                                    <option value="false">🔒 Sembunyikan</option>
+                                </select>
+                                <button type="submit" id="btn-create-ass" class="bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl py-2 px-3 shadow-sm">+ Tambah</button>
+                            </div>
+
+                            <textarea id="ass-deskripsi" rows="2" placeholder="Deskripsi / Instruksi pengerjaan tugas untuk siswa (opsional)..." class="w-full border border-slate-300 rounded-xl p-2"></textarea>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-500 mb-1">Tenggat Waktu (Opsional)</label>
+                                    <input type="datetime-local" id="ass-deadline" class="w-full border border-slate-300 rounded-xl p-1.5">
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-500 mb-1">Unggah File Soal / Lembar Kerja (Ke Drive Guru)</label>
+                                    <input type="file" id="ass-teacher-files" multiple class="w-full border border-slate-300 rounded-xl p-1 bg-slate-50">
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-500 mb-1">Link Eksternal Tambahan (Opsional)</label>
+                                    <input type="url" id="ass-link" placeholder="https://..." class="w-full border border-slate-300 rounded-xl p-1.5">
+                                </div>
+                            </div>
                         </form>
                     </div>
 
@@ -503,28 +582,36 @@
                             <button type="button" onclick="saveAssessmentScores()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-sm">💾 Simpan Semua Nilai</button>
                         </div>
 
-                        <!-- EDITOR METADATA TUGAS -->
-                        <div id="ass-link-editor" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                        <!-- EDITOR METADATA & DESKRIPSI TUGAS -->
+                        <div id="ass-link-editor" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2 text-xs">
                             <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                                <input type="text" id="edit-ass-judul" class="border rounded-lg p-1.5 text-xs font-bold">
-                                <select id="edit-ass-kategori" class="border rounded-lg p-1.5 text-xs font-bold">
+                                <input type="text" id="edit-ass-judul" class="border rounded-lg p-1.5 font-bold">
+                                <select id="edit-ass-kategori" class="border rounded-lg p-1.5 font-bold">
                                     <option value="tugas">Tugas</option>
                                     <option value="ujian_bab">Ujian Akhir Bab</option>
                                     <option value="ujian_semester">Ujian Semester</option>
                                 </select>
-                                <select id="edit-ass-tipe" class="border rounded-lg p-1.5 text-xs">
+                                <select id="edit-ass-tipe" class="border rounded-lg p-1.5">
                                     <option value="individu">Kerja Individu</option>
                                     <option value="kelompok">Kerja Kelompok</option>
                                 </select>
                                 <div class="flex gap-1.5">
-                                    <button type="button" id="btn-toggle-public" onclick="toggleAssessmentPublicVisibility()" class="px-2.5 py-1 rounded-lg text-xs font-bold">🌐 Publik</button>
-                                    <button type="button" onclick="updateAssessmentLink()" class="px-3 py-1 rounded-lg bg-blue-600 text-white text-xs font-bold">Update</button>
+                                    <button type="button" id="btn-toggle-public" onclick="toggleAssessmentPublicVisibility()" class="px-2.5 py-1 rounded-lg font-bold">🌐 Publik</button>
+                                    <button type="button" onclick="updateAssessmentLink()" class="px-3 py-1 rounded-lg bg-blue-600 text-white font-bold">Update</button>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-2">
-                                <input type="url" id="edit-ass-link" placeholder="Link eksternal opsional..." class="w-full border rounded-lg p-1.5 text-xs">
-                                <a id="btn-test-ass-link" href="#" target="_blank" class="hidden px-3 py-1.5 rounded-lg bg-slate-200 text-xs font-bold shrink-0">Buka ↗</a>
+                            <textarea id="edit-ass-deskripsi" rows="2" placeholder="Instruksi / deskripsi tugas..." class="w-full border rounded-lg p-1.5"></textarea>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-bold text-slate-500 shrink-0">Tenggat:</span>
+                                    <input type="datetime-local" id="edit-ass-deadline" class="w-full border rounded-lg p-1.5">
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <input type="url" id="edit-ass-link" placeholder="Link eksternal opsional..." class="w-full border rounded-lg p-1.5">
+                                    <a id="btn-test-ass-link" href="#" target="_blank" class="hidden px-3 py-1.5 rounded-lg bg-slate-200 font-bold shrink-0">Buka ↗</a>
+                                </div>
                             </div>
+                            <div id="edit-ass-teacher-files-list" class="flex flex-wrap gap-1.5 pt-1"></div>
                         </div>
 
                         <!-- BANNER KELOMPOK -->
@@ -677,8 +764,8 @@
                                     <i class="fa-brands fa-google-drive"></i>
                                 </div>
                                 <div>
-                                    <h3 class="font-extrabold text-sm text-slate-900">Penyimpanan Tugas Otomatis (Google Drive)</h3>
-                                    <p class="text-xs text-slate-500 mt-0.5">Hubungkan akun Google Anda agar file tugas siswa otomatis tersimpan rapi ke folder <code class="bg-slate-100 px-1 rounded">PantauBelajar / Kelas / Mapel / Tugas</code> di Drive pribadi Anda.</p>
+                                    <h3 class="font-extrabold text-sm text-slate-900">Penyimpanan Tugas & Materi Otomatis (Google Drive)</h3>
+                                    <p class="text-xs text-slate-500 mt-0.5">Hubungkan akun Google Anda agar file materi dan tugas siswa otomatis tersimpan rapi ke folder <code class="bg-slate-100 px-1 rounded">PantauBelajar</code> di Drive pribadi Anda.</p>
                                     <div id="gdrive-status-badge" class="mt-2">
                                         <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600">
                                             ⚪ Belum Terhubung
@@ -1005,7 +1092,7 @@
         </div>
     </div>
 
-    <script src="config.js?v=6.0"></script>
-    <script src="app-guru.js?v=6.0"></script>
+    <script src="config.js?v=7.0"></script>
+    <script src="app-guru.js?v=7.0"></script>
 </body>
 </html>
