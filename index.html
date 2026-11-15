@@ -11,7 +11,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=5.2">
+    <link rel="stylesheet" href="style.css?v=5.4">
 </head>
 <body class="bg-[#f8fafc] text-slate-800 antialiased">
 
@@ -243,15 +243,15 @@
 
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
                         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                            <h3 class="font-extrabold text-xs text-slate-800 mb-3">Proporsi Kehadiran Semester</h3>
+                            <h3 class="font-extrabold text-xs text-slate-800 mb-3">Proporsi Kehadiran Semester (%)</h3>
                             <div class="h-44"><canvas id="chartDashDonutAtt"></canvas></div>
                         </div>
                         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                            <h3 class="font-extrabold text-xs text-slate-800 mb-3">Tren Kehadiran Pertemuan</h3>
+                            <h3 class="font-extrabold text-xs text-slate-800 mb-3">Tren Kehadiran Seluruh Pertemuan (%)</h3>
                             <div class="h-44"><canvas id="chartDashWeeklyTrend"></canvas></div>
                         </div>
                         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                            <h3 class="font-extrabold text-xs text-slate-800 mb-3">Ketuntasan Per Kategori</h3>
+                            <h3 class="font-extrabold text-xs text-slate-800 mb-3">Ketuntasan Per Kategori (%)</h3>
                             <div class="h-44"><canvas id="chartDashTaskBar"></canvas></div>
                         </div>
                     </div>
@@ -281,10 +281,10 @@
                 <!-- TAB 2: DATA SISWA & KELAS -->
                 <div id="gcontent-kelas" class="hidden space-y-5">
                     <div id="shared-class-lock-banner" class="hidden bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900">
-                        <b>🔒 Mode Kelas Bersama:</b> <span id="shared-class-teachers-info"></span>
+                        <b>🔒 Mode Kelas Bersama (Terkunci):</b> <span id="shared-class-teachers-info"></span>
                     </div>
 
-                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div id="student-mgmt-forms" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
                         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
                             <h3 class="font-extrabold text-xs text-slate-900">🏫 Buat Master Kelas Baru</h3>
                             <form onsubmit="createClass(event)" class="flex gap-2">
@@ -293,7 +293,7 @@
                             </form>
                         </div>
 
-                        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                        <div id="box-add-student-manual" class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
                             <h3 class="font-extrabold text-xs text-slate-900">➕ Tambah Siswa Satuan</h3>
                             <form onsubmit="addStudentManual(event)" class="flex gap-2">
                                 <input type="text" id="stu-nisn" required placeholder="NISN" class="w-28 border border-slate-300 rounded-xl p-2 text-xs">
@@ -302,7 +302,7 @@
                             </form>
                         </div>
 
-                        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                        <div id="box-import-student-excel" class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
                             <div class="flex items-center justify-between">
                                 <h3 class="font-extrabold text-xs text-slate-900">📥 Import Excel Siswa</h3>
                                 <button type="button" onclick="downloadTemplateSiswa()" class="text-[11px] font-bold text-blue-600 hover:underline">Unduh Template</button>
@@ -320,7 +320,7 @@
                                 <h3 class="font-extrabold text-sm text-slate-900">Daftar Siswa di Kelas Aktif</h3>
                                 <span id="stu-count-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700">0 Siswa</span>
                             </div>
-                            <div class="flex flex-wrap items-center gap-2">
+                            <div id="stu-bulk-actions-bar" class="flex flex-wrap items-center gap-2">
                                 <label class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer">
                                     <input type="checkbox" id="stu-select-all-top" onchange="toggleSelectAllStudents(this.checked)" class="w-4 h-4 accent-blue-600">
                                     Pilih Semua (<span id="selected-students-badge">0 dipilih</span>)
@@ -337,7 +337,7 @@
                             <table class="w-full text-xs text-left">
                                 <thead class="bg-slate-50 text-slate-600 border-b">
                                     <tr>
-                                        <th class="p-3 text-center w-10"><input type="checkbox" id="stu-select-all-th" onchange="toggleSelectAllStudents(this.checked)" class="w-4 h-4 accent-blue-600"></th>
+                                        <th id="th-stu-check" class="p-3 text-center w-10"><input type="checkbox" id="stu-select-all-th" onchange="toggleSelectAllStudents(this.checked)" class="w-4 h-4 accent-blue-600"></th>
                                         <th class="p-3 text-center w-12">No</th>
                                         <th class="p-3">NISN</th>
                                         <th class="p-3">Nama Lengkap</th>
@@ -474,9 +474,8 @@
                         <h3 class="font-extrabold text-xs text-slate-900">➕ Buat Tugas / Ujian Baru</h3>
                         <form onsubmit="createAssessment(event)" class="grid grid-cols-1 sm:grid-cols-6 gap-2.5">
                             <input type="text" id="ass-judul" required placeholder="Judul Tugas / Bab / Ujian..." class="sm:col-span-2 border border-slate-300 rounded-xl p-2 text-xs">
-                            <select id="ass-kategori" class="border border-slate-300 rounded-xl p-2 text-xs">
-                                <option value="tugas_individu">Tugas Individu</option>
-                                <option value="tugas_kelompok">Tugas Kelompok</option>
+                            <select id="ass-kategori" class="border border-slate-300 rounded-xl p-2 text-xs font-bold">
+                                <option value="tugas">Tugas</option>
                                 <option value="ujian_bab">Ujian Akhir Bab</option>
                                 <option value="ujian_semester">Ujian Semester</option>
                             </select>
@@ -508,9 +507,8 @@
                         <div id="ass-link-editor" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
                             <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
                                 <input type="text" id="edit-ass-judul" class="border rounded-lg p-1.5 text-xs font-bold">
-                                <select id="edit-ass-kategori" class="border rounded-lg p-1.5 text-xs">
-                                    <option value="tugas_individu">Tugas Individu</option>
-                                    <option value="tugas_kelompok">Tugas Kelompok</option>
+                                <select id="edit-ass-kategori" class="border rounded-lg p-1.5 text-xs font-bold">
+                                    <option value="tugas">Tugas</option>
                                     <option value="ujian_bab">Ujian Akhir Bab</option>
                                     <option value="ujian_semester">Ujian Semester</option>
                                 </select>
@@ -664,7 +662,6 @@
 
                 <!-- TAB 7: PENGATURAN & KONEKSI GOOGLE DRIVE -->
                 <div id="gcontent-bobot" class="hidden space-y-5 max-w-3xl">
-                    <!-- KARTU KONEKSI GOOGLE DRIVE GURU -->
                     <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div class="flex items-start gap-3">
@@ -689,7 +686,6 @@
                         </div>
                     </div>
 
-                    <!-- PENGATURAN BOBOT & KKM -->
                     <form onsubmit="saveSettings(event)" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                         <h3 class="font-extrabold text-sm text-slate-900 border-b pb-2">⚙️ Pengaturan Mata Pelajaran, KKM & Bobot Nilai</h3>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
@@ -752,7 +748,6 @@
     </section>
 
     <!-- ==================== MODALS ==================== -->
-    <!-- MODAL UBAH PASSWORD -->
     <div id="modal-password" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-xl">
             <h3 class="font-extrabold text-sm text-slate-900">🔑 Ubah Password Akun</h3>
@@ -768,7 +763,6 @@
         </div>
     </div>
 
-    <!-- MODAL EDIT GURU (ADMIN) -->
     <div id="modal-edit-teacher" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-xl">
             <h3 class="font-extrabold text-sm text-slate-900">✏️ Edit Data Akun Guru</h3>
@@ -790,7 +784,6 @@
         </div>
     </div>
 
-    <!-- MODAL TAMBAH AMPUAN KELAS & MAPEL -->
     <div id="modal-add-ampuan" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-xl">
             <h3 class="font-extrabold text-sm text-slate-900">➕ Tambah Kelas & Mata Pelajaran</h3>
@@ -815,7 +808,6 @@
         </div>
     </div>
 
-    <!-- MODAL EDIT SISWA -->
     <div id="modal-edit-student" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-xl">
             <h3 class="font-extrabold text-sm text-slate-900">✏️ Edit Data Siswa</h3>
@@ -841,7 +833,6 @@
         </div>
     </div>
 
-    <!-- MODAL DOUBLE CONFIRM DELETE SISWA -->
     <div id="modal-delete-confirm" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl">
             <div id="del-step-1" class="space-y-3">
@@ -868,7 +859,6 @@
         </div>
     </div>
 
-    <!-- MODAL PENGELOLA KELOMPOK -->
     <div id="modal-group-manager" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl max-w-2xl w-full p-5 space-y-4 shadow-xl max-h-[90vh] flex flex-col">
             <div class="flex items-center justify-between border-b pb-3">
@@ -911,7 +901,6 @@
         </div>
     </div>
 
-    <!-- MODAL PILIH SISWA BINAAN GURU WALI -->
     <div id="modal-wali-manage" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl max-w-2xl w-full p-5 space-y-4 shadow-xl max-h-[90vh] flex flex-col">
             <div class="flex items-center justify-between border-b pb-3">
@@ -941,7 +930,6 @@
         </div>
     </div>
 
-    <!-- MODAL BEDAH 360° & JURNAL WALI -->
     <div id="modal-wali-360" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl max-w-4xl w-full p-5 space-y-4 shadow-xl max-h-[92vh] overflow-y-auto">
             <div class="flex items-center justify-between border-b pb-3">
@@ -959,13 +947,6 @@
                 <div class="space-y-3">
                     <div id="w360-att-pills" class="grid grid-cols-4 gap-2 text-center"></div>
                     <div id="w360-absence-dates" class="p-3 rounded-xl bg-slate-50 border text-xs text-slate-600 max-h-28 overflow-y-auto"></div>
-                    <div class="space-y-1.5">
-                        <label class="text-xs font-extrabold text-slate-700">🎯 Target & Rencana Akademik Siswa</label>
-                        <div class="flex gap-2">
-                            <input type="text" id="w360-target-input" placeholder="Tulis target semester siswa..." class="w-full border rounded-xl p-2 text-xs">
-                            <button type="button" onclick="saveWaliTargetAkademik()" class="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shrink-0">Simpan</button>
-                        </div>
-                    </div>
                 </div>
 
                 <div class="space-y-2">
@@ -997,7 +978,6 @@
                 </table>
             </div>
 
-            <!-- JURNAL BIMBINGAN -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t">
                 <form onsubmit="addWaliCounselingLog(event)" class="space-y-2 text-xs">
                     <h4 class="font-extrabold text-slate-900">➕ Catat Jurnal Konseling / Bimbingan</h4>
@@ -1017,7 +997,7 @@
         </div>
     </div>
 
-    <script src="config.js?v=5.2"></script>
-    <script src="app-guru.js?v=5.2"></script>
+    <script src="config.js?v=5.4"></script>
+    <script src="app-guru.js?v=5.4"></script>
 </body>
 </html>
