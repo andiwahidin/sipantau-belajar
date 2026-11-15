@@ -8,7 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=7.0">
+    <link rel="stylesheet" href="style.css?v=8.0">
 </head>
 <body class="min-h-screen flex flex-col bg-[#f8fafc] text-slate-800 antialiased">
 
@@ -433,7 +433,7 @@
     </div>
 
     <!-- SCRIPTS -->
-    <script src="config.js?v=7.0"></script>
+    <script src="config.js?v=8.0"></script>
     <script>
         let teachersCache = [];
         let currentPortalStudent = null;
@@ -643,7 +643,6 @@
                 currentCommentsList = [];
             }
 
-            // Isi dropdown filter mata pelajaran
             const allMapels = [...new Set([
                 ...currentMaterialsList.map(m => m.mapel),
                 ...currentAssessmentsList.map(a => a.mapel),
@@ -721,7 +720,6 @@
             document.getElementById('dash-stu-pub-count').innerText = `${currentPublishedGradesList.length} Mapel`;
             document.getElementById('dash-stu-ann-count').innerText = annFiltered.length;
 
-            // Pengumuman terbaru di beranda
             const annBox = document.getElementById('beranda-latest-announcements');
             if (annBox) {
                 annBox.innerHTML = annFiltered.length
@@ -817,7 +815,7 @@
             }).join('');
         }
 
-        // ==================== RENDER MENU 3: TUGAS & PENGUMPULAN ====================
+        // ==================== RENDER MENU 3: TUGAS & PENGUMPULAN (SKOR TAMPIL HANYA JIKA FINAL) ====================
         function renderStudentTasksTab() {
             const container = document.getElementById('portal-tasks-container');
             if (!container) return;
@@ -875,9 +873,15 @@
                     </button>`;
                 }
 
-                const nilaiBadge = (sc.nilai !== null && sc.nilai !== undefined)
-                    ? `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-indigo-100 text-indigo-800">Skor Tugas: ${sc.nilai}</span>`
-                    : '';
+                // Hanya tampilkan nilai ke siswa apabila status_nilai berstatus 'final'
+                const isGradeFinal = (sc.status_nilai || 'final') === 'final';
+                const hasNumericScore = sc.nilai !== null && sc.nilai !== undefined && sc.nilai !== '';
+                let nilaiBadge = '';
+                if (hasNumericScore && isGradeFinal) {
+                    nilaiBadge = `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-indigo-100 text-indigo-800">Skor Tugas: ${sc.nilai}</span>`;
+                } else if (hasNumericScore && !isGradeFinal) {
+                    nilaiBadge = `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">📝 Sedang Dikoreksi</span>`;
+                }
 
                 return `
                     <div class="p-4 sm:p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3">
@@ -954,7 +958,6 @@
             document.getElementById('att-tab-i').innerText = i;
             document.getElementById('att-tab-a').innerText = a;
 
-            // Rekap per Mata Pelajaran
             const mapelTbody = document.getElementById('att-per-mapel-tbody');
             const mapels = [...new Set([...currentAttLogsList.map(l => l.mapel), ...currentAttRecapList.map(r => r.mapel)].filter(Boolean))].sort();
             if (mapelTbody) {
@@ -984,7 +987,6 @@
                 }).join('') : `<tr><td colspan="6" class="p-5 text-center text-slate-400 italic">Belum ada data presensi tercatat.</td></tr>`;
             }
 
-            // Log Rincian Tanggal & Ketidakhadiran
             const logTbody = document.getElementById('att-detailed-logs-tbody');
             const stFilter = document.getElementById('att-log-filter-status')?.value || 'all';
             if (logTbody) {
@@ -1080,7 +1082,6 @@
                         <h4 class="font-extrabold text-base text-slate-900">${an.judul}</h4>
                         <p class="text-xs sm:text-sm text-slate-700 whitespace-pre-line bg-white p-3.5 rounded-xl border border-slate-200">${an.isi}</p>
 
-                        <!-- KOMENTAR / DISKUSI -->
                         <div class="pt-2 space-y-2">
                             <span class="text-[11px] font-extrabold text-slate-500">💬 Diskusi & Pertanyaan (${comments.length})</span>
                             <div class="space-y-1.5 max-h-48 overflow-y-auto">
