@@ -1,5 +1,5 @@
 // ============================================================================
-// PANTAU BELAJAR — APP-GURU.JS (v6.0 — LMS SISWA, RESET PW & PUBLIKASI NILAI)
+// PANTAU BELAJAR — APP-GURU.JS (v7.0 — FULL LMS: MATERI, TUGAS, DISKUSI & PA)
 // ============================================================================
 const GOOGLE_OAUTH_CLIENT_ID = '565864753824-3ahjeunj19r6am2fgg2n1fv721kqfp77.apps.googleusercontent.com';
 
@@ -17,6 +17,9 @@ let scoresCache = [];
 let attLogsCache = [];
 let attRecapCache = [];
 let finalGradesCache = [];
+let materialsCache = [];
+let announcementsCache = [];
+let announcementCommentsCache = [];
 let selectedStudentIds = new Set();
 let deleteTargetIds = [];
 let groupPresetsCache = [];
@@ -234,7 +237,6 @@ async function deleteTeacher(id) {
     await loadAdminUsers();
 }
 
-// Reset Password Siswa ke NISN (oleh Admin)
 async function resetStudentPasswordToNISN(studentId, nisn, nama) {
     if (!confirm(`Reset password LMS siswa "${nama}" kembali ke NISN (${nisn})?`)) return;
     const { error } = await db.from('students').update({ password: String(nisn) }).eq('id', studentId);
@@ -459,7 +461,7 @@ function toggleMobileSidebar(forceClose = false) {
 }
 
 function switchGuruTab(tab) {
-    const tabs = ['dashboard', 'kelas', 'absen', 'nilai', 'rekap', 'wali', 'bobot'];
+    const tabs = ['dashboard', 'materi', 'nilai', 'absen', 'pengumuman', 'rekap', 'kelas', 'wali', 'bobot'];
     tabs.forEach(t => {
         document.getElementById(`gcontent-${t}`)?.classList.toggle('hidden', t !== tab);
         const btn = document.getElementById(`gtab-${t}`);
@@ -471,6 +473,7 @@ function switchGuruTab(tab) {
     });
 
     if (tab === 'dashboard') renderDashboard();
+    if (tab === 'materi') renderGuruMaterialsTab();
     if (tab === 'kelas') renderStudentsTable();
     if (tab === 'absen') {
         loadRecordedDates();
@@ -478,6 +481,7 @@ function switchGuruTab(tab) {
         renderAttendanceRecapTable();
     }
     if (tab === 'nilai') renderAssessmentsDropdown();
+    if (tab === 'pengumuman') renderGuruAnnouncementsTab();
     if (tab === 'rekap') renderRekapTab();
     if (tab === 'wali') loadGuruWaliTab();
     if (tab === 'bobot') {
@@ -507,6 +511,9 @@ async function loadWorkspaceData() {
         attLogsCache = [];
         attRecapCache = [];
         finalGradesCache = [];
+        materialsCache = [];
+        announcementsCache = [];
+        announcementCommentsCache = [];
         renderDashboard();
         return;
     }
@@ -514,19 +521,29 @@ async function loadWorkspaceData() {
     const activeAmp = getActiveAmpuan();
     const mapelName = activeAmp?.mapel || '';
 
-    const [stuRes, assRes, attLogsRes, fgRes] = await Promise.all([
+    const [stuRes, assRes, attLogsRes, fgRes, matRes, annRes] = await Promise.all([
         db.from('students').select('*').eq('class_id', activeClassId).order('nama'),
         db.from('assessments').select('*').eq('class_id', activeClassId).eq('mapel', mapelName).order('id'),
         db.from('attendance_logs').select('*').eq('class_id', activeClassId),
-        mapelName
-            ? db.from('final_grades').select('*').eq('class_id', activeClassId).eq('mapel', mapelName)
-            : Promise.resolve({ data: [] })
+        mapelName ? db.from('final_grades').select('*').eq('class_id', activeClassId).eq('mapel', mapelName) : Promise.resolve({ data: [] }),
+        mapelName ? db.from('materials').select('*').eq('class_id', activeClassId).eq('mapel', mapelName).order('created_at', { ascending: false }) : Promise.resolve({ data: [] }),
+        mapelName ? db.from('announcements').select('*').eq('class_id', activeClassId).eq('mapel', mapelName).order('created_at', { ascending: false }) : Promise.resolve({ data: [] })
     ]);
 
     studentsCache = stuRes.data || [];
     assessmentsCache = assRes.data || [];
     attLogsCache = (attLogsRes.data || []).filter(l => !l.mapel || l.mapel === mapelName);
     finalGradesCache = fgRes.data || [];
+    materialsCache = matRes.data || [];
+    announcementsCache = annRes.data || [];
+
+    const annIds = announcementsCache.map(a => a.id);
+    if (annIds.length > 0) {
+        const comRes = await db.from('announcement_comments').select('*').in('announcement_id', annIds).order('created_at');
+        announcementCommentsCache = comRes.data || [];
+    } else {
+        announcementCommentsCache = [];
+    }
 
     const stuIds = studentsCache.map(s => s.id);
     if (stuIds.length > 0 && mapelName) {
@@ -545,9 +562,261 @@ async function loadWorkspaceData() {
     }
 
     renderDashboard();
+    renderGuruMaterialsTab();
     renderStudentsTable();
     renderAssessmentsDropdown();
+    renderGuruAnnouncementsTab();
     renderRekapTab();
+}
+
+// ==================== HELPER UPLOAD MULTI-FILE GURU KE GOOGLE DRIVE ====================
+async function uploadTeacherFilesToDrive(fileList, subFolderLabel, onStatus) {
+    const files = [...(fileList || [])];
+    if (!files.length) return [];
+
+    if (!currentUser?.gdrive_email) {
+        throw new Error('Hubungkan Google Drive Anda terlebih dahulu di menu Pengaturan agar dapat mengunggah lampiran file.');
+    }
+
+    const activeAmp = getActiveAmpuan();
+    const clsObj = classesCache.find(c => Number(c.id) === Number(activeClassId));
+    const className = clsObj?.nama_kelas || 'Kelas';
+    const mapelName = activeAmp?.mapel || 'Umum';
+    const uploaded = [];
+
+    for (let idx = 0; idx < files.length; idx++) {
+        const file = files[idx];
+        if (onStatus) onStatus(`⏳ Mengunggah lampiran ${idx + 1} dari ${files.length}: ${file.name}...`);
+
+        const { data: initData, error: initErr } = await db.functions.invoke('gdrive-bridge', {
+            body: {
+                action: 'init_upload',
+                teacher_id: currentUser.id,
+                class_name: className,
+                mapel: mapelName,
+                task_title: subFolderLabel,
+                file_name: file.name,
+                mime_type: file.type || 'application/octet-stream'
+            }
+        });
+
+        if (initErr || !initData?.success || !initData?.uploadUrl) {
+            throw new Error(initData?.error || initErr?.message || `Gagal menyiapkan Google Drive untuk ${file.name}`);
+        }
+
+        const driveRes = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', initData.uploadUrl, true);
+            xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try { resolve(JSON.parse(xhr.responseText)); } catch { resolve({}); }
+                } else {
+                    reject(new Error(`Google Drive menolak file (HTTP ${xhr.status})`));
+                }
+            };
+            xhr.onerror = () => reject(new Error('Koneksi terputus saat mengunggah file ke Drive.'));
+            xhr.send(file);
+        });
+
+        const url = driveRes.webViewLink || (driveRes.id ? `https://drive.google.com/file/d/${driveRes.id}/view` : null);
+        if (url) uploaded.push({ name: file.name, url });
+    }
+
+    return uploaded;
+}
+
+// ==================== 4B. MANAJEMEN MATERI PEMBELAJARAN ====================
+async function createMaterial(e) {
+    e.preventDefault();
+    const amp = getActiveAmpuan();
+    if (!activeClassId || !amp) return showToast('Pilih kelas dan mata pelajaran terlebih dahulu!', 'error');
+
+    const judul = document.getElementById('mat-judul').value.trim();
+    const deskripsi = document.getElementById('mat-deskripsi').value.trim() || null;
+    const link_eksternal = document.getElementById('mat-link').value.trim() || null;
+    const tampil_publik = document.getElementById('mat-publik').value === 'true';
+    const fileInput = document.getElementById('mat-files');
+    const files = [...(fileInput?.files || [])];
+
+    const btn = document.getElementById('btn-submit-material');
+    const statusBox = document.getElementById('mat-upload-status');
+    btn.disabled = true;
+
+    try {
+        let uploadedFiles = [];
+        if (files.length > 0) {
+            statusBox.classList.remove('hidden');
+            uploadedFiles = await uploadTeacherFilesToDrive(files, `Materi_${judul.slice(0, 30)}`, (msg) => {
+                statusBox.innerText = msg;
+            });
+        }
+
+        const { error } = await db.from('materials').insert([{
+            teacher_id: currentUser.id,
+            class_id: activeClassId,
+            mapel: amp.mapel,
+            judul,
+            deskripsi,
+            link_eksternal,
+            file_attachments: uploadedFiles.length > 0 ? JSON.stringify(uploadedFiles) : null,
+            tampil_publik
+        }]);
+
+        if (error) throw new Error(error.message);
+
+        e.target.reset();
+        showToast('✅ Materi pembelajaran berhasil dipublikasikan!');
+        await loadWorkspaceData();
+    } catch (err) {
+        showToast('❌ ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        statusBox.classList.add('hidden');
+    }
+}
+
+function renderGuruMaterialsTab() {
+    const container = document.getElementById('guru-materials-list');
+    if (!container) return;
+
+    if (!materialsCache.length) {
+        container.innerHTML = `<p class="text-xs text-slate-400 italic text-center py-6">Belum ada materi pembelajaran di kelas & mapel ini.</p>`;
+        return;
+    }
+
+    container.innerHTML = materialsCache.map(m => {
+        const files = parseStudentSubmittedFiles(m.file_attachments);
+        const dateStr = new Date(m.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+        return `
+            <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-2">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${m.tampil_publik ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}">
+                            ${m.tampil_publik ? '🌐 Publik di Siswa' : '🔒 Draf Privat'}
+                        </span>
+                        <span class="text-[11px] text-slate-400">${dateStr}</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <button type="button" onclick="toggleMaterialVisibility(${m.id}, ${!m.tampil_publik})" class="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-xs font-bold hover:bg-slate-100">
+                            ${m.tampil_publik ? 'Sembunyikan' : 'Publikasikan'}
+                        </button>
+                        <button type="button" onclick="deleteMaterial(${m.id})" class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 text-xs font-bold">Hapus</button>
+                    </div>
+                </div>
+                <h4 class="font-extrabold text-sm text-slate-900">${m.judul}</h4>
+                ${m.deskripsi ? `<p class="text-xs text-slate-600 whitespace-pre-line bg-white p-3 rounded-xl border border-slate-200/70">${m.deskripsi}</p>` : ''}
+                <div class="flex flex-wrap gap-1.5 pt-1">
+                    ${m.link_eksternal ? `<a href="${m.link_eksternal}" target="_blank" class="px-3 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-extrabold">🔗 Link Referensi ↗</a>` : ''}
+                    ${files.map((f, i) => `<a href="${f.url}" target="_blank" class="px-3 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-extrabold">📄 Modul ${i + 1}: ${f.name} ↗</a>`).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function toggleMaterialVisibility(id, nextState) {
+    await db.from('materials').update({ tampil_publik: nextState }).eq('id', id);
+    showToast(nextState ? '🌐 Materi ditampilkan di LMS Siswa' : '🔒 Materi disembunyikan');
+    await loadWorkspaceData();
+}
+
+async function deleteMaterial(id) {
+    if (!confirm('Hapus materi pembelajaran ini?')) return;
+    await db.from('materials').delete().eq('id', id);
+    showToast('Materi dihapus.');
+    await loadWorkspaceData();
+}
+
+// ==================== 4C. PENGUMUMAN & DISKUSI KELAS ====================
+async function createAnnouncement(e) {
+    e.preventDefault();
+    const amp = getActiveAmpuan();
+    if (!activeClassId || !amp) return showToast('Pilih kelas dan mata pelajaran terlebih dahulu!', 'error');
+
+    const judul = document.getElementById('ann-judul').value.trim();
+    const isi = document.getElementById('ann-isi').value.trim();
+
+    const { error } = await db.from('announcements').insert([{
+        teacher_id: currentUser.id,
+        class_id: activeClassId,
+        mapel: amp.mapel,
+        judul,
+        isi
+    }]);
+
+    if (error) return showToast('Gagal mengirim pengumuman: ' + error.message, 'error');
+    e.target.reset();
+    showToast('📣 Pengumuman berhasil dikirim ke kelas!');
+    await loadWorkspaceData();
+}
+
+function renderGuruAnnouncementsTab() {
+    const container = document.getElementById('guru-announcements-list');
+    if (!container) return;
+
+    if (!announcementsCache.length) {
+        container.innerHTML = `<div class="bg-white p-6 rounded-2xl border border-slate-200 text-center text-xs text-slate-400 italic">Belum ada pengumuman atau forum diskusi pada kelas & mapel ini.</div>`;
+        return;
+    }
+
+    container.innerHTML = announcementsCache.map(an => {
+        const comments = announcementCommentsCache.filter(c => Number(c.announcement_id) === Number(an.id));
+        const dateStr = new Date(an.created_at).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+        return `
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-[11px] text-slate-400 font-bold">Diposting: ${dateStr}</span>
+                    <button type="button" onclick="deleteAnnouncement(${an.id})" class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 text-xs font-bold">🗑️ Hapus</button>
+                </div>
+                <h4 class="font-extrabold text-base text-slate-900">${an.judul}</h4>
+                <p class="text-xs sm:text-sm text-slate-700 whitespace-pre-line bg-slate-50 p-3.5 rounded-xl border border-slate-200">${an.isi}</p>
+
+                <div class="pt-2 space-y-2">
+                    <span class="text-[11px] font-extrabold text-slate-500">💬 Balasan & Diskusi (${comments.length})</span>
+                    <div class="space-y-1.5 max-h-48 overflow-y-auto">
+                        ${comments.map(c => `
+                            <div class="p-2.5 rounded-xl text-xs ${c.author_role === 'guru' ? 'bg-blue-50 border border-blue-200' : 'bg-slate-50 border border-slate-200'}">
+                                <div class="flex justify-between">
+                                    <b class="${c.author_role === 'guru' ? 'text-blue-800' : 'text-slate-800'}">${c.author_name} ${c.author_role === 'guru' ? '(Guru)' : ''}</b>
+                                    <span class="text-[10px] text-slate-400">${new Date(c.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                                <p class="text-slate-700 mt-0.5">${c.komentar}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <form onsubmit="postTeacherComment(event, ${an.id})" class="flex gap-2 pt-1">
+                        <input type="text" id="tch-comment-inp-${an.id}" required placeholder="Tulis balasan guru..." class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs">
+                        <button type="submit" class="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-extrabold shrink-0">Balas</button>
+                    </form>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function postTeacherComment(e, announcementId) {
+    e.preventDefault();
+    const inp = document.getElementById(`tch-comment-inp-${announcementId}`);
+    const text = inp?.value.trim();
+    if (!text) return;
+
+    await db.from('announcement_comments').insert([{
+        announcement_id: announcementId,
+        author_name: currentUser.nama_lengkap || 'Guru',
+        author_role: 'guru',
+        komentar: text
+    }]);
+    inp.value = '';
+    await loadWorkspaceData();
+}
+
+async function deleteAnnouncement(id) {
+    if (!confirm('Hapus pengumuman beserta seluruh diskusinya?')) return;
+    await db.from('announcements').delete().eq('id', id);
+    showToast('Pengumuman dihapus.');
+    await loadWorkspaceData();
 }
 
 // ==================== 5. PERHITUNGAN NILAI & DASHBOARD ====================
@@ -574,16 +843,10 @@ function computeStudentMetrics(studentId) {
     let h = 0, s = 0, i = 0, a = 0;
     if (logs.length > 0) {
         logs.forEach(l => {
-            if (l.status === 'H') h++;
-            else if (l.status === 'S') s++;
-            else if (l.status === 'I') i++;
-            else if (l.status === 'A') a++;
+            if (l.status === 'H') h++; else if (l.status === 'S') s++; else if (l.status === 'I') i++; else if (l.status === 'A') a++;
         });
     } else if (manual) {
-        h = Number(manual.hadir || 0);
-        s = Number(manual.sakit || 0);
-        i = Number(manual.izin || 0);
-        a = Number(manual.alpa || 0);
+        h = Number(manual.hadir || 0); s = Number(manual.sakit || 0); i = Number(manual.izin || 0); a = Number(manual.alpa || 0);
     }
 
     const totalPertemuan = h + s + i + a;
@@ -626,18 +889,9 @@ function computeStudentMetrics(studentId) {
     }).length;
 
     return {
-        h, s, i, a,
-        attScore,
-        attRate,
-        avgTugas,
-        avgBab,
-        avgSmt,
-        autoFinalScore,
-        manualScore: hasManual ? Number(fgRecord.nilai_manual) : null,
-        finalScore,
-        isPublished: Boolean(fgRecord?.is_published),
-        doneTasks,
-        totalTasks,
+        h, s, i, a, attScore, attRate, avgTugas, avgBab, avgSmt,
+        autoFinalScore, manualScore: hasManual ? Number(fgRecord.nilai_manual) : null,
+        finalScore, isPublished: Boolean(fgRecord?.is_published), doneTasks, totalTasks,
         kkm: Number(amp.kkm || 75)
     };
 }
@@ -707,12 +961,7 @@ function renderDashboardCharts(h, s, i, a) {
         const tot = h + s + i + a;
         const hasData = tot > 0;
         const pctData = hasData
-            ? [
-                Number(((h / tot) * 100).toFixed(1)),
-                Number(((s / tot) * 100).toFixed(1)),
-                Number(((i / tot) * 100).toFixed(1)),
-                Number(((a / tot) * 100).toFixed(1))
-              ]
+            ? [Number(((h / tot) * 100).toFixed(1)), Number(((s / tot) * 100).toFixed(1)), Number(((i / tot) * 100).toFixed(1)), Number(((a / tot) * 100).toFixed(1))]
             : [100];
 
         chartInstances['chartDashDonutAtt'] = new Chart(c1, {
@@ -722,9 +971,7 @@ function renderDashboardCharts(h, s, i, a) {
                 datasets: [{ data: pctData, backgroundColor: hasData ? ['#10b981', '#f59e0b', '#3b82f6', '#f43f5e'] : ['#e2e8f0'], borderWidth: 0 }]
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '68%',
+                responsive: true, maintainAspectRatio: false, cutout: '68%',
                 plugins: {
                     legend: { position: 'right', labels: { boxWidth: 10, font: { size: 10 } } },
                     tooltip: { callbacks: { label: (ctx) => hasData ? ` ${ctx.label}: ${ctx.parsed}%` : ' Belum ada data' } }
@@ -749,9 +996,7 @@ function renderDashboardCharts(h, s, i, a) {
                 datasets: [{ label: 'Kehadiran (%)', data: dates.length ? rates : [100], borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.1)', fill: true, tension: 0.3 }]
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: { y: { min: 0, max: 100 } },
+                responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } },
                 plugins: {
                     legend: { display: false },
                     tooltip: {
@@ -773,17 +1018,13 @@ function renderDashboardCharts(h, s, i, a) {
             { key: 'ujian_bab', label: 'Ujian Akhir Bab' },
             { key: 'ujian_semester', label: 'Ujian Semester' }
         ];
-
         const catRates = categories.map(cat => {
             const listAss = assessmentsCache.filter(as => normalizeKategori(as.kategori) === cat.key);
             if (!listAss.length || !studentsCache.length) return 0;
             const totalExpected = listAss.length * studentsCache.length;
             let totalDone = 0;
             listAss.forEach(as => {
-                totalDone += scoresCache.filter(sc =>
-                    Number(sc.assessment_id) === Number(as.id) &&
-                    (sc.status_kumpul === true || sc.status_pengajuan === 'approved')
-                ).length;
+                totalDone += scoresCache.filter(sc => Number(sc.assessment_id) === Number(as.id) && (sc.status_kumpul === true || sc.status_pengajuan === 'approved')).length;
             });
             return Number(((totalDone / totalExpected) * 100).toFixed(1));
         });
@@ -795,23 +1036,15 @@ function renderDashboardCharts(h, s, i, a) {
                 datasets: [{ label: 'Ketuntasan (%)', data: catRates, backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981'], borderRadius: 6 }]
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: { y: { min: 0, max: 100 } },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: { callbacks: { label: (ctx) => ` Terkumpul: ${ctx.parsed.y}%` } }
-                }
+                responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } },
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ` Terkumpul: ${ctx.parsed.y}%` } } }
             }
         });
     }
 }
 
 function destroyChart(key) {
-    if (chartInstances[key]) {
-        chartInstances[key].destroy();
-        delete chartInstances[key];
-    }
+    if (chartInstances[key]) { chartInstances[key].destroy(); delete chartInstances[key]; }
 }
 
 // ==================== 6. MANAJEMEN KELAS & SISWA ====================
@@ -823,10 +1056,7 @@ async function createClass(e) {
     e.target.reset();
     await loadAllClasses();
     showToast(`✅ Kelas "${nama_kelas}" berhasil dibuat!`);
-    if (adminMode === 'students') {
-        activeClassId = data.id;
-        await loadWorkspaceData();
-    }
+    if (adminMode === 'students') { activeClassId = data.id; await loadWorkspaceData(); }
 }
 
 async function addStudentManual(e) {
@@ -835,7 +1065,6 @@ async function addStudentManual(e) {
     if (!activeClassId) return showToast('Pilih kelas terlebih dahulu!', 'error');
     const nisn = document.getElementById('stu-nisn').value.trim();
     const nama = document.getElementById('stu-nama').value.trim();
-    // Password default otomatis diisi NISN
     const { error } = await db.from('students').insert([{ class_id: activeClassId, nisn, nama, password: nisn }]);
     if (error) return showToast('Gagal menambah siswa: ' + error.message, 'error');
     e.target.reset();
@@ -863,12 +1092,7 @@ async function importStudentsExcel() {
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
         const payload = rows.map(r => {
             const nisnVal = String(r['NISN'] || r['nisn'] || '').trim();
-            return {
-                class_id: activeClassId,
-                nisn: nisnVal,
-                nama: String(r['Nama Lengkap'] || r['Nama'] || r['nama'] || '').trim(),
-                password: nisnVal
-            };
+            return { class_id: activeClassId, nisn: nisnVal, nama: String(r['Nama Lengkap'] || r['Nama'] || r['nama'] || '').trim(), password: nisnVal };
         }).filter(x => x.nama);
 
         if (!payload.length) return showToast('Data siswa kosong di file Excel!', 'error');
@@ -911,27 +1135,20 @@ function renderStudentsTable() {
 }
 
 function toggleSingleStudentSelect(id, checked) {
-    if (checked) selectedStudentIds.add(id);
-    else selectedStudentIds.delete(id);
+    if (checked) selectedStudentIds.add(id); else selectedStudentIds.delete(id);
     updateBulkDeleteButtons();
 }
-
 function toggleSelectAllStudents(checked) {
     selectedStudentIds.clear();
     if (checked) studentsCache.forEach(s => selectedStudentIds.add(s.id));
     renderStudentsTable();
 }
-
 function updateBulkDeleteButtons() {
     const cnt = selectedStudentIds.size;
-    const badge = document.getElementById('selected-students-badge');
-    const btnCnt = document.getElementById('btn-selected-count');
-    const btnSel = document.getElementById('btn-bulk-delete-selected');
-    const btnAll = document.getElementById('btn-bulk-delete-all');
-    if (badge) badge.innerText = `${cnt} dipilih`;
-    if (btnCnt) btnCnt.innerText = cnt;
-    if (btnSel) btnSel.disabled = cnt === 0;
-    if (btnAll) btnAll.disabled = studentsCache.length === 0;
+    if (document.getElementById('selected-students-badge')) document.getElementById('selected-students-badge').innerText = `${cnt} dipilih`;
+    if (document.getElementById('btn-selected-count')) document.getElementById('btn-selected-count').innerText = cnt;
+    if (document.getElementById('btn-bulk-delete-selected')) document.getElementById('btn-bulk-delete-selected').disabled = cnt === 0;
+    if (document.getElementById('btn-bulk-delete-all')) document.getElementById('btn-bulk-delete-all').disabled = studentsCache.length === 0;
 }
 
 function openEditStudentModal(id) {
@@ -959,21 +1176,9 @@ async function handleUpdateStudent(e) {
     await loadWorkspaceData();
 }
 
-function initiateSingleStudentDelete(id) {
-    if (isSharedClassLocked) return showToast('🔒 Kelas bersama terkunci.', 'error');
-    deleteTargetIds = [id];
-    openDeleteConfirmModal();
-}
-function initiateBulkDeleteSelected() {
-    if (isSharedClassLocked) return showToast('🔒 Kelas bersama terkunci.', 'error');
-    deleteTargetIds = [...selectedStudentIds];
-    openDeleteConfirmModal();
-}
-function initiateDeleteAllInClass() {
-    if (isSharedClassLocked) return showToast('🔒 Kelas bersama terkunci.', 'error');
-    deleteTargetIds = studentsCache.map(s => s.id);
-    openDeleteConfirmModal();
-}
+function initiateSingleStudentDelete(id) { if (!isSharedClassLocked) { deleteTargetIds = [id]; openDeleteConfirmModal(); } }
+function initiateBulkDeleteSelected() { if (!isSharedClassLocked) { deleteTargetIds = [...selectedStudentIds]; openDeleteConfirmModal(); } }
+function initiateDeleteAllInClass() { if (!isSharedClassLocked) { deleteTargetIds = studentsCache.map(s => s.id); openDeleteConfirmModal(); } }
 
 function openDeleteConfirmModal() {
     if (!deleteTargetIds.length) return;
@@ -981,7 +1186,6 @@ function openDeleteConfirmModal() {
     document.getElementById('del-step-2').classList.add('hidden');
     document.getElementById('del-final-check').checked = false;
     document.getElementById('btn-execute-delete').disabled = true;
-
     const names = studentsCache.filter(s => deleteTargetIds.includes(s.id)).map(s => `• ${s.nisn} - ${s.nama}`);
     document.getElementById('del-step1-desc').innerText = `Anda akan menghapus ${names.length} data siswa berikut:`;
     document.getElementById('del-names-preview').innerHTML = names.join('<br>');
@@ -993,9 +1197,7 @@ function proceedToDeleteStep2() {
     document.getElementById('del-step-2').classList.remove('hidden');
     document.getElementById('del-step2-desc').innerText = `Total ${deleteTargetIds.length} siswa beserta nilai & presensinya akan dihapus.`;
 }
-function toggleFinalDeleteButton() {
-    document.getElementById('btn-execute-delete').disabled = !document.getElementById('del-final-check').checked;
-}
+function toggleFinalDeleteButton() { document.getElementById('btn-execute-delete').disabled = !document.getElementById('del-final-check').checked; }
 async function executeConfirmedStudentDelete() {
     if (isSharedClassLocked) return;
     await db.from('students').delete().in('id', deleteTargetIds);
@@ -1010,9 +1212,7 @@ function loadRecordedDates() {
     const dates = [...new Set(attLogsCache.map(l => l.tanggal))].sort().reverse();
     const sel = document.getElementById('abs-recorded-dates');
     const chips = document.getElementById('abs-date-chips');
-    if (sel) {
-        sel.innerHTML = `<option value="">-- Riwayat Tanggal (${dates.length}) --</option>` + dates.map(d => `<option value="${d}">${d}</option>`).join('');
-    }
+    if (sel) sel.innerHTML = `<option value="">-- Riwayat Tanggal (${dates.length}) --</option>` + dates.map(d => `<option value="${d}">${d}</option>`).join('');
     if (chips) {
         chips.innerHTML = dates.length
             ? dates.map(d => `<button type="button" onclick="selectRecordedDate('${d}')" class="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold border border-blue-200">${d}</button>`).join('')
@@ -1035,9 +1235,7 @@ function loadDailyAttendanceForDate() {
     tbody.innerHTML = studentsCache.map((s, idx) => {
         const log = attLogsCache.find(l => Number(l.student_id) === Number(s.id) && l.tanggal === dateVal);
         const st = log?.status || 'H';
-        if (st === 'H') h++;
-        else if (st === 'S' || st === 'I') si++;
-        else if (st === 'A') a++;
+        if (st === 'H') h++; else if (st === 'S' || st === 'I') si++; else if (st === 'A') a++;
 
         return `
             <tr data-stu-id="${s.id}">
@@ -1070,17 +1268,13 @@ function refreshDailyAttStats() {
     studentsCache.forEach(s => {
         const checked = document.querySelector(`input[name="att_${s.id}"]:checked`);
         const val = checked?.value || 'H';
-        if (val === 'H') h++;
-        else if (val === 'S' || val === 'I') si++;
-        else if (val === 'A') a++;
+        if (val === 'H') h++; else if (val === 'S' || val === 'I') si++; else if (val === 'A') a++;
 
         document.querySelectorAll(`input[name="att_${s.id}"]`).forEach(inp => {
             const lbl = inp.parentElement;
-            if (inp.checked) {
-                lbl.className = `cursor-pointer px-3 py-1.5 ${inp.value === 'H' ? 'bg-emerald-600 text-white' : inp.value === 'A' ? 'bg-rose-600 text-white' : 'bg-amber-500 text-white'}`;
-            } else {
-                lbl.className = 'cursor-pointer px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50';
-            }
+            lbl.className = inp.checked
+                ? `cursor-pointer px-3 py-1.5 ${inp.value === 'H' ? 'bg-emerald-600 text-white' : inp.value === 'A' ? 'bg-rose-600 text-white' : 'bg-amber-500 text-white'}`
+                : 'cursor-pointer px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50';
         });
     });
     const tot = studentsCache.length || 1;
@@ -1104,18 +1298,14 @@ async function saveDailyAttendance() {
     if (!activeClassId || !dateVal || !amp) return showToast('Pilih kelas dan tanggal pertemuan!', 'error');
 
     await db.from('attendance_logs').delete().eq('class_id', activeClassId).eq('tanggal', dateVal).eq('mapel', amp.mapel);
-
-    const payload = studentsCache.map(s => {
-        const checked = document.querySelector(`input[name="att_${s.id}"]:checked`);
-        return {
-            teacher_id: currentUser.id,
-            class_id: activeClassId,
-            student_id: s.id,
-            mapel: amp.mapel,
-            tanggal: dateVal,
-            status: checked?.value || 'H'
-        };
-    });
+    const payload = studentsCache.map(s => ({
+        teacher_id: currentUser.id,
+        class_id: activeClassId,
+        student_id: s.id,
+        mapel: amp.mapel,
+        tanggal: dateVal,
+        status: document.querySelector(`input[name="att_${s.id}"]:checked`)?.value || 'H'
+    }));
 
     const { error } = await db.from('attendance_logs').insert(payload);
     if (error) return showToast('Gagal menyimpan absensi: ' + error.message, 'error');
@@ -1142,10 +1332,7 @@ function exportDailyAttendanceExcel() {
     const header = ['No', 'NISN', 'Nama Siswa', ...dates, 'Hadir', 'Sakit', 'Izin', 'Alpa'];
     const rows = studentsCache.map((s, idx) => {
         const m = computeStudentMetrics(s.id);
-        const dayCols = dates.map(d => {
-            const log = attLogsCache.find(l => Number(l.student_id) === Number(s.id) && l.tanggal === d);
-            return log?.status || '-';
-        });
+        const dayCols = dates.map(d => attLogsCache.find(l => Number(l.student_id) === Number(s.id) && l.tanggal === d)?.status || '-');
         return [idx + 1, s.nisn, s.nama, ...dayCols, m.h, m.s, m.i, m.a];
     });
     const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
@@ -1177,9 +1364,7 @@ async function saveAttendanceManual() {
     const amp = getActiveAmpuan();
     if (!activeClassId || !amp) return;
     const stuIds = studentsCache.map(s => s.id);
-    if (stuIds.length) {
-        await db.from('attendance').delete().in('student_id', stuIds).eq('mapel', amp.mapel);
-    }
+    if (stuIds.length) await db.from('attendance').delete().in('student_id', stuIds).eq('mapel', amp.mapel);
     const payload = [...document.querySelectorAll('#absen-tbody tr')].map(tr => ({
         teacher_id: currentUser.id,
         student_id: Number(tr.dataset.recapStu),
@@ -1232,22 +1417,47 @@ async function createAssessment(e) {
     const amp = getActiveAmpuan();
     if (!activeClassId || !amp) return showToast('Pilih kelas dan mapel terlebih dahulu!', 'error');
 
-    const payload = {
-        class_id: activeClassId,
-        teacher_id: currentUser.id,
-        mapel: amp.mapel,
-        judul: document.getElementById('ass-judul').value.trim(),
-        kategori: document.getElementById('ass-kategori').value,
-        tipe_kerja: document.getElementById('ass-tipe').value,
-        tampil_publik: document.getElementById('ass-publik').value === 'true',
-        link_pengumpulan: document.getElementById('ass-link').value.trim() || null
-    };
+    const judul = document.getElementById('ass-judul').value.trim();
+    const deskripsi = document.getElementById('ass-deskripsi')?.value.trim() || null;
+    const deadlineRaw = document.getElementById('ass-deadline')?.value || '';
+    const deadline = deadlineRaw ? new Date(deadlineRaw).toISOString() : null;
+    const teacherFiles = [...(document.getElementById('ass-teacher-files')?.files || [])];
 
-    const { error } = await db.from('assessments').insert([payload]);
-    if (error) return showToast('Gagal membuat penilaian: ' + error.message, 'error');
-    e.target.reset();
-    showToast('✅ Tugas / Ujian baru ditambahkan!');
-    await loadWorkspaceData();
+    const btn = document.getElementById('btn-create-ass');
+    if (btn) btn.disabled = true;
+
+    try {
+        let uploadedTeacherFiles = [];
+        if (teacherFiles.length > 0) {
+            showToast('⏳ Mengunggah file soal/panduan ke Google Drive Anda...');
+            uploadedTeacherFiles = await uploadTeacherFilesToDrive(teacherFiles, `Soal_${judul.slice(0, 30)}`);
+        }
+
+        const payload = {
+            class_id: activeClassId,
+            teacher_id: currentUser.id,
+            mapel: amp.mapel,
+            judul,
+            deskripsi,
+            deadline,
+            lampiran_guru: uploadedTeacherFiles.length > 0 ? JSON.stringify(uploadedTeacherFiles) : null,
+            kategori: document.getElementById('ass-kategori').value,
+            tipe_kerja: document.getElementById('ass-tipe').value,
+            tampil_publik: document.getElementById('ass-publik').value === 'true',
+            link_pengumpulan: document.getElementById('ass-link').value.trim() || null
+        };
+
+        const { error } = await db.from('assessments').insert([payload]);
+        if (error) throw new Error(error.message);
+
+        e.target.reset();
+        showToast('✅ Tugas / Ujian baru ditambahkan!');
+        await loadWorkspaceData();
+    } catch (err) {
+        showToast('❌ ' + err.message, 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
 function renderAssessmentsDropdown() {
@@ -1268,9 +1478,7 @@ function parseStudentSubmittedFiles(raw) {
         const arr = JSON.parse(raw);
         if (Array.isArray(arr)) return arr;
     } catch {
-        if (String(raw).startsWith('http')) {
-            return [{ name: 'File 1', url: raw }];
-        }
+        if (String(raw).startsWith('http')) return [{ name: 'File 1', url: raw }];
     }
     return [];
 }
@@ -1294,7 +1502,27 @@ function loadAssessmentScores() {
     document.getElementById('edit-ass-judul').value = ass.judul;
     document.getElementById('edit-ass-kategori').value = normalizeKategori(ass.kategori);
     document.getElementById('edit-ass-tipe').value = ass.tipe_kerja || 'individu';
+    document.getElementById('edit-ass-deskripsi').value = ass.deskripsi || '';
     document.getElementById('edit-ass-link').value = ass.link_pengumpulan || '';
+
+    const dlInp = document.getElementById('edit-ass-deadline');
+    if (dlInp) {
+        if (ass.deadline) {
+            const dt = new Date(ass.deadline);
+            const localIso = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+            dlInp.value = localIso;
+        } else {
+            dlInp.value = '';
+        }
+    }
+
+    const tchFilesBox = document.getElementById('edit-ass-teacher-files-list');
+    if (tchFilesBox) {
+        const tFiles = parseStudentSubmittedFiles(ass.lampiran_guru);
+        tchFilesBox.innerHTML = tFiles.map((tf, idx) =>
+            `<a href="${tf.url}" target="_blank" class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold">📄 Lampiran Soal ${idx + 1}: ${tf.name} ↗</a>`
+        ).join('');
+    }
 
     const btnPub = document.getElementById('btn-toggle-public');
     btnPub.innerText = ass.tampil_publik ? '🌐 Publik' : '🔒 Privat';
@@ -1303,12 +1531,8 @@ function loadAssessmentScores() {
         : 'px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-200 text-slate-600';
 
     const testLink = document.getElementById('btn-test-ass-link');
-    if (ass.link_pengumpulan) {
-        testLink.href = ass.link_pengumpulan;
-        testLink.classList.remove('hidden');
-    } else {
-        testLink.classList.add('hidden');
-    }
+    if (ass.link_pengumpulan) { testLink.href = ass.link_pengumpulan; testLink.classList.remove('hidden'); }
+    else { testLink.classList.add('hidden'); }
 
     const isGroup = ass.tipe_kerja === 'kelompok';
     grpBanner.classList.toggle('hidden', !isGroup);
@@ -1414,21 +1638,9 @@ async function saveAssessmentScores() {
 
         const existing = scoresCache.find(x => Number(x.assessment_id) === assId && Number(x.student_id) === stuId);
         if (existing) {
-            await db.from('scores').update({
-                status_kumpul: kumpul,
-                status_pengajuan: kumpul ? 'approved' : 'none',
-                nilai,
-                nama_kelompok
-            }).eq('id', existing.id);
+            await db.from('scores').update({ status_kumpul: kumpul, status_pengajuan: kumpul ? 'approved' : 'none', nilai, nama_kelompok }).eq('id', existing.id);
         } else {
-            await db.from('scores').insert([{
-                assessment_id: assId,
-                student_id: stuId,
-                status_kumpul: kumpul,
-                status_pengajuan: kumpul ? 'approved' : 'none',
-                nilai,
-                nama_kelompok
-            }]);
+            await db.from('scores').insert([{ assessment_id: assId, student_id: stuId, status_kumpul: kumpul, status_pengajuan: kumpul ? 'approved' : 'none', nilai, nama_kelompok }]);
         }
     }
 
@@ -1439,13 +1651,16 @@ async function saveAssessmentScores() {
 async function updateAssessmentLink() {
     const assId = Number(document.getElementById('active-assessment')?.value);
     if (!assId) return;
+    const dlRaw = document.getElementById('edit-ass-deadline')?.value || '';
     await db.from('assessments').update({
         judul: document.getElementById('edit-ass-judul').value.trim(),
         kategori: document.getElementById('edit-ass-kategori').value,
         tipe_kerja: document.getElementById('edit-ass-tipe').value,
+        deskripsi: document.getElementById('edit-ass-deskripsi').value.trim() || null,
+        deadline: dlRaw ? new Date(dlRaw).toISOString() : null,
         link_pengumpulan: document.getElementById('edit-ass-link').value.trim() || null
     }).eq('id', assId);
-    showToast('✅ Detail tugas diperbarui');
+    showToast('✅ Detail & instruksi tugas diperbarui');
     await loadWorkspaceData();
 }
 
@@ -1472,9 +1687,7 @@ function loadGroupPresetsDropdown() {
     const raw = amp?.kelompok_template;
     groupPresetsCache = Array.isArray(raw) ? raw : [];
     const sel = document.getElementById('select-group-preset');
-    if (sel) {
-        sel.innerHTML = `<option value="">-- Pilih Preset Kelompok --</option>` + groupPresetsCache.map((p, idx) => `<option value="${idx}">${p.nama_preset}</option>`).join('');
-    }
+    if (sel) sel.innerHTML = `<option value="">-- Pilih Preset Kelompok --</option>` + groupPresetsCache.map((p, idx) => `<option value="${idx}">${p.nama_preset}</option>`).join('');
 }
 
 function applySelectedGroupPreset() {
@@ -1484,9 +1697,8 @@ function applySelectedGroupPreset() {
     if (!preset) return;
     const mapping = preset.mapping || {};
     document.querySelectorAll('#scores-tbody tr[data-score-stu]').forEach(tr => {
-        const stuId = tr.dataset.scoreStu;
         const inp = tr.querySelector('.sc-kelompok');
-        if (inp && mapping[stuId]) inp.value = mapping[stuId];
+        if (inp && mapping[tr.dataset.scoreStu]) inp.value = mapping[tr.dataset.scoreStu];
     });
     showToast(`✅ Preset "${preset.nama_preset}" diterapkan!`);
 }
@@ -1516,7 +1728,6 @@ function openGroupManagerModal() {
     renderGroupManagerRows();
 }
 function closeGroupManagerModal() { document.getElementById('modal-group-manager').classList.add('hidden'); }
-
 function loadPresetIntoModal() {
     const idx = document.getElementById('gm-preset-select').value;
     const p = idx !== '' ? groupPresetsCache[Number(idx)] : null;
@@ -1524,14 +1735,7 @@ function loadPresetIntoModal() {
     modalGroupMap = p ? { ...(p.mapping || {}) } : {};
     renderGroupManagerRows();
 }
-
-function createNewGroupPreset() {
-    document.getElementById('gm-preset-select').value = '';
-    document.getElementById('gm-preset-name').value = '';
-    modalGroupMap = {};
-    renderGroupManagerRows();
-}
-
+function createNewGroupPreset() { document.getElementById('gm-preset-select').value = ''; document.getElementById('gm-preset-name').value = ''; modalGroupMap = {}; renderGroupManagerRows(); }
 async function deleteCurrentGroupPreset() {
     const idx = document.getElementById('gm-preset-select').value;
     const amp = getActiveAmpuan();
@@ -1542,7 +1746,6 @@ async function deleteCurrentGroupPreset() {
     loadGroupPresetsDropdown();
     createNewGroupPreset();
 }
-
 function autoGenerateGroups(mode) {
     const count = Math.max(2, Number(document.getElementById('gm-auto-count').value || 5));
     let list = [...studentsCache];
@@ -1551,9 +1754,7 @@ function autoGenerateGroups(mode) {
     list.forEach((s, idx) => { modalGroupMap[s.id] = `Kelompok ${(idx % count) + 1}`; });
     renderGroupManagerRows();
 }
-
 function clearAllModalGroups() { modalGroupMap = {}; renderGroupManagerRows(); }
-
 function renderGroupManagerRows() {
     const tbody = document.getElementById('gm-students-tbody');
     tbody.innerHTML = studentsCache.map((s, idx) => `
@@ -1565,7 +1766,6 @@ function renderGroupManagerRows() {
         </tr>
     `).join('');
 }
-
 async function saveGroupPresetFromModal(andApply) {
     const amp = getActiveAmpuan();
     if (!amp) return;
@@ -1578,7 +1778,6 @@ async function saveGroupPresetFromModal(andApply) {
     await db.from('teacher_settings').update({ kelompok_template: updatedList }).eq('id', amp.id);
     amp.kelompok_template = updatedList;
     loadGroupPresetsDropdown();
-
     if (andApply) {
         document.querySelectorAll('#scores-tbody tr[data-score-stu]').forEach(tr => {
             const inp = tr.querySelector('.sc-kelompok');
@@ -1609,7 +1808,6 @@ function renderRekapTab() {
         sumAbs += m.attScore; sumTgs += m.avgTugas; sumBab += m.avgBab; sumSmt += m.avgSmt;
         const ok = m.finalScore >= m.kkm;
         if (ok) tuntas++; else belum++;
-
         const manualValStr = m.manualScore !== null ? m.manualScore : '';
 
         return `
@@ -1655,10 +1853,7 @@ function renderRekapTab() {
     if (c2) {
         chartInstances['chartRekapKKM'] = new Chart(c2, {
             type: 'doughnut',
-            data: {
-                labels: ['Tuntas KKM', 'Belum Tuntas'],
-                datasets: [{ data: [tuntas, belum], backgroundColor: ['#10b981', '#f43f5e'], borderWidth: 0 }]
-            },
+            data: { labels: ['Tuntas KKM', 'Belum Tuntas'], datasets: [{ data: [tuntas, belum], backgroundColor: ['#10b981', '#f43f5e'], borderWidth: 0 }] },
             options: { responsive: true, maintainAspectRatio: false, cutout: '65%' }
         });
     }
@@ -1670,7 +1865,6 @@ function onManualFinalGradeInput(inp) {
     const autoVal = Number(tr.dataset.autoVal || 0);
     const kkm = Number(tr.dataset.kkmVal || 75);
     const finalVal = inp.value !== '' ? Number(inp.value) : autoVal;
-
     tr.querySelector('.cell-final-lms').innerText = finalVal.toFixed(1);
     const ok = finalVal >= kkm;
     tr.querySelector('.cell-status-kkm').innerHTML = `<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">${ok ? 'TUNTAS' : 'REMEDIAL'}</span>`;
@@ -1690,24 +1884,16 @@ async function publishFinalGradesToLMS(publishState) {
         const nilai_manual = rawManual !== '' ? Number(rawManual) : null;
 
         return {
-            class_id: activeClassId,
-            student_id,
-            teacher_id: currentUser.id,
-            mapel: amp.mapel,
-            nilai_otomatis: autoVal,
-            nilai_manual,
-            kkm: Number(amp.kkm || 75),
-            is_published: publishState,
-            updated_at: new Date().toISOString()
+            class_id: activeClassId, student_id, teacher_id: currentUser.id,
+            mapel: amp.mapel, nilai_otomatis: autoVal, nilai_manual,
+            kkm: Number(amp.kkm || 75), is_published: publishState, updated_at: new Date().toISOString()
         };
     });
 
     const { error } = await db.from('final_grades').upsert(payload, { onConflict: 'class_id,student_id,mapel' });
     if (error) return showToast('Gagal menyimpan/publikasi nilai: ' + error.message, 'error');
 
-    showToast(publishState
-        ? `🌐 Nilai akhir ${amp.mapel} berhasil dipublikasikan ke LMS Siswa!`
-        : `🔒 Publikasi nilai ${amp.mapel} ditarik dari tampilan siswa.`);
+    showToast(publishState ? `🌐 Nilai akhir ${amp.mapel} berhasil dipublikasikan ke LMS Siswa!` : `🔒 Publikasi nilai ${amp.mapel} ditarik.`);
     await loadWorkspaceData();
 }
 
@@ -1715,17 +1901,11 @@ function exportRekapExcel() {
     const rows = studentsCache.map((s, idx) => {
         const m = computeStudentMetrics(s.id);
         return {
-            No: idx + 1,
-            NISN: s.nisn,
-            Nama: s.nama,
-            Absen: Number(m.attScore.toFixed(1)),
-            Tugas: Number(m.avgTugas.toFixed(1)),
-            Ujian_Bab: Number(m.avgBab.toFixed(1)),
-            Semester: Number(m.avgSmt.toFixed(1)),
-            Otomatis: Number(m.autoFinalScore.toFixed(1)),
-            Manual: m.manualScore !== null ? m.manualScore : '',
-            Final_LMS: Number(m.finalScore.toFixed(1)),
-            Status: m.finalScore >= m.kkm ? 'TUNTAS' : 'REMEDIAL'
+            No: idx + 1, NISN: s.nisn, Nama: s.nama,
+            Absen: Number(m.attScore.toFixed(1)), Tugas: Number(m.avgTugas.toFixed(1)),
+            Ujian_Bab: Number(m.avgBab.toFixed(1)), Semester: Number(m.avgSmt.toFixed(1)),
+            Otomatis: Number(m.autoFinalScore.toFixed(1)), Manual: m.manualScore !== null ? m.manualScore : '',
+            Final_LMS: Number(m.finalScore.toFixed(1)), Status: m.finalScore >= m.kkm ? 'TUNTAS' : 'REMEDIAL'
         };
     });
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -1796,9 +1976,7 @@ async function loadGuruWaliTab() {
         waliGlobalAttLogs = logRes.data || [];
         waliGlobalAttRecap = recRes.data || [];
     } else {
-        waliGlobalScores = [];
-        waliGlobalAttLogs = [];
-        waliGlobalAttRecap = [];
+        waliGlobalScores = []; waliGlobalAttLogs = []; waliGlobalAttRecap = [];
     }
 
     computeAllWaliStudentMetrics();
@@ -1812,7 +1990,6 @@ function computeAllWaliStudentMetrics() {
     binaanStudents.forEach(stu => {
         const sid = Number(stu.id);
         const cid = Number(stu.class_id);
-
         const classSettings = waliGlobalSettings.filter(st => Number(st.class_id) === cid);
         const stuScores = waliGlobalScores.filter(sc => Number(sc.student_id) === sid);
         const stuLogs = waliGlobalAttLogs.filter(lg => Number(lg.student_id) === sid);
@@ -1828,12 +2005,7 @@ function computeAllWaliStudentMetrics() {
                 else if (lg.status === 'A') { a++; absenceDates.push(`${lg.tanggal} (Alpa - ${lg.mapel || ''})`); }
             });
         } else if (stuRecaps.length > 0) {
-            stuRecaps.forEach(rc => {
-                h += Number(rc.hadir || 0);
-                s += Number(rc.sakit || 0);
-                i += Number(rc.izin || 0);
-                a += Number(rc.alpa || 0);
-            });
+            stuRecaps.forEach(rc => { h += Number(rc.hadir || 0); s += Number(rc.sakit || 0); i += Number(rc.izin || 0); a += Number(rc.alpa || 0); });
         }
         const totalPert = h + s + i + a;
         const attRate = totalPert > 0 ? (h / totalPert) * 100 : 100;
@@ -1845,40 +2017,29 @@ function computeAllWaliStudentMetrics() {
 
         classSettings.forEach(st => {
             const teacherObj = waliGlobalUsers.find(u => Number(u.id) === Number(st.teacher_id));
-            const mapelAss = waliGlobalAssessments.filter(as =>
-                Number(as.class_id) === cid && String(as.mapel || '').toLowerCase() === String(st.mapel || '').toLowerCase()
-            );
-
+            const mapelAss = waliGlobalAssessments.filter(as => Number(as.class_id) === cid && String(as.mapel || '').toLowerCase() === String(st.mapel || '').toLowerCase());
             const mLogs = stuLogs.filter(lg => !lg.mapel || lg.mapel === st.mapel);
             const mRec = stuRecaps.find(rc => rc.mapel === st.mapel);
             let mh = 0, ms = 0, mi = 0, ma = 0;
             if (mLogs.length > 0) {
-                mLogs.forEach(lg => {
-                    if (lg.status === 'H') mh++; else if (lg.status === 'S') ms++; else if (lg.status === 'I') mi++; else if (lg.status === 'A') ma++;
-                });
+                mLogs.forEach(lg => { if (lg.status === 'H') mh++; else if (lg.status === 'S') ms++; else if (lg.status === 'I') mi++; else if (lg.status === 'A') ma++; });
             } else if (mRec) {
                 mh = Number(mRec.hadir || 0); ms = Number(mRec.sakit || 0); mi = Number(mRec.izin || 0); ma = Number(mRec.alpa || 0);
             }
             const mTot = mh + ms + mi + ma;
-            const mAttScore = mTot > 0
-                ? ((mh * (st.p_hadir ?? 100) + ms * (st.p_sakit ?? 80) + mi * (st.p_izin ?? 80) + ma * (st.p_alpa ?? 0)) / mTot)
-                : 100;
+            const mAttScore = mTot > 0 ? ((mh * (st.p_hadir ?? 100) + ms * (st.p_sakit ?? 80) + mi * (st.p_izin ?? 80) + ma * (st.p_alpa ?? 0)) / mTot) : 100;
 
             const calcCat = (catKey) => {
                 const list = mapelAss.filter(as => normalizeKategori(as.kategori) === catKey);
                 if (!list.length) return 0;
                 let tot = 0;
-                list.forEach(as => {
-                    const sc = stuScores.find(x => Number(x.assessment_id) === Number(as.id));
-                    tot += Number(sc?.nilai || 0);
-                });
+                list.forEach(as => { tot += Number(stuScores.find(x => Number(x.assessment_id) === Number(as.id))?.nilai || 0); });
                 return tot / list.length;
             };
 
             const nTugas = calcCat('tugas');
             const nBab = calcCat('ujian_bab');
             const nSmt = calcCat('ujian_semester');
-
             const wTot = (Number(st.w_absen) + Number(st.w_tugas) + Number(st.w_bab) + Number(st.w_uas)) || 100;
             const finalVal = ((mAttScore * Number(st.w_absen)) + (nTugas * Number(st.w_tugas)) + (nBab * Number(st.w_bab)) + (nSmt * Number(st.w_uas))) / wTot;
 
@@ -1886,11 +2047,8 @@ function computeAllWaliStudentMetrics() {
             mapelAss.forEach(as => {
                 const sc = stuScores.find(x => Number(x.assessment_id) === Number(as.id));
                 const isDone = sc?.status_kumpul === true || sc?.status_pengajuan === 'approved';
-                if (isDone) {
-                    doneInMapel++;
-                } else {
-                    pendingTasks.push({ mapel: st.mapel, judul: as.judul, kategori: getKategoriLabel(as.kategori) });
-                }
+                if (isDone) doneInMapel++;
+                else pendingTasks.push({ mapel: st.mapel, judul: as.judul, kategori: getKategoriLabel(as.kategori) });
             });
 
             const kkm = Number(st.kkm || 75);
@@ -1898,22 +2056,14 @@ function computeAllWaliStudentMetrics() {
             sumSubjectFinal += finalVal;
 
             subjectDetails.push({
-                mapel: st.mapel,
-                guru: teacherObj?.nama_lengkap || '-',
+                mapel: st.mapel, guru: teacherObj?.nama_lengkap || '-',
                 attPct: mTot > 0 ? Math.round((mh / mTot) * 100) : 100,
-                doneCount: doneInMapel,
-                totalCount: mapelAss.length,
-                nTugas,
-                nBab,
-                nSmt,
-                finalVal,
-                kkm,
-                tuntas: finalVal >= kkm
+                doneCount: doneInMapel, totalCount: mapelAss.length,
+                nTugas, nBab, nSmt, finalVal, kkm, tuntas: finalVal >= kkm
             });
         });
 
         const avgFinalAllSubjects = classSettings.length > 0 ? (sumSubjectFinal / classSettings.length) : 0;
-
         let ews = 'aman';
         if (a >= 3 || attRate < 80 || pendingTasks.length >= 3 || belowKkmCount >= 2) ews = 'kritis';
         else if (a >= 1 || attRate < 90 || pendingTasks.length >= 1 || belowKkmCount >= 1) ews = 'waspada';
@@ -1944,14 +2094,11 @@ function renderGuruWaliRows() {
 
     const filtered = allBinaan.filter(s => {
         const m = waliMetricsCache[Number(s.id)] || { ews: 'aman' };
-        const matchQ = !q || s.nama.toLowerCase().includes(q) || (s.classes?.nama_kelas || '').toLowerCase().includes(q);
-        const matchEws = filterEws === 'all' || m.ews === filterEws;
-        return matchQ && matchEws;
+        return (!q || s.nama.toLowerCase().includes(q) || (s.classes?.nama_kelas || '').toLowerCase().includes(q)) && (filterEws === 'all' || m.ews === filterEws);
     });
 
     tbody.innerHTML = filtered.length ? filtered.map((s, idx) => {
         const m = waliMetricsCache[Number(s.id)] || { attRate: 100, pendingTasks: [], avgFinalAllSubjects: 0, ews: 'aman', h: 0, s: 0, i: 0, a: 0 };
-
         let ewsBadge = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-700">🟢 Aman</span>`;
         if (m.ews === 'kritis') ewsBadge = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-700">🔴 Kritis</span>`;
         else if (m.ews === 'waspada') ewsBadge = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-700">🟡 Waspada</span>`;
@@ -1959,19 +2106,9 @@ function renderGuruWaliRows() {
         return `
             <tr class="hover:bg-slate-50">
                 <td class="p-3 text-center">${idx + 1}</td>
-                <td class="p-3">
-                    <div class="font-bold text-slate-900">${s.nama}</div>
-                    <div class="text-[10px] text-slate-500">${s.classes?.nama_kelas || '-'} • ${s.nisn}</div>
-                </td>
-                <td class="p-3 text-center">
-                    <div class="font-extrabold ${m.attRate >= 90 ? 'text-emerald-600' : m.attRate >= 80 ? 'text-amber-600' : 'text-rose-600'}">${m.attRate.toFixed(0)}%</div>
-                    <div class="text-[10px] text-slate-400">H:${m.h} S:${m.s} I:${m.i} A:${m.a}</div>
-                </td>
-                <td class="p-3 text-center">
-                    <span class="px-2 py-0.5 rounded-full text-[11px] font-extrabold ${m.pendingTasks.length > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-slate-100 text-slate-600'}">
-                        ${m.pendingTasks.length} Tugas
-                    </span>
-                </td>
+                <td class="p-3"><div class="font-bold text-slate-900">${s.nama}</div><div class="text-[10px] text-slate-500">${s.classes?.nama_kelas || '-'} • ${s.nisn}</div></td>
+                <td class="p-3 text-center"><div class="font-extrabold ${m.attRate >= 90 ? 'text-emerald-600' : m.attRate >= 80 ? 'text-amber-600' : 'text-rose-600'}">${m.attRate.toFixed(0)}%</div><div class="text-[10px] text-slate-400">H:${m.h} S:${m.s} I:${m.i} A:${m.a}</div></td>
+                <td class="p-3 text-center"><span class="px-2 py-0.5 rounded-full text-[11px] font-extrabold ${m.pendingTasks.length > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-slate-100 text-slate-600'}">${m.pendingTasks.length} Tugas</span></td>
                 <td class="p-3 text-center font-extrabold text-blue-700">${m.avgFinalAllSubjects.toFixed(1)}</td>
                 <td class="p-3 text-center">${ewsBadge}</td>
                 <td class="p-3 text-center"><button onclick="openWali360Modal(${s.id})" class="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold text-xs">Bedah 360°</button></td>
@@ -1987,14 +2124,10 @@ function openManageBinaanModal() {
     document.getElementById('modal-wali-manage').classList.remove('hidden');
     renderBinaanPickerList();
 }
-
 function renderBinaanPickerList() {
     const cls = document.getElementById('wali-pick-class').value;
     const q = (document.getElementById('wali-pick-search').value || '').toLowerCase();
-    const list = allStudentsGlobal.filter(s =>
-        (cls === 'all' || String(s.class_id) === String(cls)) &&
-        (!q || s.nama.toLowerCase().includes(q) || String(s.nisn).includes(q))
-    );
+    const list = allStudentsGlobal.filter(s => (cls === 'all' || String(s.class_id) === String(cls)) && (!q || s.nama.toLowerCase().includes(q) || String(s.nisn).includes(q)));
     document.getElementById('wali-picked-count-badge').innerText = `${binaanIdsCache.size} Siswa Dipilih`;
     document.getElementById('wali-picker-tbody').innerHTML = list.map(s => `
         <tr>
@@ -2005,13 +2138,10 @@ function renderBinaanPickerList() {
         </tr>
     `).join('');
 }
-
 function toggleBinaanCheck(id, checked) {
-    if (checked) binaanIdsCache.add(Number(id));
-    else binaanIdsCache.delete(Number(id));
+    if (checked) binaanIdsCache.add(Number(id)); else binaanIdsCache.delete(Number(id));
     document.getElementById('wali-picked-count-badge').innerText = `${binaanIdsCache.size} Siswa Dipilih`;
 }
-
 async function saveWaliBinaanSelection() {
     await db.from('wali_binaan').delete().eq('teacher_id', currentUser.id);
     const payload = [...binaanIdsCache].map(sid => ({ teacher_id: currentUser.id, student_id: sid }));
@@ -2047,12 +2177,7 @@ async function openWali360Modal(studentId) {
 
     document.getElementById('w360-pending-badge').innerText = `${m.pendingTasks.length} Tunggakan`;
     document.getElementById('w360-pending-list').innerHTML = m.pendingTasks.length
-        ? m.pendingTasks.map(t => `
-            <div class="p-2 rounded-xl bg-rose-50 border border-rose-200 text-xs flex justify-between items-center">
-                <div><b class="text-rose-800">${t.mapel}</b> — ${t.judul}</div>
-                <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-white text-rose-700">${t.kategori}</span>
-            </div>
-        `).join('')
+        ? m.pendingTasks.map(t => `<div class="p-2 rounded-xl bg-rose-50 border border-rose-200 text-xs flex justify-between items-center"><div><b class="text-rose-800">${t.mapel}</b> — ${t.judul}</div><span class="text-[10px] font-bold px-2 py-0.5 rounded bg-white text-rose-700">${t.kategori}</span></div>`).join('')
         : `<div class="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-700 font-bold">🎉 Seluruh tugas pada semua mata pelajaran telah terkumpul!</div>`;
 
     document.getElementById('w360-subjects-tbody').innerHTML = m.subjectDetails.length
@@ -2067,11 +2192,7 @@ async function openWali360Modal(studentId) {
                 <td class="p-2.5 text-center">${sb.nSmt.toFixed(1)}</td>
                 <td class="p-2.5 text-center font-extrabold text-blue-700">${sb.finalVal.toFixed(1)}</td>
                 <td class="p-2.5 text-center">${sb.kkm}</td>
-                <td class="p-2.5 text-center">
-                    <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${sb.tuntas ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">
-                        ${sb.tuntas ? 'Tuntas' : 'Belum'}
-                    </span>
-                </td>
+                <td class="p-2.5 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${sb.tuntas ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">${sb.tuntas ? 'Tuntas' : 'Belum'}</span></td>
             </tr>
         `).join('')
         : `<tr><td colspan="10" class="p-4 text-center text-slate-400 italic">Belum ada data mata pelajaran di kelas siswa ini.</td></tr>`;
@@ -2092,8 +2213,7 @@ function closeWali360Modal() { document.getElementById('modal-wali-360').classLi
 async function addWaliCounselingLog(e) {
     e.preventDefault();
     await db.from('wali_logs').insert([{
-        teacher_id: currentUser.id,
-        student_id: activeWaliStudentId,
+        teacher_id: currentUser.id, student_id: activeWaliStudentId,
         tanggal: document.getElementById('w360-log-date').value,
         topik: document.getElementById('w360-log-topic').value,
         catatan: document.getElementById('w360-log-note').value,
@@ -2108,16 +2228,7 @@ function exportWaliBinaanExcel() {
     const list = allStudentsGlobal.filter(s => binaanIdsCache.has(Number(s.id)));
     const rows = list.map((s, i) => {
         const m = waliMetricsCache[Number(s.id)] || { attRate: 100, pendingTasks: [], avgFinalAllSubjects: 0, ews: 'aman' };
-        return {
-            No: i + 1,
-            NISN: s.nisn,
-            Nama: s.nama,
-            Kelas: s.classes?.nama_kelas || '-',
-            Kehadiran_Pct: Number(m.attRate.toFixed(1)),
-            Tunggakan_Tugas: m.pendingTasks.length,
-            Rata2_Nilai: Number(m.avgFinalAllSubjects.toFixed(1)),
-            Status_EWS: m.ews.toUpperCase()
-        };
+        return { No: i + 1, NISN: s.nisn, Nama: s.nama, Kelas: s.classes?.nama_kelas || '-', Kehadiran_Pct: Number(m.attRate.toFixed(1)), Tunggakan_Tugas: m.pendingTasks.length, Rata2_Nilai: Number(m.avgFinalAllSubjects.toFixed(1)), Status_EWS: m.ews.toUpperCase() };
     });
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -2170,27 +2281,15 @@ function getGoogleRedirectUri() {
 
 function connectGoogleDrive() {
     if (!currentUser) return showToast('Silakan login terlebih dahulu!', 'error');
-
     const redirectUri = getGoogleRedirectUri();
     const scope = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email';
-
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-        `client_id=${encodeURIComponent(GOOGLE_OAUTH_CLIENT_ID)}` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&response_type=code` +
-        `&scope=${encodeURIComponent(scope)}` +
-        `&access_type=offline` +
-        `&prompt=consent` +
-        `&state=${encodeURIComponent(String(currentUser.id))}`;
-
-    window.location.href = authUrl;
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_OAUTH_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=${encodeURIComponent(String(currentUser.id))}`;
 }
 
 async function handleGoogleOAuthCallback() {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     const stateTeacherId = params.get('state');
-
     if (!code || !stateTeacherId) return;
 
     window.history.replaceState({}, document.title, getGoogleRedirectUri());
@@ -2198,48 +2297,26 @@ async function handleGoogleOAuthCallback() {
 
     try {
         const { data, error } = await db.functions.invoke('gdrive-bridge', {
-            body: {
-                action: 'exchange_code',
-                code: code,
-                redirect_uri: getGoogleRedirectUri(),
-                teacher_id: Number(stateTeacherId)
-            }
+            body: { action: 'exchange_code', code, redirect_uri: getGoogleRedirectUri(), teacher_id: Number(stateTeacherId) }
         });
-
-        if (error || !data?.success) {
-            throw new Error(data?.error || error?.message || 'Gagal verifikasi akun Google.');
-        }
+        if (error || !data?.success) throw new Error(data?.error || error?.message || 'Gagal verifikasi akun Google.');
 
         if (currentUser && String(currentUser.id) === String(stateTeacherId)) {
             currentUser.gdrive_email = data.email;
             localStorage.setItem('sipantau_user', JSON.stringify(currentUser));
         }
-
         updateGDriveConnectionUI();
         switchGuruTab('bobot');
         showToast(`✅ Google Drive (${data.email}) berhasil terhubung!`);
     } catch (err) {
-        console.error(err);
         showToast('❌ Gagal menghubungkan Google Drive: ' + err.message, 'error');
     }
 }
 
 async function disconnectGoogleDrive() {
-    if (!currentUser) return;
-    if (!confirm('Putuskan koneksi Google Drive? Siswa tidak akan bisa mengunggah file langsung sampai Anda menghubungkannya kembali.')) return;
-
-    showToast('⏳ Memutuskan koneksi...');
-    const { data, error } = await db.functions.invoke('gdrive-bridge', {
-        body: {
-            action: 'disconnect',
-            teacher_id: currentUser.id
-        }
-    });
-
-    if (error || !data?.success) {
-        return showToast('Gagal memutuskan koneksi: ' + (data?.error || error?.message), 'error');
-    }
-
+    if (!currentUser || !confirm('Putuskan koneksi Google Drive?')) return;
+    const { data, error } = await db.functions.invoke('gdrive-bridge', { body: { action: 'disconnect', teacher_id: currentUser.id } });
+    if (error || !data?.success) return showToast('Gagal memutuskan koneksi: ' + (data?.error || error?.message), 'error');
     currentUser.gdrive_email = null;
     localStorage.setItem('sipantau_user', JSON.stringify(currentUser));
     updateGDriveConnectionUI();
@@ -2252,30 +2329,11 @@ function updateGDriveConnectionUI() {
     if (!badgeEl || !btnContainer || !currentUser) return;
 
     if (currentUser.gdrive_email) {
-        badgeEl.innerHTML = `
-            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                ✅ Terhubung: ${currentUser.gdrive_email}
-            </span>
-        `;
-        btnContainer.innerHTML = `
-            <button type="button" onclick="connectGoogleDrive()" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">
-                🔄 Ganti Akun
-            </button>
-            <button type="button" onclick="disconnectGoogleDrive()" class="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-bold transition">
-                Putuskan
-            </button>
-        `;
+        badgeEl.innerHTML = `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">✅ Terhubung: ${currentUser.gdrive_email}</span>`;
+        btnContainer.innerHTML = `<button type="button" onclick="connectGoogleDrive()" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">🔄 Ganti Akun</button><button type="button" onclick="disconnectGoogleDrive()" class="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-bold transition">Putuskan</button>`;
     } else {
-        badgeEl.innerHTML = `
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600">
-                ⚪ Belum Terhubung
-            </span>
-        `;
-        btnContainer.innerHTML = `
-            <button type="button" onclick="connectGoogleDrive()" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-sm transition flex items-center gap-2">
-                <i class="fa-brands fa-google"></i> Hubungkan Google Drive
-            </button>
-        `;
+        badgeEl.innerHTML = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600">⚪ Belum Terhubung</span>`;
+        btnContainer.innerHTML = `<button type="button" onclick="connectGoogleDrive()" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-sm transition flex items-center gap-2"><i class="fa-brands fa-google"></i> Hubungkan Google Drive</button>`;
     }
 }
 
@@ -2286,4 +2344,4 @@ function showToast(msg, type = 'success') {
     t.className = `fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg text-white transition-all duration-300 ${type === 'error' ? 'bg-rose-600' : 'bg-slate-900'}`;
     t.classList.remove('hidden');
     setTimeout(() => t.classList.add('hidden'), 3500);
-}
+                                                 }
