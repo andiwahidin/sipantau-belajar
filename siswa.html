@@ -8,7 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=8.3">
+    <link rel="stylesheet" href="style.css?v=8.4">
     <style>
         /* Fallback CSS Inti & Responsivitas Sidebar */
         .hidden { display: none; }
@@ -443,7 +443,7 @@
     </div>
 
     <!-- SCRIPTS -->
-    <script src="config.js?v=8.3"></script>
+    <script src="config.js?v=8.4"></script>
     <script>
         let teachersCache = [];
         let currentPortalStudent = null;
@@ -1284,6 +1284,17 @@
                 const res = await db.from('scores')
                     .insert([{ assessment_id: selectedAssessmentObj.id, student_id: currentPortalStudent.id, status_pengajuan: statusPengajuan, status_kumpul: isApproved, link_tugas_siswa: serializedLinks }]);
                 error = res.error;
+            }
+
+            // Sinkronisasi otomatis anggota satu kelompok
+            if (!error && selectedAssessmentObj.tipe_kerja === 'kelompok' && existing?.nama_kelompok) {
+                const groupName = existing.nama_kelompok.trim();
+                if (groupName) {
+                    await db.from('scores')
+                        .update({ status_pengajuan: statusPengajuan, status_kumpul: isApproved })
+                        .eq('assessment_id', selectedAssessmentObj.id)
+                        .ilike('nama_kelompok', groupName);
+                }
             }
 
             isUploadingNow = false;
