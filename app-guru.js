@@ -1,5 +1,5 @@
 // ============================================================================
-// PANTAU BELAJAR — APP-GURU.JS (v5.4 — REVISI LENGKAP)
+// PANTAU BELAJAR — APP-GURU.JS (v6.0 — LMS SISWA, RESET PW & PUBLIKASI NILAI)
 // ============================================================================
 const GOOGLE_OAUTH_CLIENT_ID = '565864753824-3ahjeunj19r6am2fgg2n1fv721kqfp77.apps.googleusercontent.com';
 
@@ -16,6 +16,7 @@ let assessmentsCache = [];
 let scoresCache = [];
 let attLogsCache = [];
 let attRecapCache = [];
+let finalGradesCache = [];
 let selectedStudentIds = new Set();
 let deleteTargetIds = [];
 let groupPresetsCache = [];
@@ -156,6 +157,8 @@ async function switchAdminMode(mode) {
         showSection('view-guru');
         setupTopbarUser();
         document.getElementById('admin-student-mode-banner').classList.remove('hidden');
+        isSharedClassLocked = false;
+        updateStudentLockUI();
         await loadAllClasses();
         const clsSel = document.getElementById('guru-active-class');
         clsSel.innerHTML = classesCache.map(c => `<option value="${c.id}">${c.nama_kelas}</option>`).join('');
@@ -229,6 +232,14 @@ async function deleteTeacher(id) {
     await db.from('app_users').delete().eq('id', id);
     showToast('Akun guru dihapus.');
     await loadAdminUsers();
+}
+
+// Reset Password Siswa ke NISN (oleh Admin)
+async function resetStudentPasswordToNISN(studentId, nisn, nama) {
+    if (!confirm(`Reset password LMS siswa "${nama}" kembali ke NISN (${nisn})?`)) return;
+    const { error } = await db.from('students').update({ password: String(nisn) }).eq('id', studentId);
+    if (error) return showToast('Gagal mereset password siswa: ' + error.message, 'error');
+    showToast(`✅ Password "${nama}" berhasil direset ke NISN: ${nisn}`);
 }
 
 // ==================== 3. WORKSPACE GURU ====================
@@ -326,7 +337,6 @@ async function onGuruClassDropdownChange(keepAmpuan = false) {
     await onGuruMapelDropdownChange();
 }
 
-// REVISI 1: DETEKSI KELAS BERSAMA (> 1 GURU) & KUNCI EDIT/HAPUS SISWA
 async function checkSharedClassLock() {
     isSharedClassLocked = false;
     const banner = document.getElementById('shared-class-lock-banner');
@@ -350,7 +360,7 @@ async function checkSharedClassLock() {
             .map(r => `${r.app_users?.nama_lengkap || 'Guru'} (${r.mapel})`)
             .join(', ');
         if (infoSpan) {
-            infoSpan.innerText = `Kelas ini diampu bersama oleh ${uniqueTeacherIds.length} guru (${listGuru}). Penambahan, pengeditan, maupun penghapusan data siswa dikunci otomatis demi menjaga konsistensi nilai lintas mata pelajaran. Hubungi Administrator jika terdapat perubahan siswa.`;
+            infoSpan.innerText = `Kelas ini diampu bersama oleh ${uniqueTeacherIds.length} guru (${listGuru}). Penambahan, pengeditan, maupun penghapusan data siswa dikunci otomatis. Hubungi Administrator jika terdapat perubahan siswa.`;
         }
         if (banner) banner.classList.remove('hidden');
     } else {
@@ -480,7 +490,7 @@ function copyStudentPortalLink() {
     let url = window.location.origin + window.location.pathname;
     url = url.replace(/index\.html$/, '') + 'siswa.html';
     navigator.clipboard.writeText(url);
-    showToast('🔗 Link Portal Siswa disalin: ' + url);
+    showToast('🔗 Link LMS Siswa disalin: ' + url);
 }
 
 function onGlobalSearchInput(val) {
@@ -496,6 +506,7 @@ async function loadWorkspaceData() {
         scoresCache = [];
         attLogsCache = [];
         attRecapCache = [];
+        finalGradesCache = [];
         renderDashboard();
         return;
     }
@@ -503,15 +514,19 @@ async function loadWorkspaceData() {
     const activeAmp = getActiveAmpuan();
     const mapelName = activeAmp?.mapel || '';
 
-    const [stuRes, assRes, attLogsRes] = await Promise.all([
+    const [stuRes, assRes, attLogsRes, fgRes] = await Promise.all([
         db.from('students').select('*').eq('class_id', activeClassId).order('nama'),
         db.from('assessments').select('*').eq('class_id', activeClassId).eq('mapel', mapelName).order('id'),
-        db.from('attendance_logs').select('*').eq('class_id', activeClassId)
+        db.from('attendance_logs').select('*').eq('class_id', activeClassId),
+        mapelName
+            ? db.from('final_grades').select('*').eq('class_id', activeClassId).eq('mapel', mapelName)
+            : Promise.resolve({ data: [] })
     ]);
 
     studentsCache = stuRes.data || [];
     assessmentsCache = assRes.data || [];
     attLogsCache = (attLogsRes.data || []).filter(l => !l.mapel || l.mapel === mapelName);
+    finalGradesCache = fgRes.data || [];
 
     const stuIds = studentsCache.map(s => s.id);
     if (stuIds.length > 0 && mapelName) {
@@ -593,12 +608,16 @@ function computeStudentMetrics(studentId) {
     const avgSmt = calcCatAvg('ujian_semester');
 
     const wTotal = (Number(amp.w_absen) + Number(amp.w_tugas) + Number(amp.w_bab) + Number(amp.w_uas)) || 100;
-    const finalScore = (
+    const autoFinalScore = (
         (attScore * Number(amp.w_absen)) +
         (avgTugas * Number(amp.w_tugas)) +
         (avgBab * Number(amp.w_bab)) +
         (avgSmt * Number(amp.w_uas))
     ) / wTotal;
+
+    const fgRecord = finalGradesCache.find(f => Number(f.student_id) === Number(studentId));
+    const hasManual = fgRecord && fgRecord.nilai_manual !== null && fgRecord.nilai_manual !== undefined && fgRecord.nilai_manual !== '';
+    const finalScore = hasManual ? Number(fgRecord.nilai_manual) : autoFinalScore;
 
     const totalTasks = assessmentsCache.length;
     const doneTasks = assessmentsCache.filter(as => {
@@ -613,7 +632,10 @@ function computeStudentMetrics(studentId) {
         avgTugas,
         avgBab,
         avgSmt,
+        autoFinalScore,
+        manualScore: hasManual ? Number(fgRecord.nilai_manual) : null,
         finalScore,
+        isPublished: Boolean(fgRecord?.is_published),
         doneTasks,
         totalTasks,
         kkm: Number(amp.kkm || 75)
@@ -678,9 +700,7 @@ function renderDashboard() {
     renderDashboardCharts(totH, totS, totI, totA);
 }
 
-// REVISI 3: PERBAIKAN 3 CHART DASHBOARD
 function renderDashboardCharts(h, s, i, a) {
-    // 1. Donut Proporsi Kehadiran -> Tooltip Persentase (%)
     destroyChart('chartDashDonutAtt');
     const c1 = document.getElementById('chartDashDonutAtt');
     if (c1) {
@@ -699,11 +719,7 @@ function renderDashboardCharts(h, s, i, a) {
             type: 'doughnut',
             data: {
                 labels: hasData ? ['Hadir', 'Sakit', 'Izin', 'Alpa'] : ['Belum Ada Data'],
-                datasets: [{
-                    data: pctData,
-                    backgroundColor: hasData ? ['#10b981', '#f59e0b', '#3b82f6', '#f43f5e'] : ['#e2e8f0'],
-                    borderWidth: 0
-                }]
+                datasets: [{ data: pctData, backgroundColor: hasData ? ['#10b981', '#f59e0b', '#3b82f6', '#f43f5e'] : ['#e2e8f0'], borderWidth: 0 }]
             },
             options: {
                 responsive: true,
@@ -711,17 +727,12 @@ function renderDashboardCharts(h, s, i, a) {
                 cutout: '68%',
                 plugins: {
                     legend: { position: 'right', labels: { boxWidth: 10, font: { size: 10 } } },
-                    tooltip: {
-                        callbacks: {
-                            label: (ctx) => hasData ? ` ${ctx.label}: ${ctx.parsed}%` : ' Belum ada data'
-                        }
-                    }
+                    tooltip: { callbacks: { label: (ctx) => hasData ? ` ${ctx.label}: ${ctx.parsed}%` : ' Belum ada data' } }
                 }
             }
         });
     }
 
-    // 2. Tren Kehadiran Seluruh Pertemuan (Tampilkan semua tanggal yang terdata, bukan hanya 7 hari)
     destroyChart('chartDashWeeklyTrend');
     const c2 = document.getElementById('chartDashWeeklyTrend');
     if (c2) {
@@ -735,14 +746,7 @@ function renderDashboardCharts(h, s, i, a) {
             type: 'line',
             data: {
                 labels: dates.length ? dates.map(d => d.slice(5)) : ['Belum Ada'],
-                datasets: [{
-                    label: 'Kehadiran (%)',
-                    data: dates.length ? rates : [100],
-                    borderColor: '#2563eb',
-                    backgroundColor: 'rgba(37,99,235,0.1)',
-                    fill: true,
-                    tension: 0.3
-                }]
+                datasets: [{ label: 'Kehadiran (%)', data: dates.length ? rates : [100], borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.1)', fill: true, tension: 0.3 }]
             },
             options: {
                 responsive: true,
@@ -761,7 +765,6 @@ function renderDashboardCharts(h, s, i, a) {
         });
     }
 
-    // 3. Ketuntasan Per Kategori (Tugas, Ujian Akhir Bab, Ujian Semester) dalam Persentase (%)
     destroyChart('chartDashTaskBar');
     const c3 = document.getElementById('chartDashTaskBar');
     if (c3) {
@@ -789,12 +792,7 @@ function renderDashboardCharts(h, s, i, a) {
             type: 'bar',
             data: {
                 labels: categories.map(c => c.label),
-                datasets: [{
-                    label: 'Ketuntasan (%)',
-                    data: catRates,
-                    backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981'],
-                    borderRadius: 6
-                }]
+                datasets: [{ label: 'Ketuntasan (%)', data: catRates, backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981'], borderRadius: 6 }]
             },
             options: {
                 responsive: true,
@@ -802,11 +800,7 @@ function renderDashboardCharts(h, s, i, a) {
                 scales: { y: { min: 0, max: 100 } },
                 plugins: {
                     legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: (ctx) => ` Terkumpul: ${ctx.parsed.y}%`
-                        }
-                    }
+                    tooltip: { callbacks: { label: (ctx) => ` Terkumpul: ${ctx.parsed.y}%` } }
                 }
             }
         });
@@ -841,10 +835,11 @@ async function addStudentManual(e) {
     if (!activeClassId) return showToast('Pilih kelas terlebih dahulu!', 'error');
     const nisn = document.getElementById('stu-nisn').value.trim();
     const nama = document.getElementById('stu-nama').value.trim();
-    const { error } = await db.from('students').insert([{ class_id: activeClassId, nisn, nama }]);
+    // Password default otomatis diisi NISN
+    const { error } = await db.from('students').insert([{ class_id: activeClassId, nisn, nama, password: nisn }]);
     if (error) return showToast('Gagal menambah siswa: ' + error.message, 'error');
     e.target.reset();
-    showToast('✅ Siswa ditambahkan');
+    showToast('✅ Siswa ditambahkan (Password default: NISN)');
     await loadWorkspaceData();
 }
 
@@ -866,11 +861,15 @@ async function importStudentsExcel() {
     reader.onload = async (ev) => {
         const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-        const payload = rows.map(r => ({
-            class_id: activeClassId,
-            nisn: String(r['NISN'] || r['nisn'] || '').trim(),
-            nama: String(r['Nama Lengkap'] || r['Nama'] || r['nama'] || '').trim()
-        })).filter(x => x.nama);
+        const payload = rows.map(r => {
+            const nisnVal = String(r['NISN'] || r['nisn'] || '').trim();
+            return {
+                class_id: activeClassId,
+                nisn: nisnVal,
+                nama: String(r['Nama Lengkap'] || r['Nama'] || r['nama'] || '').trim(),
+                password: nisnVal
+            };
+        }).filter(x => x.nama);
 
         if (!payload.length) return showToast('Data siswa kosong di file Excel!', 'error');
         const { error } = await db.from('students').insert(payload);
@@ -887,6 +886,7 @@ function renderStudentsTable() {
     if (!tbody) return;
     document.getElementById('stu-count-badge').innerText = `${studentsCache.length} Siswa`;
 
+    const isAdmin = currentUser?.role === 'admin';
     const filtered = studentsCache.filter(s =>
         !globalSearchQuery || s.nama.toLowerCase().includes(globalSearchQuery) || String(s.nisn).includes(globalSearchQuery)
     );
@@ -901,6 +901,7 @@ function renderStudentsTable() {
                 ${isSharedClassLocked
                     ? `<span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500 text-[11px] font-bold">🔒 Terkunci</span>`
                     : `<button onclick="openEditStudentModal(${s.id})" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold">Edit</button>
+                       ${isAdmin ? `<button onclick="resetStudentPasswordToNISN(${s.id}, '${s.nisn}', '${s.nama.replace(/'/g, "\\'")}')" class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold">Reset PW</button>` : ''}
                        <button onclick="initiateSingleStudentDelete(${s.id})" class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 text-xs font-bold">Hapus</button>`
                 }
             </td>
@@ -1236,8 +1237,8 @@ async function createAssessment(e) {
         teacher_id: currentUser.id,
         mapel: amp.mapel,
         judul: document.getElementById('ass-judul').value.trim(),
-        kategori: document.getElementById('ass-kategori').value, // 'tugas' | 'ujian_bab' | 'ujian_semester'
-        tipe_kerja: document.getElementById('ass-tipe').value,  // 'individu' | 'kelompok'
+        kategori: document.getElementById('ass-kategori').value,
+        tipe_kerja: document.getElementById('ass-tipe').value,
         tampil_publik: document.getElementById('ass-publik').value === 'true',
         link_pengumpulan: document.getElementById('ass-link').value.trim() || null
     };
@@ -1453,7 +1454,7 @@ async function toggleAssessmentPublicVisibility() {
     const ass = assessmentsCache.find(a => Number(a.id) === assId);
     if (!ass) return;
     await db.from('assessments').update({ tampil_publik: !ass.tampil_publik }).eq('id', assId);
-    showToast(!ass.tampil_publik ? '🌐 Tugas ditampilkan di Portal Siswa' : '🔒 Tugas disembunyikan');
+    showToast(!ass.tampil_publik ? '🌐 Tugas ditampilkan di LMS Siswa' : '🔒 Tugas disembunyikan');
     await loadWorkspaceData();
 }
 
@@ -1588,10 +1589,17 @@ async function saveGroupPresetFromModal(andApply) {
     showToast('✅ Pengaturan kelompok disimpan!');
 }
 
-// ==================== 9. REKAPITULASI & RAPOR ====================
+// ==================== 9. REKAPITULASI, NILAI MANUAL & PUBLIKASI LMS ====================
 function renderRekapTab() {
     const tbody = document.getElementById('rekap-tbody');
     if (!tbody) return;
+
+    const anyPublished = finalGradesCache.some(f => f.is_published === true);
+    const pubLabel = document.getElementById('rekap-pub-label');
+    if (pubLabel) {
+        pubLabel.innerText = anyPublished ? '🌐 Sudah Dipublikasikan ke LMS Siswa' : '🔒 Belum Dipublikasikan (Disembunyikan dari Siswa)';
+        pubLabel.className = anyPublished ? 'text-emerald-700 font-extrabold' : 'text-slate-600 font-bold';
+    }
 
     let tuntas = 0, belum = 0;
     let sumAbs = 0, sumTgs = 0, sumBab = 0, sumSmt = 0;
@@ -1602,8 +1610,10 @@ function renderRekapTab() {
         const ok = m.finalScore >= m.kkm;
         if (ok) tuntas++; else belum++;
 
+        const manualValStr = m.manualScore !== null ? m.manualScore : '';
+
         return `
-            <tr>
+            <tr data-rekap-final-stu="${s.id}" data-auto-val="${m.autoFinalScore.toFixed(1)}" data-kkm-val="${m.kkm}">
                 <td class="p-2.5 text-center">${idx + 1}</td>
                 <td class="p-2.5 font-mono text-xs">${s.nisn}</td>
                 <td class="p-2.5 font-bold">${s.nama}</td>
@@ -1611,9 +1621,16 @@ function renderRekapTab() {
                 <td class="p-2.5 text-center">${m.avgTugas.toFixed(1)}</td>
                 <td class="p-2.5 text-center">${m.avgBab.toFixed(1)}</td>
                 <td class="p-2.5 text-center">${m.avgSmt.toFixed(1)}</td>
-                <td class="p-2.5 text-center font-extrabold bg-blue-50/60 text-blue-800">${m.finalScore.toFixed(1)}</td>
-                <td class="p-2.5 text-center">${m.kkm}</td>
-                <td class="p-2.5 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">${ok ? 'TUNTAS' : 'REMEDIAL'}</span></td>
+                <td class="p-2.5 text-center bg-slate-100/80 font-semibold text-slate-600">${m.autoFinalScore.toFixed(1)}</td>
+                <td class="p-2.5 text-center bg-amber-50/60">
+                    <input type="number" min="0" max="100" step="0.1" value="${manualValStr}" placeholder="Otomatis"
+                        oninput="onManualFinalGradeInput(this)"
+                        class="inp-manual-final w-20 border border-amber-300 bg-white rounded-lg p-1 text-center font-extrabold text-amber-900 text-xs">
+                </td>
+                <td class="p-2.5 text-center font-extrabold bg-blue-50/60 text-blue-800 cell-final-lms">${m.finalScore.toFixed(1)}</td>
+                <td class="p-2.5 text-center cell-status-kkm">
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">${ok ? 'TUNTAS' : 'REMEDIAL'}</span>
+                </td>
                 <td class="p-2.5 text-center"><button onclick="printStudentRaporPDF(${s.id})" class="text-xs font-bold text-rose-600 hover:underline">PDF</button></td>
             </tr>
         `;
@@ -1647,6 +1664,53 @@ function renderRekapTab() {
     }
 }
 
+function onManualFinalGradeInput(inp) {
+    const tr = inp.closest('tr');
+    if (!tr) return;
+    const autoVal = Number(tr.dataset.autoVal || 0);
+    const kkm = Number(tr.dataset.kkmVal || 75);
+    const finalVal = inp.value !== '' ? Number(inp.value) : autoVal;
+
+    tr.querySelector('.cell-final-lms').innerText = finalVal.toFixed(1);
+    const ok = finalVal >= kkm;
+    tr.querySelector('.cell-status-kkm').innerHTML = `<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">${ok ? 'TUNTAS' : 'REMEDIAL'}</span>`;
+}
+
+async function publishFinalGradesToLMS(publishState) {
+    const amp = getActiveAmpuan();
+    if (!activeClassId || !amp) return showToast('Pilih kelas dan mata pelajaran terlebih dahulu!', 'error');
+
+    const rows = [...document.querySelectorAll('#rekap-tbody tr[data-rekap-final-stu]')];
+    if (!rows.length) return showToast('Belum ada data siswa di kelas ini.', 'error');
+
+    const payload = rows.map(tr => {
+        const student_id = Number(tr.dataset.rekapFinalStu);
+        const autoVal = Number(tr.dataset.autoVal || 0);
+        const rawManual = tr.querySelector('.inp-manual-final')?.value;
+        const nilai_manual = rawManual !== '' ? Number(rawManual) : null;
+
+        return {
+            class_id: activeClassId,
+            student_id,
+            teacher_id: currentUser.id,
+            mapel: amp.mapel,
+            nilai_otomatis: autoVal,
+            nilai_manual,
+            kkm: Number(amp.kkm || 75),
+            is_published: publishState,
+            updated_at: new Date().toISOString()
+        };
+    });
+
+    const { error } = await db.from('final_grades').upsert(payload, { onConflict: 'class_id,student_id,mapel' });
+    if (error) return showToast('Gagal menyimpan/publikasi nilai: ' + error.message, 'error');
+
+    showToast(publishState
+        ? `🌐 Nilai akhir ${amp.mapel} berhasil dipublikasikan ke LMS Siswa!`
+        : `🔒 Publikasi nilai ${amp.mapel} ditarik dari tampilan siswa.`);
+    await loadWorkspaceData();
+}
+
 function exportRekapExcel() {
     const rows = studentsCache.map((s, idx) => {
         const m = computeStudentMetrics(s.id);
@@ -1658,7 +1722,9 @@ function exportRekapExcel() {
             Tugas: Number(m.avgTugas.toFixed(1)),
             Ujian_Bab: Number(m.avgBab.toFixed(1)),
             Semester: Number(m.avgSmt.toFixed(1)),
-            Nilai_Akhir: Number(m.finalScore.toFixed(1)),
+            Otomatis: Number(m.autoFinalScore.toFixed(1)),
+            Manual: m.manualScore !== null ? m.manualScore : '',
+            Final_LMS: Number(m.finalScore.toFixed(1)),
             Status: m.finalScore >= m.kkm ? 'TUNTAS' : 'REMEDIAL'
         };
     });
@@ -1700,7 +1766,7 @@ function printStudentRaporPDF(studentId) {
     doc.save(`Rapor_${s.nama.replace(/\s+/g, '_')}.pdf`);
 }
 
-// ==================== 10. REVISI 4: GURU WALI (PA 360° LINTAS MAPEL) ====================
+// ==================== 10. GURU WALI (PA 360° LINTAS MAPEL) ====================
 async function loadGuruWaliTab() {
     const tbody = document.getElementById('wali-tbody');
     if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400">⏳ Memuat data akademik lintas mata pelajaran siswa binaan...</td></tr>`;
@@ -1747,13 +1813,11 @@ function computeAllWaliStudentMetrics() {
         const sid = Number(stu.id);
         const cid = Number(stu.class_id);
 
-        // Semua mapel yang terdaftar di kelas siswa ini
         const classSettings = waliGlobalSettings.filter(st => Number(st.class_id) === cid);
         const stuScores = waliGlobalScores.filter(sc => Number(sc.student_id) === sid);
         const stuLogs = waliGlobalAttLogs.filter(lg => Number(lg.student_id) === sid);
         const stuRecaps = waliGlobalAttRecap.filter(rc => Number(rc.student_id) === sid);
 
-        // Hitung Kehadiran Keseluruhan Siswa
         let h = 0, s = 0, i = 0, a = 0;
         const absenceDates = [];
         if (stuLogs.length > 0) {
@@ -1774,7 +1838,6 @@ function computeAllWaliStudentMetrics() {
         const totalPert = h + s + i + a;
         const attRate = totalPert > 0 ? (h / totalPert) * 100 : 100;
 
-        // Hitung Per Mata Pelajaran & Tunggakan Tugas
         const subjectDetails = [];
         const pendingTasks = [];
         let sumSubjectFinal = 0;
@@ -1786,7 +1849,6 @@ function computeAllWaliStudentMetrics() {
                 Number(as.class_id) === cid && String(as.mapel || '').toLowerCase() === String(st.mapel || '').toLowerCase()
             );
 
-            // Kehadiran per mapel
             const mLogs = stuLogs.filter(lg => !lg.mapel || lg.mapel === st.mapel);
             const mRec = stuRecaps.find(rc => rc.mapel === st.mapel);
             let mh = 0, ms = 0, mi = 0, ma = 0;
@@ -1827,11 +1889,7 @@ function computeAllWaliStudentMetrics() {
                 if (isDone) {
                     doneInMapel++;
                 } else {
-                    pendingTasks.push({
-                        mapel: st.mapel,
-                        judul: as.judul,
-                        kategori: getKategoriLabel(as.kategori)
-                    });
+                    pendingTasks.push({ mapel: st.mapel, judul: as.judul, kategori: getKategoriLabel(as.kategori) });
                 }
             });
 
@@ -1856,23 +1914,11 @@ function computeAllWaliStudentMetrics() {
 
         const avgFinalAllSubjects = classSettings.length > 0 ? (sumSubjectFinal / classSettings.length) : 0;
 
-        // Penentuan Status Peringatan Dini (EWS)
         let ews = 'aman';
-        if (a >= 3 || attRate < 80 || pendingTasks.length >= 3 || belowKkmCount >= 2) {
-            ews = 'kritis';
-        } else if (a >= 1 || attRate < 90 || pendingTasks.length >= 1 || belowKkmCount >= 1) {
-            ews = 'waspada';
-        }
+        if (a >= 3 || attRate < 80 || pendingTasks.length >= 3 || belowKkmCount >= 2) ews = 'kritis';
+        else if (a >= 1 || attRate < 90 || pendingTasks.length >= 1 || belowKkmCount >= 1) ews = 'waspada';
 
-        waliMetricsCache[sid] = {
-            h, s, i, a,
-            attRate,
-            absenceDates,
-            pendingTasks,
-            subjectDetails,
-            avgFinalAllSubjects,
-            ews
-        };
+        waliMetricsCache[sid] = { h, s, i, a, attRate, absenceDates, pendingTasks, subjectDetails, avgFinalAllSubjects, ews };
     });
 }
 
@@ -1988,7 +2034,6 @@ async function openWali360Modal(studentId) {
     document.getElementById('w360-kelas').innerText = s.classes?.nama_kelas || '-';
     document.getElementById('w360-nisn').innerText = s.nisn;
 
-    // 1. Pill Kehadiran
     document.getElementById('w360-att-pills').innerHTML = `
         <div class="p-2 rounded-xl bg-emerald-50 border border-emerald-200"><b class="text-sm text-emerald-700 block">${m.h}</b><span class="text-[10px] text-emerald-600 font-bold">Hadir</span></div>
         <div class="p-2 rounded-xl bg-amber-50 border border-amber-200"><b class="text-sm text-amber-700 block">${m.s}</b><span class="text-[10px] text-amber-600 font-bold">Sakit</span></div>
@@ -1996,12 +2041,10 @@ async function openWali360Modal(studentId) {
         <div class="p-2 rounded-xl bg-rose-50 border border-rose-200"><b class="text-sm text-rose-700 block">${m.a}</b><span class="text-[10px] text-rose-600 font-bold">Alpa</span></div>
     `;
 
-    // 2. Riwayat Ketidakhadiran
     document.getElementById('w360-absence-dates').innerHTML = m.absenceDates.length
         ? `<b>Catatan Ketidakhadiran:</b><br>` + m.absenceDates.map(d => `• ${d}`).join('<br>')
         : `<span class="text-emerald-700 font-semibold">✅ Tidak ada catatan ketidakhadiran (S/I/A).</span>`;
 
-    // 3. Daftar Tunggakan Lintas Mapel
     document.getElementById('w360-pending-badge').innerText = `${m.pendingTasks.length} Tunggakan`;
     document.getElementById('w360-pending-list').innerHTML = m.pendingTasks.length
         ? m.pendingTasks.map(t => `
@@ -2012,7 +2055,6 @@ async function openWali360Modal(studentId) {
         `).join('')
         : `<div class="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-700 font-bold">🎉 Seluruh tugas pada semua mata pelajaran telah terkumpul!</div>`;
 
-    // 4. Tabel Rincian Nilai Per Mata Pelajaran
     document.getElementById('w360-subjects-tbody').innerHTML = m.subjectDetails.length
         ? m.subjectDetails.map(sb => `
             <tr>
