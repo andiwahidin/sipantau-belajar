@@ -1,5 +1,5 @@
 // ============================================================================
-// PANTAU BELAJAR — APP-GURU.JS (v7.2 — FULL LMS + EDIT LAMPIRAN SOAL GURU)
+// PANTAU BELAJAR — APP-GURU.JS (v8.0 — SISTEM PENILAIAN DRAFT & FINAL)
 // ============================================================================
 const GOOGLE_OAUTH_CLIENT_ID = '565864753824-3ahjeunj19r6am2fgg2n1fv721kqfp77.apps.googleusercontent.com';
 
@@ -825,7 +825,7 @@ async function deleteAnnouncement(id) {
     await loadWorkspaceData();
 }
 
-// ==================== 5. PERHITUNGAN NILAI & DASHBOARD ====================
+// ==================== 5. PERHITUNGAN NILAI (HANYA FINAL) & DASHBOARD ====================
 function normalizeKategori(rawKat) {
     const k = String(rawKat || '').toLowerCase();
     if (k === 'ujian_bab' || k.includes('bab')) return 'ujian_bab';
@@ -838,6 +838,11 @@ function getKategoriLabel(rawKat) {
     if (norm === 'ujian_bab') return 'Ujian Akhir Bab';
     if (norm === 'ujian_semester') return 'Ujian Semester';
     return 'Tugas';
+}
+
+function isFinalScoreRecord(sc) {
+    if (!sc) return false;
+    return (sc.status_nilai || 'final') === 'final';
 }
 
 function computeStudentMetrics(studentId) {
@@ -861,15 +866,23 @@ function computeStudentMetrics(studentId) {
         : 100;
     const attRate = totalPertemuan > 0 ? (h / totalPertemuan) * 100 : 100;
 
+    // Hanya memproses nilai yang berstatus FINAL (Draft diabaikan)
     const calcCatAvg = (targetNorm) => {
         const list = assessmentsCache.filter(as => normalizeKategori(as.kategori) === targetNorm);
         if (!list.length) return 0;
         let sum = 0;
+        let finalAssessmentsCount = 0;
         list.forEach(as => {
             const sc = scoresCache.find(x => Number(x.assessment_id) === Number(as.id) && Number(x.student_id) === Number(studentId));
-            sum += Number(sc?.nilai || 0);
+            if (sc && isFinalScoreRecord(sc) && sc.nilai !== null && sc.nilai !== undefined && sc.nilai !== '') {
+                sum += Number(sc.nilai);
+                finalAssessmentsCount++;
+            } else if (!sc || (sc.status_nilai || 'final') === 'final') {
+                // Jika sudah final namun nilai 0/kosong, tetap dihitung sebagai pembagi
+                finalAssessmentsCount++;
+            }
         });
-        return sum / list.length;
+        return finalAssessmentsCount > 0 ? (sum / finalAssessmentsCount) : 0;
     };
 
     const avgTugas = calcCatAvg('tugas');
@@ -1412,7 +1425,7 @@ async function importAbsenExcel() {
     reader.readAsArrayBuffer(file);
 }
 
-// ==================== 8. TUGAS, UJIAN & KELOMPOK ====================
+// ==================== 8. TUGAS, UJIAN & PENILAIAN DRAFT / FINAL ====================
 async function createAssessment(e) {
     e.preventDefault();
     const amp = getActiveAmpuan();
@@ -1466,9 +1479,14 @@ function renderAssessmentsDropdown() {
     if (!sel) return;
     document.getElementById('tgs-stat-total').innerText = assessmentsCache.length;
 
+    const prevSelected = sel.value;
     sel.innerHTML = assessmentsCache.length
         ? assessmentsCache.map(a => `<option value="${a.id}">${a.judul} (${getKategoriLabel(a.kategori)})</option>`).join('')
         : `<option value="">-- Belum Ada Tugas / Ujian --</option>`;
+
+    if (prevSelected && assessmentsCache.some(a => String(a.id) === String(prevSelected))) {
+        sel.value = prevSelected;
+    }
 
     loadAssessmentScores();
 }
@@ -1491,15 +1509,19 @@ function loadAssessmentScores() {
     const thead = tbody?.parentElement?.querySelector('thead');
     const editor = document.getElementById('ass-link-editor');
     const grpBanner = document.getElementById('group-mode-banner');
+    const statusBar = document.getElementById('assessment-grade-status-bar');
 
     if (!ass || !tbody) {
         if (editor) editor.classList.add('hidden');
         if (grpBanner) grpBanner.classList.add('hidden');
-        if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400 italic">Pilih atau buat penilaian baru di atas.</td></tr>`;
+        if (statusBar) statusBar.classList.add('hidden');
+        if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400 italic">Pilih atau buat penilaian baru di atas.</td></tr>`;
         return;
     }
 
     editor.classList.remove('hidden');
+    if (statusBar) statusBar.classList.remove('hidden');
+
     document.getElementById('edit-ass-judul').value = ass.judul;
     document.getElementById('edit-ass-kategori').value = normalizeKategori(ass.kategori);
     document.getElementById('edit-ass-tipe').value = ass.tipe_kerja || 'individu';
@@ -1556,20 +1578,28 @@ function loadAssessmentScores() {
             <th class="p-3 text-center">File Drive Siswa</th>
             <th class="p-3 text-center">Status Kumpul</th>
             <th class="p-3 text-center w-28">Nilai (0-100)</th>
+            <th class="p-3 text-center w-32">Status Nilai</th>
         </tr>
     `;
 
-    let submitted = 0, ungraded = 0, sumScore = 0, gradedCount = 0;
+    let submitted = 0, ungraded = 0, sumFinalScore = 0, finalGradedCount = 0;
+    let draftRowsCount = 0, finalRowsCount = 0;
 
     tbody.innerHTML = studentsCache.map((s, idx) => {
         const sc = scoresCache.find(x => Number(x.assessment_id) === assId && Number(x.student_id) === Number(s.id)) || {};
         const isDone = sc.status_kumpul === true || sc.status_pengajuan === 'approved';
         const isPending = sc.status_pengajuan === 'pending' && !isDone;
         const val = sc.nilai !== null && sc.nilai !== undefined ? sc.nilai : '';
+        const statusNilai = sc.status_nilai || (val !== '' ? 'final' : 'draft');
 
         if (isDone) submitted++;
-        if (isDone && val === '') ungraded++;
-        if (val !== '') { sumScore += Number(val); gradedCount++; }
+        if (isDone && (val === '' || statusNilai === 'draft')) ungraded++;
+        if (statusNilai === 'final') {
+            finalRowsCount++;
+            if (val !== '') { sumFinalScore += Number(val); finalGradedCount++; }
+        } else {
+            draftRowsCount++;
+        }
 
         const parsedFiles = parseStudentSubmittedFiles(sc.link_tugas_siswa);
         const fileLinkHtml = parsedFiles.length > 0
@@ -1583,7 +1613,7 @@ function loadAssessmentScores() {
             : `<span class="text-[11px] text-slate-400">-</span>`;
 
         return `
-            <tr data-score-stu="${s.id}" class="hover:bg-slate-50">
+            <tr data-score-stu="${s.id}" class="hover:bg-slate-50 ${statusNilai === 'draft' && val !== '' ? 'bg-amber-50/40' : ''}">
                 <td class="p-2.5 text-center text-slate-400">${idx + 1}</td>
                 <td class="p-2.5">
                     <div class="font-bold text-slate-900">${s.nama}</div>
@@ -1602,14 +1632,37 @@ function loadAssessmentScores() {
                 <td class="p-2.5 text-center">
                     <input type="number" min="0" max="100" step="0.1" value="${val}" oninput="syncGroupRowChange(${s.id})" class="sc-nilai w-20 border border-slate-300 rounded-lg p-1.5 text-center font-extrabold text-blue-800">
                 </td>
+                <td class="p-2.5 text-center">
+                    <select onchange="onSingleRowStatusNilaiChange(${s.id}, this)" class="sc-status-nilai border rounded-lg px-2 py-1 text-[11px] font-extrabold cursor-pointer ${statusNilai === 'final' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}">
+                        <option value="draft" ${statusNilai === 'draft' ? 'selected' : ''}>📝 Draft</option>
+                        <option value="final" ${statusNilai === 'final' ? 'selected' : ''}>✅ Final</option>
+                    </select>
+                </td>
             </tr>
         `;
     }).join('');
 
+    const summaryEl = document.getElementById('grade-status-summary');
+    if (summaryEl) {
+        summaryEl.innerHTML = `Status Penilaian Ini: <span class="text-emerald-700 font-extrabold">✅ ${finalRowsCount} Final</span> • <span class="text-amber-700 font-extrabold">📝 ${draftRowsCount} Draft</span> <span class="text-slate-400 font-normal">(Hanya nilai Final yang masuk ke Dashboard, Rapor & LMS Siswa)</span>`;
+    }
+
     const tot = studentsCache.length || 1;
     document.getElementById('tgs-stat-submit').innerText = `${studentsCache.length ? Math.round((submitted / tot) * 100) : 0}%`;
     document.getElementById('tgs-stat-ungraded').innerText = ungraded;
-    document.getElementById('tgs-stat-avg').innerText = gradedCount ? (sumScore / gradedCount).toFixed(1) : '0.0';
+    document.getElementById('tgs-stat-avg').innerText = finalGradedCount ? (sumFinalScore / finalGradedCount).toFixed(1) : '0.0';
+}
+
+function onSingleRowStatusNilaiChange(stuId, selEl) {
+    const newStatus = selEl.value;
+    selEl.className = `sc-status-nilai border rounded-lg px-2 py-1 text-[11px] font-extrabold cursor-pointer ${newStatus === 'final' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`;
+
+    const tr = selEl.closest('tr');
+    if (tr) {
+        const val = tr.querySelector('.sc-nilai')?.value;
+        tr.classList.toggle('bg-amber-50/40', newStatus === 'draft' && val !== '');
+    }
+    syncGroupRowChange(stuId);
 }
 
 function syncGroupRowChange(changedStuId) {
@@ -1624,17 +1677,23 @@ function syncGroupRowChange(changedStuId) {
 
     const kumpul = sourceTr.querySelector('.sc-kumpul').checked;
     const nilai = sourceTr.querySelector('.sc-nilai').value;
+    const statusNilai = sourceTr.querySelector('.sc-status-nilai')?.value || 'final';
 
     document.querySelectorAll('#scores-tbody tr').forEach(tr => {
         const g = tr.querySelector('.sc-kelompok')?.value.trim();
         if (g && g.toLowerCase() === grpName.toLowerCase()) {
             tr.querySelector('.sc-kumpul').checked = kumpul;
             tr.querySelector('.sc-nilai').value = nilai;
+            const stSel = tr.querySelector('.sc-status-nilai');
+            if (stSel) {
+                stSel.value = statusNilai;
+                stSel.className = `sc-status-nilai border rounded-lg px-2 py-1 text-[11px] font-extrabold cursor-pointer ${statusNilai === 'final' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`;
+            }
         }
     });
 }
 
-async function saveAssessmentScores() {
+async function saveAssessmentScores(targetMode = 'final') {
     const assId = Number(document.getElementById('active-assessment')?.value);
     if (!assId) return;
 
@@ -1646,18 +1705,50 @@ async function saveAssessmentScores() {
         const nilai = rawVal !== '' ? Number(rawVal) : null;
         const nama_kelompok = tr.querySelector('.sc-kelompok')?.value.trim() || null;
 
+        // Jika tombol Simpan Draft atau Simpan Final diklik, terapkan status ke baris yang diisi nilainya
+        const rowStatusSelect = tr.querySelector('.sc-status-nilai')?.value || targetMode;
+        const finalRowStatus = (targetMode === 'draft' || targetMode === 'final') ? targetMode : rowStatusSelect;
+
         const existing = scoresCache.find(x => Number(x.assessment_id) === assId && Number(x.student_id) === stuId);
         if (existing) {
-            await db.from('scores').update({ status_kumpul: kumpul, status_pengajuan: kumpul ? 'approved' : 'none', nilai, nama_kelompok }).eq('id', existing.id);
+            await db.from('scores').update({
+                status_kumpul: kumpul,
+                status_pengajuan: kumpul ? 'approved' : 'none',
+                nilai,
+                nama_kelompok,
+                status_nilai: finalRowStatus
+            }).eq('id', existing.id);
         } else {
-            await db.from('scores').insert([{ assessment_id: assId, student_id: stuId, status_kumpul: kumpul, status_pengajuan: kumpul ? 'approved' : 'none', nilai, nama_kelompok }]);
+            await db.from('scores').insert([{
+                assessment_id: assId,
+                student_id: stuId,
+                status_kumpul: kumpul,
+                status_pengajuan: kumpul ? 'approved' : 'none',
+                nilai,
+                nama_kelompok,
+                status_nilai: finalRowStatus
+            }]);
         }
     }
 
-    showToast('✅ Semua nilai dan status pengumpulan tersimpan!');
+    showToast(targetMode === 'draft'
+        ? '📝 Nilai disimpan sebagai DRAFT (belum dihitung di rapor & dashboard).'
+        : '✅ Nilai disimpan sebagai FINAL dan aktif diproses!');
     await loadWorkspaceData();
     document.getElementById('active-assessment').value = assId;
     loadAssessmentScores();
+}
+
+async function bulkConvertAssessmentStatus(newStatus) {
+    const assId = Number(document.getElementById('active-assessment')?.value);
+    if (!assId) return;
+
+    document.querySelectorAll('#scores-tbody tr[data-score-stu]').forEach(tr => {
+        const sel = tr.querySelector('.sc-status-nilai');
+        if (sel) sel.value = newStatus;
+    });
+
+    await saveAssessmentScores(newStatus);
 }
 
 async function updateAssessmentLink() {
@@ -2007,7 +2098,7 @@ function printStudentRaporPDF(studentId) {
     doc.save(`Rapor_${s.nama.replace(/\s+/g, '_')}.pdf`);
 }
 
-// ==================== 10. GURU WALI (PA 360° LINTAS MAPEL) ====================
+// ==================== 10. GURU WALI (PA 360° LINTAS MAPEL — HANYA NILAI FINAL) ====================
 async function loadGuruWaliTab() {
     const tbody = document.getElementById('wali-tbody');
     if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400">⏳ Memuat data akademik lintas mata pelajaran siswa binaan...</td></tr>`;
@@ -2090,12 +2181,22 @@ function computeAllWaliStudentMetrics() {
             const mTot = mh + ms + mi + ma;
             const mAttScore = mTot > 0 ? ((mh * (st.p_hadir ?? 100) + ms * (st.p_sakit ?? 80) + mi * (st.p_izin ?? 80) + ma * (st.p_alpa ?? 0)) / mTot) : 100;
 
+            // Hanya menghitung penilaian yang sudah FINAL
             const calcCat = (catKey) => {
                 const list = mapelAss.filter(as => normalizeKategori(as.kategori) === catKey);
                 if (!list.length) return 0;
                 let tot = 0;
-                list.forEach(as => { tot += Number(stuScores.find(x => Number(x.assessment_id) === Number(as.id))?.nilai || 0); });
-                return tot / list.length;
+                let countFinal = 0;
+                list.forEach(as => {
+                    const sc = stuScores.find(x => Number(x.assessment_id) === Number(as.id));
+                    if (sc && isFinalScoreRecord(sc) && sc.nilai !== null && sc.nilai !== undefined && sc.nilai !== '') {
+                        tot += Number(sc.nilai);
+                        countFinal++;
+                    } else if (!sc || (sc.status_nilai || 'final') === 'final') {
+                        countFinal++;
+                    }
+                });
+                return countFinal > 0 ? (tot / countFinal) : 0;
             };
 
             const nTugas = calcCat('tugas');
