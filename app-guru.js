@@ -1,5 +1,5 @@
 // ============================================================================
-// PANTAU BELAJAR — APP-GURU.JS (v7.1 — FULL LMS: MATERI, TUGAS, DISKUSI & PA)
+// PANTAU BELAJAR — APP-GURU.JS (v7.2 — FULL LMS + EDIT LAMPIRAN SOAL GURU)
 // ============================================================================
 const GOOGLE_OAUTH_CLIENT_ID = '565864753824-3ahjeunj19r6am2fgg2n1fv721kqfp77.apps.googleusercontent.com';
 
@@ -1506,6 +1506,9 @@ function loadAssessmentScores() {
     document.getElementById('edit-ass-deskripsi').value = ass.deskripsi || '';
     document.getElementById('edit-ass-link').value = ass.link_pengumpulan || '';
 
+    const editFilesInp = document.getElementById('edit-ass-teacher-files');
+    if (editFilesInp) editFilesInp.value = '';
+
     const dlInp = document.getElementById('edit-ass-deadline');
     if (dlInp) {
         if (ass.deadline) {
@@ -1520,9 +1523,15 @@ function loadAssessmentScores() {
     const tchFilesBox = document.getElementById('edit-ass-teacher-files-list');
     if (tchFilesBox) {
         const tFiles = parseStudentSubmittedFiles(ass.lampiran_guru);
-        tchFilesBox.innerHTML = tFiles.map((tf, idx) =>
-            `<a href="${tf.url}" target="_blank" class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold">📄 Lampiran Soal ${idx + 1}: ${tf.name} ↗</a>`
-        ).join('');
+        tchFilesBox.innerHTML = tFiles.length
+            ? `<span class="text-[11px] font-bold text-slate-500 mr-1">Lampiran Terpasang:</span>` +
+              tFiles.map((tf, idx) => `
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold">
+                    <a href="${tf.url}" target="_blank" class="hover:underline">📄 ${tf.name} ↗</a>
+                    <button type="button" onclick="removeTeacherAssessmentFile(${ass.id}, ${idx})" title="Hapus lampiran ini" class="text-rose-600 hover:text-rose-800 font-extrabold ml-1">✕</button>
+                </span>
+              `).join('')
+            : '';
     }
 
     const btnPub = document.getElementById('btn-toggle-public');
@@ -1647,22 +1656,71 @@ async function saveAssessmentScores() {
 
     showToast('✅ Semua nilai dan status pengumpulan tersimpan!');
     await loadWorkspaceData();
+    document.getElementById('active-assessment').value = assId;
+    loadAssessmentScores();
 }
 
 async function updateAssessmentLink() {
     const assId = Number(document.getElementById('active-assessment')?.value);
-    if (!assId) return;
-    const dlRaw = document.getElementById('edit-ass-deadline')?.value || '';
-    await db.from('assessments').update({
-        judul: document.getElementById('edit-ass-judul').value.trim(),
-        kategori: document.getElementById('edit-ass-kategori').value,
-        tipe_kerja: document.getElementById('edit-ass-tipe').value,
-        deskripsi: document.getElementById('edit-ass-deskripsi').value.trim() || null,
-        deadline: dlRaw ? new Date(dlRaw).toISOString() : null,
-        link_pengumpulan: document.getElementById('edit-ass-link').value.trim() || null
-    }).eq('id', assId);
-    showToast('✅ Detail & instruksi tugas diperbarui');
+    const ass = assessmentsCache.find(a => Number(a.id) === assId);
+    if (!assId || !ass) return;
+
+    const btn = document.getElementById('btn-update-ass');
+    if (btn) btn.disabled = true;
+
+    try {
+        const judul = document.getElementById('edit-ass-judul').value.trim();
+        const dlRaw = document.getElementById('edit-ass-deadline')?.value || '';
+        const newFiles = [...(document.getElementById('edit-ass-teacher-files')?.files || [])];
+
+        let existingFiles = parseStudentSubmittedFiles(ass.lampiran_guru);
+        if (newFiles.length > 0) {
+            showToast('⏳ Mengunggah file soal tambahan ke Google Drive...');
+            const uploaded = await uploadTeacherFilesToDrive(newFiles, `Soal_${judul.slice(0, 30)}`);
+            existingFiles = [...existingFiles, ...uploaded];
+        }
+
+        const { error } = await db.from('assessments').update({
+            judul,
+            kategori: document.getElementById('edit-ass-kategori').value,
+            tipe_kerja: document.getElementById('edit-ass-tipe').value,
+            deskripsi: document.getElementById('edit-ass-deskripsi').value.trim() || null,
+            deadline: dlRaw ? new Date(dlRaw).toISOString() : null,
+            link_pengumpulan: document.getElementById('edit-ass-link').value.trim() || null,
+            lampiran_guru: existingFiles.length > 0 ? JSON.stringify(existingFiles) : null
+        }).eq('id', assId);
+
+        if (error) throw new Error(error.message);
+
+        showToast('✅ Detail & lampiran tugas berhasil diperbarui!');
+        await loadWorkspaceData();
+        document.getElementById('active-assessment').value = assId;
+        loadAssessmentScores();
+    } catch (err) {
+        showToast('❌ ' + err.message, 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function removeTeacherAssessmentFile(assId, fileIndex) {
+    const ass = assessmentsCache.find(a => Number(a.id) === Number(assId));
+    if (!ass) return;
+    if (!confirm('Hapus lampiran file soal ini dari tugas?')) return;
+
+    const files = parseStudentSubmittedFiles(ass.lampiran_guru);
+    files.splice(fileIndex, 1);
+
+    const { error } = await db.from('assessments')
+        .update({ lampiran_guru: files.length > 0 ? JSON.stringify(files) : null })
+        .eq('id', assId);
+
+    if (error) return showToast('Gagal menghapus lampiran: ' + error.message, 'error');
+
+    showToast('🗑️ Lampiran file dihapus dari tugas.');
     await loadWorkspaceData();
+    document.getElementById('active-assessment').value = assId;
+    loadAssessmentScores();
 }
 
 async function toggleAssessmentPublicVisibility() {
@@ -1672,6 +1730,8 @@ async function toggleAssessmentPublicVisibility() {
     await db.from('assessments').update({ tampil_publik: !ass.tampil_publik }).eq('id', assId);
     showToast(!ass.tampil_publik ? '🌐 Tugas ditampilkan di LMS Siswa' : '🔒 Tugas disembunyikan');
     await loadWorkspaceData();
+    document.getElementById('active-assessment').value = assId;
+    loadAssessmentScores();
 }
 
 async function deleteCurrentAssessment() {
