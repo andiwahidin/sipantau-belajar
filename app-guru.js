@@ -1,5 +1,5 @@
 // ============================================================================
-// PANTAU BELAJAR — APP-GURU.JS (v7.0 — FULL LMS: MATERI, TUGAS, DISKUSI & PA)
+// PANTAU BELAJAR — APP-GURU.JS (v7.1 — FULL LMS: MATERI, TUGAS, DISKUSI & PA)
 // ============================================================================
 const GOOGLE_OAUTH_CLIENT_ID = '565864753824-3ahjeunj19r6am2fgg2n1fv721kqfp77.apps.googleusercontent.com';
 
@@ -515,6 +515,9 @@ async function loadWorkspaceData() {
         announcementsCache = [];
         announcementCommentsCache = [];
         renderDashboard();
+        loadRecordedDates();
+        loadDailyAttendanceForDate();
+        renderAttendanceRecapTable();
         return;
     }
 
@@ -567,6 +570,9 @@ async function loadWorkspaceData() {
     renderAssessmentsDropdown();
     renderGuruAnnouncementsTab();
     renderRekapTab();
+    loadRecordedDates();
+    loadDailyAttendanceForDate();
+    renderAttendanceRecapTable();
 }
 
 // ==================== HELPER UPLOAD MULTI-FILE GURU KE GOOGLE DRIVE ====================
@@ -1312,8 +1318,6 @@ async function saveDailyAttendance() {
 
     showToast(`✅ Absensi tanggal ${dateVal} tersimpan!`);
     await loadWorkspaceData();
-    loadRecordedDates();
-    renderAttendanceRecapTable();
 }
 
 async function deleteDailyAttendanceDate() {
@@ -1323,8 +1327,6 @@ async function deleteDailyAttendanceDate() {
     await db.from('attendance_logs').delete().eq('class_id', activeClassId).eq('tanggal', dateVal).eq('mapel', amp.mapel);
     showToast('Catatan tanggal dihapus.');
     await loadWorkspaceData();
-    loadRecordedDates();
-    loadDailyAttendanceForDate();
 }
 
 function exportDailyAttendanceExcel() {
@@ -1377,7 +1379,6 @@ async function saveAttendanceManual() {
     await db.from('attendance').insert(payload);
     showToast('✅ Rekap kehadiran manual disimpan!');
     await loadWorkspaceData();
-    renderAttendanceRecapTable();
 }
 
 function downloadTemplateAbsen() {
@@ -2344,4 +2345,4 @@ function showToast(msg, type = 'success') {
     t.className = `fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg text-white transition-all duration-300 ${type === 'error' ? 'bg-rose-600' : 'bg-slate-900'}`;
     t.classList.remove('hidden');
     setTimeout(() => t.classList.add('hidden'), 3500);
-                                                 }
+}
