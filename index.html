@@ -11,7 +11,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=7.0">
+    <link rel="stylesheet" href="style.css?v=7.2">
 </head>
 <body class="bg-[#f8fafc] text-slate-800 antialiased">
 
@@ -509,7 +509,7 @@
                     </div>
                 </div>
 
-                <!-- TAB 4: TUGAS & UJIAN (DENGAN DESKRIPSI, DEADLINE & LAMPIRAN FILE GURU) -->
+                <!-- TAB 4: TUGAS & UJIAN (DENGAN EDIT & TAMBAH LAMPIRAN FILE SOAL) -->
                 <div id="gcontent-nilai" class="hidden space-y-5">
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
@@ -582,36 +582,46 @@
                             <button type="button" onclick="saveAssessmentScores()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-sm">💾 Simpan Semua Nilai</button>
                         </div>
 
-                        <!-- EDITOR METADATA & DESKRIPSI TUGAS -->
-                        <div id="ass-link-editor" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2 text-xs">
+                        <!-- EDITOR METADATA, DESKRIPSI & LAMPIRAN FILE TUGAS -->
+                        <div id="ass-link-editor" class="hidden bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5 text-xs">
                             <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                                <input type="text" id="edit-ass-judul" class="border rounded-lg p-1.5 font-bold">
-                                <select id="edit-ass-kategori" class="border rounded-lg p-1.5 font-bold">
+                                <input type="text" id="edit-ass-judul" class="border rounded-lg p-1.5 font-bold bg-white">
+                                <select id="edit-ass-kategori" class="border rounded-lg p-1.5 font-bold bg-white">
                                     <option value="tugas">Tugas</option>
                                     <option value="ujian_bab">Ujian Akhir Bab</option>
                                     <option value="ujian_semester">Ujian Semester</option>
                                 </select>
-                                <select id="edit-ass-tipe" class="border rounded-lg p-1.5">
+                                <select id="edit-ass-tipe" class="border rounded-lg p-1.5 bg-white">
                                     <option value="individu">Kerja Individu</option>
                                     <option value="kelompok">Kerja Kelompok</option>
                                 </select>
                                 <div class="flex gap-1.5">
                                     <button type="button" id="btn-toggle-public" onclick="toggleAssessmentPublicVisibility()" class="px-2.5 py-1 rounded-lg font-bold">🌐 Publik</button>
-                                    <button type="button" onclick="updateAssessmentLink()" class="px-3 py-1 rounded-lg bg-blue-600 text-white font-bold">Update</button>
+                                    <button type="button" id="btn-update-ass" onclick="updateAssessmentLink()" class="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold">Update</button>
                                 </div>
                             </div>
-                            <textarea id="edit-ass-deskripsi" rows="2" placeholder="Instruksi / deskripsi tugas..." class="w-full border rounded-lg p-1.5"></textarea>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
-                                <div class="flex items-center gap-2">
-                                    <span class="font-bold text-slate-500 shrink-0">Tenggat:</span>
-                                    <input type="datetime-local" id="edit-ass-deadline" class="w-full border rounded-lg p-1.5">
+
+                            <textarea id="edit-ass-deskripsi" rows="2" placeholder="Instruksi / deskripsi tugas..." class="w-full border rounded-lg p-1.5 bg-white"></textarea>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center">
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-500 mb-1">Tenggat Waktu</label>
+                                    <input type="datetime-local" id="edit-ass-deadline" class="w-full border rounded-lg p-1.5 bg-white">
                                 </div>
-                                <div class="flex items-center gap-2">
-                                    <input type="url" id="edit-ass-link" placeholder="Link eksternal opsional..." class="w-full border rounded-lg p-1.5">
-                                    <a id="btn-test-ass-link" href="#" target="_blank" class="hidden px-3 py-1.5 rounded-lg bg-slate-200 font-bold shrink-0">Buka ↗</a>
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-500 mb-1">Tambah File Soal / LKPD (Ke Drive Guru)</label>
+                                    <input type="file" id="edit-ass-teacher-files" multiple class="w-full border rounded-lg p-1 bg-white">
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-500 mb-1">Link Eksternal Opsional</label>
+                                    <div class="flex items-center gap-1.5">
+                                        <input type="url" id="edit-ass-link" placeholder="https://..." class="w-full border rounded-lg p-1.5 bg-white">
+                                        <a id="btn-test-ass-link" href="#" target="_blank" class="hidden px-2.5 py-1.5 rounded-lg bg-slate-200 font-bold shrink-0">Buka ↗</a>
+                                    </div>
                                 </div>
                             </div>
-                            <div id="edit-ass-teacher-files-list" class="flex flex-wrap gap-1.5 pt-1"></div>
+
+                            <div id="edit-ass-teacher-files-list" class="flex flex-wrap items-center gap-1.5 pt-1"></div>
                         </div>
 
                         <!-- BANNER KELOMPOK -->
@@ -1092,7 +1102,7 @@
         </div>
     </div>
 
-    <script src="config.js?v=7.0"></script>
-    <script src="app-guru.js?v=7.0"></script>
+    <script src="config.js?v=7.2"></script>
+    <script src="app-guru.js?v=7.2"></script>
 </body>
 </html>
