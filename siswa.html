@@ -8,11 +8,10 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=6.0">
+    <link rel="stylesheet" href="style.css?v=7.0">
 </head>
 <body class="min-h-screen flex flex-col bg-[#f8fafc] text-slate-800 antialiased">
 
-    <!-- TOAST NOTIFICATION -->
     <div id="toast" class="hidden"></div>
 
     <!-- ==================== 1. HALAMAN LOGIN SISWA ==================== -->
@@ -23,7 +22,7 @@
                     <i class="fa-solid fa-user-graduate"></i>
                 </div>
                 <h1 class="text-2xl font-extrabold tracking-tight text-slate-900">LMS <span class="text-blue-600">PantauBelajar</span></h1>
-                <p class="text-xs text-slate-500">Masuk menggunakan NISN untuk melihat kehadiran, tugas, dan hasil belajar akhir.</p>
+                <p class="text-xs text-slate-500">Masuk menggunakan NISN untuk mengakses materi, tugas, presensi, dan hasil belajar.</p>
             </div>
 
             <form onsubmit="handleStudentLogin(event)" class="space-y-4">
@@ -34,7 +33,7 @@
                 <div>
                     <label class="block text-xs font-bold text-slate-700 mb-1.5">Password</label>
                     <input type="password" id="stu-login-pass" required placeholder="Default password adalah NISN Anda" class="w-full border border-slate-300 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500">
-                    <p class="text-[11px] text-slate-400 mt-1">Jika belum pernah diubah, gunakan <b>NISN</b> Anda sebagai password.</p>
+                    <p class="text-[11px] text-slate-400 mt-1">Gunakan <b>NISN</b> Anda sebagai password jika belum pernah diubah.</p>
                 </div>
                 <button type="submit" id="btn-stu-login" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3 rounded-xl text-sm shadow-md transition">
                     Masuk ke LMS Siswa →
@@ -48,108 +47,315 @@
         </div>
     </section>
 
-    <!-- ==================== 2. HALAMAN UTAMA LMS SISWA ==================== -->
-    <div id="view-student-lms" class="hidden min-h-screen flex flex-col">
-        <!-- HEADER / NAVBAR -->
-        <header class="bg-white border-b border-slate-200 sticky top-0 z-30 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-sm">
-            <div class="flex items-center gap-2.5">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white text-base shadow-md">
-                    <i class="fa-solid fa-graduation-cap"></i>
-                </div>
-                <div>
-                    <span class="font-extrabold text-base tracking-tight text-slate-900 block">LMS PantauBelajar</span>
-                    <span class="text-[11px] text-slate-500 block">Portal Akademik Siswa</span>
-                </div>
-            </div>
-            <div class="flex items-center gap-2">
-                <button type="button" onclick="openStuPasswordModal()" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition" title="Ubah Password">
-                    🔑 <span class="hidden sm:inline">Ganti Password</span>
-                </button>
-                <button type="button" onclick="studentLogout()" class="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-extrabold transition">
-                    Keluar
-                </button>
-            </div>
-        </header>
+    <!-- ==================== 2. SHELL UTAMA LMS SISWA ==================== -->
+    <div id="view-student-lms" class="hidden min-h-screen flex">
 
-        <!-- KONTEN UTAMA -->
-        <main class="max-w-4xl w-full mx-auto p-4 sm:p-6 space-y-5 flex-1">
-
-            <!-- BANNER PROFIL SISWA -->
-            <div class="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-5 sm:p-6 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-white/20 text-white inline-block">Akun Siswa Aktif</span>
-                    <h2 id="portal-stu-name" class="text-lg sm:text-2xl font-extrabold mt-1">Nama Siswa</h2>
-                    <p id="portal-stu-nisn" class="text-xs text-blue-100 font-mono mt-0.5">NISN: - | Kelas: -</p>
-                </div>
-                <div class="bg-white/10 p-3.5 rounded-xl border border-white/20 text-xs space-y-1 shrink-0">
-                    <div>Tugas Terkumpul: <b id="portal-stat-done">0 / 0</b></div>
-                    <div>Tingkat Kehadiran: <b id="portal-stat-att">100%</b></div>
-                </div>
-            </div>
-
-            <!-- KARTU HASIL BELAJAR FINAL (DIPUBLIKASIKAN GURU) -->
-            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                <div class="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+        <!-- SIDEBAR NAVIGASI LMS -->
+        <aside id="stu-sidebar" class="hidden lg:flex flex-col w-64 bg-white border-r border-slate-200 fixed inset-y-0 left-0 z-40">
+            <div class="p-5 border-b border-slate-100 flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm">
+                        <i class="fa-solid fa-graduation-cap"></i>
+                    </div>
                     <div>
-                        <h3 class="font-extrabold text-sm sm:text-base text-slate-900">🏆 Hasil Belajar Akhir (Nilai Final Mata Pelajaran)</h3>
-                        <p class="text-xs text-slate-500">Menampilkan nilai akhir resmi yang telah dipublikasikan oleh masing-masing guru mata pelajaran.</p>
+                        <span class="font-extrabold text-base tracking-tight text-slate-900 block">Pantau<span class="text-blue-600">Belajar</span></span>
+                        <span class="text-[10px] font-bold text-slate-400 uppercase">Portal LMS Siswa</span>
                     </div>
-                    <span id="published-grades-count" class="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">0 Mapel Dipublikasikan</span>
                 </div>
-
-                <div class="overflow-x-auto">
-                    <table class="w-full text-xs text-left">
-                        <thead class="bg-slate-50 text-slate-600 border-b">
-                            <tr>
-                                <th class="p-3 text-center w-10">No</th>
-                                <th class="p-3">Mata Pelajaran</th>
-                                <th class="p-3">Guru Pengampu</th>
-                                <th class="p-3 text-center">KKM</th>
-                                <th class="p-3 text-center bg-blue-50/70 text-blue-900">Nilai Akhir</th>
-                                <th class="p-3 text-center">Keterangan</th>
-                            </tr>
-                        </thead>
-                        <tbody id="portal-final-grades-tbody" class="divide-y divide-slate-100"></tbody>
-                    </table>
-                </div>
+                <button type="button" onclick="toggleStuSidebar(true)" class="lg:hidden text-slate-400 hover:text-slate-600">✕</button>
             </div>
 
-            <!-- GRAFIK KEHADIRAN & TUGAS -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                    <h3 class="font-extrabold text-xs sm:text-sm text-slate-900">📊 Grafik Status Tugas</h3>
-                    <div class="h-44 relative max-w-xs mx-auto">
-                        <canvas id="chartStudentTaskStatus"></canvas>
+            <nav class="flex-1 p-3.5 space-y-1 overflow-y-auto">
+                <button type="button" id="stab-beranda" onclick="switchStudentTab('beranda'); toggleStuSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-blue-50 text-blue-700 transition">
+                    <i class="fa-solid fa-house w-4 text-center"></i> Beranda
+                </button>
+                <button type="button" id="stab-materi" onclick="switchStudentTab('materi'); toggleStuSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
+                    <i class="fa-solid fa-book-open w-4 text-center"></i> Materi Belajar
+                </button>
+                <button type="button" id="stab-tugas" onclick="switchStudentTab('tugas'); toggleStuSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
+                    <i class="fa-solid fa-list-check w-4 text-center"></i> Tugas & Ujian
+                </button>
+                <button type="button" id="stab-kehadiran" onclick="switchStudentTab('kehadiran'); toggleStuSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
+                    <i class="fa-regular fa-calendar-check w-4 text-center"></i> Kehadiran & Riwayat
+                </button>
+                <button type="button" id="stab-nilai" onclick="switchStudentTab('nilai'); toggleStuSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
+                    <i class="fa-solid fa-award w-4 text-center"></i> Hasil Belajar
+                </button>
+                <button type="button" id="stab-pengumuman" onclick="switchStudentTab('pengumuman'); toggleStuSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
+                    <i class="fa-solid fa-bullhorn w-4 text-center"></i> Pengumuman & Diskusi
+                </button>
+            </nav>
+
+            <div class="p-3.5 border-t border-slate-100 space-y-2">
+                <button type="button" onclick="openStuPasswordModal()" class="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-2 transition">
+                    🔑 Ganti Password
+                </button>
+                <a href="privacy.html" class="block text-center text-[11px] text-slate-400 hover:underline">Kebijakan Privasi</a>
+            </div>
+        </aside>
+
+        <!-- AREA KONTEN KANAN -->
+        <div class="flex-1 lg:ml-64 flex flex-col min-w-0">
+
+            <!-- TOPBAR -->
+            <header class="bg-white border-b border-slate-200 sticky top-0 z-30 px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                    <button type="button" onclick="toggleStuSidebar()" class="lg:hidden p-2 rounded-xl bg-slate-100 text-slate-700">
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
+                    <div>
+                        <h2 id="stu-page-title" class="font-extrabold text-sm sm:text-base text-slate-900">Beranda Siswa</h2>
+                        <p id="stu-topbar-class" class="text-[11px] text-slate-500">Kelas: -</p>
                     </div>
                 </div>
-                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                    <div class="flex items-center justify-between">
-                        <h3 class="font-extrabold text-xs sm:text-sm text-slate-900">📅 Grafik Kehadiran</h3>
-                        <span id="portal-att-summary-pill" class="text-[10px] font-bold text-slate-500">H:0 S:0 I:0 A:0</span>
+
+                <div class="flex items-center gap-2.5">
+                    <div id="stu-avatar" class="w-8 h-8 rounded-full bg-blue-600 text-white font-extrabold text-xs flex items-center justify-center shrink-0">SW</div>
+                    <div class="hidden sm:block text-left">
+                        <span id="stu-topbar-name" class="block text-xs font-extrabold text-slate-900 max-w-[150px] truncate">Siswa</span>
+                        <span id="stu-topbar-nisn" class="block text-[10px] font-mono text-slate-500">NISN: -</span>
                     </div>
-                    <div class="h-44 relative max-w-xs mx-auto">
-                        <canvas id="chartStudentAttendance"></canvas>
-                    </div>
+                    <button type="button" onclick="studentLogout()" class="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-extrabold transition">
+                        Keluar
+                    </button>
                 </div>
+            </header>
+
+            <!-- FILTER MATA PELAJARAN GLOBAL -->
+            <div class="bg-white border-b border-slate-200 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-slate-500">Filter Mata Pelajaran:</span>
+                    <select id="stu-filter-mapel" onchange="onStudentMapelFilterChange()" class="border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-extrabold text-blue-900 bg-blue-50 outline-none">
+                        <option value="all">Semua Mata Pelajaran</option>
+                    </select>
+                </div>
+                <button type="button" onclick="loadAllStudentLMSData()" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold">
+                    🔄 Segarkan Data
+                </button>
             </div>
 
-            <!-- DAFTAR TUGAS & PENGUMPULAN FILE -->
-            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                <div class="border-b pb-3">
-                    <h3 class="font-extrabold text-sm sm:text-base text-slate-900">📚 Daftar Tugas & Pengumpulan File</h3>
-                    <p class="text-xs text-slate-500">Klik tombol <b>"📤 Kirim File Tugas"</b> untuk mengunggah satu atau beberapa file sekaligus langsung ke Google Drive guru.</p>
+            <!-- ISI MENU-MENU -->
+            <main class="max-w-5xl w-full mx-auto p-4 sm:p-6 space-y-5 flex-1">
+
+                <!-- ==================== MENU 1: BERANDA ==================== -->
+                <div id="scontent-beranda" class="space-y-5">
+                    <div class="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-5 sm:p-6 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-white/20 text-white inline-block">Dashboard Akademik</span>
+                            <h2 id="portal-stu-name" class="text-lg sm:text-2xl font-extrabold mt-1">Nama Siswa</h2>
+                            <p id="portal-stu-nisn" class="text-xs text-blue-100 font-mono mt-0.5">NISN: - | Kelas: -</p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2.5 text-xs shrink-0">
+                            <div class="bg-white/15 p-3 rounded-xl border border-white/20">
+                                <span class="text-blue-100 block text-[10px]">Kehadiran</span>
+                                <b id="portal-stat-att" class="text-base font-extrabold">100%</b>
+                            </div>
+                            <div class="bg-white/15 p-3 rounded-xl border border-white/20">
+                                <span class="text-blue-100 block text-[10px]">Tugas Selesai</span>
+                                <b id="portal-stat-done" class="text-base font-extrabold">0 / 0</b>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RINGKASAN KARTU CEPAT -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div onclick="switchStudentTab('materi')" class="cursor-pointer bg-white p-4 rounded-2xl border border-slate-200 hover:border-blue-300 shadow-sm transition">
+                            <span class="text-xs font-bold text-slate-500">📘 Materi Tersedia</span>
+                            <div id="dash-stu-mat-count" class="text-2xl font-extrabold text-blue-600 mt-1">0</div>
+                        </div>
+                        <div onclick="switchStudentTab('tugas')" class="cursor-pointer bg-white p-4 rounded-2xl border border-slate-200 hover:border-amber-300 shadow-sm transition">
+                            <span class="text-xs font-bold text-slate-500">⏳ Tugas Belum Kumpul</span>
+                            <div id="dash-stu-pending-count" class="text-2xl font-extrabold text-amber-600 mt-1">0</div>
+                        </div>
+                        <div onclick="switchStudentTab('nilai')" class="cursor-pointer bg-white p-4 rounded-2xl border border-slate-200 hover:border-emerald-300 shadow-sm transition">
+                            <span class="text-xs font-bold text-slate-500">🏆 Nilai Akhir Rilis</span>
+                            <div id="dash-stu-pub-count" class="text-2xl font-extrabold text-emerald-600 mt-1">0 Mapel</div>
+                        </div>
+                        <div onclick="switchStudentTab('pengumuman')" class="cursor-pointer bg-white p-4 rounded-2xl border border-slate-200 hover:border-indigo-300 shadow-sm transition">
+                            <span class="text-xs font-bold text-slate-500">📢 Pengumuman</span>
+                            <div id="dash-stu-ann-count" class="text-2xl font-extrabold text-indigo-600 mt-1">0</div>
+                        </div>
+                    </div>
+
+                    <!-- GRAFIK RINGKASAN -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                            <h3 class="font-extrabold text-xs sm:text-sm text-slate-900">📊 Proporsi Status Tugas</h3>
+                            <div class="h-44 relative max-w-xs mx-auto">
+                                <canvas id="chartStudentTaskStatus"></canvas>
+                            </div>
+                        </div>
+                        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h3 class="font-extrabold text-xs sm:text-sm text-slate-900">📅 Proporsi Kehadiran</h3>
+                                <span id="portal-att-summary-pill" class="text-[10px] font-bold text-slate-500">H:0 S:0 I:0 A:0</span>
+                            </div>
+                            <div class="h-44 relative max-w-xs mx-auto">
+                                <canvas id="chartStudentAttendance"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PENGUMUMAN TERBARU DI BERANDA -->
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                        <div class="flex items-center justify-between border-b pb-2.5">
+                            <h3 class="font-extrabold text-sm text-slate-900">📢 Pengumuman Terbaru dari Guru</h3>
+                            <button type="button" onclick="switchStudentTab('pengumuman')" class="text-xs font-bold text-blue-600 hover:underline">Lihat Semua →</button>
+                        </div>
+                        <div id="beranda-latest-announcements" class="space-y-2.5"></div>
+                    </div>
                 </div>
-                <div id="portal-tasks-container" class="space-y-3"></div>
-            </div>
 
-        </main>
+                <!-- ==================== MENU 2: MATERI PEMBELAJARAN ==================== -->
+                <div id="scontent-materi" class="hidden space-y-4">
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                        <div class="border-b pb-3">
+                            <h3 class="font-extrabold text-base text-slate-900">📘 Materi & Modul Pembelajaran</h3>
+                            <p class="text-xs text-slate-500">Baca ringkasan materi, buka tautan referensi, atau unduh modul file yang dibagikan guru.</p>
+                        </div>
+                        <div id="stu-materials-list" class="space-y-3"></div>
+                    </div>
+                </div>
 
-        <!-- FOOTER -->
-        <footer class="bg-white border-t border-slate-200 text-center py-4 text-xs text-slate-500 space-x-2">
-            <span>PantauBelajar &copy; 2026</span>
-            <span>•</span>
-            <a href="privacy.html" class="text-blue-600 hover:underline">Kebijakan Privasi</a>
-        </footer>
+                <!-- ==================== MENU 3: TUGAS & UJIAN ==================== -->
+                <div id="scontent-tugas" class="hidden space-y-4">
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                        <div class="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+                            <div>
+                                <h3 class="font-extrabold text-base text-slate-900">📝 Daftar Tugas & Penilaian</h3>
+                                <p class="text-xs text-slate-500">Baca instruksi tugas, unduh file soal dari guru (jika ada), dan unggah file jawaban Anda.</p>
+                            </div>
+                            <select id="stu-filter-task-status" onchange="renderStudentTasksTab()" class="border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold">
+                                <option value="all">Semua Status</option>
+                                <option value="unsubmitted">Belum Dikumpulkan</option>
+                                <option value="submitted">Sudah Terkumpul</option>
+                            </select>
+                        </div>
+                        <div id="portal-tasks-container" class="space-y-3"></div>
+                    </div>
+                </div>
+
+                <!-- ==================== MENU 4: KEHADIRAN & RIWAYAT KETIDAKHADIRAN ==================== -->
+                <div id="scontent-kehadiran" class="hidden space-y-5">
+                    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                            <span class="text-xs font-bold text-slate-500">Persentase Hadir</span>
+                            <div id="att-tab-rate" class="text-2xl font-extrabold text-blue-600 mt-1">100%</div>
+                        </div>
+                        <div class="bg-white p-4 rounded-2xl border border-emerald-200 shadow-sm">
+                            <span class="text-xs font-bold text-emerald-700">Hadir (H)</span>
+                            <div id="att-tab-h" class="text-2xl font-extrabold text-emerald-600 mt-1">0</div>
+                        </div>
+                        <div class="bg-white p-4 rounded-2xl border border-amber-200 shadow-sm">
+                            <span class="text-xs font-bold text-amber-700">Sakit (S)</span>
+                            <div id="att-tab-s" class="text-2xl font-extrabold text-amber-500 mt-1">0</div>
+                        </div>
+                        <div class="bg-white p-4 rounded-2xl border border-blue-200 shadow-sm">
+                            <span class="text-xs font-bold text-blue-700">Izin (I)</span>
+                            <div id="att-tab-i" class="text-2xl font-extrabold text-blue-600 mt-1">0</div>
+                        </div>
+                        <div class="bg-white p-4 rounded-2xl border border-rose-200 shadow-sm">
+                            <span class="text-xs font-bold text-rose-700">Alpa (A)</span>
+                            <div id="att-tab-a" class="text-2xl font-extrabold text-rose-600 mt-1">0</div>
+                        </div>
+                    </div>
+
+                    <!-- TABEL REKAP PER MATA PELAJARAN -->
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                        <h3 class="font-extrabold text-sm text-slate-900">📊 Rekapitulasi Kehadiran Per Mata Pelajaran</h3>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-xs text-left">
+                                <thead class="bg-slate-50 text-slate-600 border-b">
+                                    <tr>
+                                        <th class="p-3">Mata Pelajaran</th>
+                                        <th class="p-3 text-center">Hadir</th>
+                                        <th class="p-3 text-center">Sakit</th>
+                                        <th class="p-3 text-center">Izin</th>
+                                        <th class="p-3 text-center">Alpa</th>
+                                        <th class="p-3 text-center">Persentase Hadir</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="att-per-mapel-tbody" class="divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- TABEL RIWAYAT LENGKAP KEHADIRAN & KETIDAKHADIRAN -->
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                        <div class="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+                            <div>
+                                <h3 class="font-extrabold text-sm text-slate-900">📅 Log Riwayat Pertemuan & Ketidakhadiran Lengkap</h3>
+                                <p class="text-xs text-slate-500">Rincian tanggal pertemuan dan catatan ketidakhadiran (Sakit, Izin, Alpa) pada setiap mata pelajaran.</p>
+                            </div>
+                            <select id="att-log-filter-status" onchange="renderStudentAttendanceTab()" class="border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold">
+                                <option value="all">Semua Status (H / S / I / A)</option>
+                                <option value="absent_only">⚠️ Hanya Ketidakhadiran (S / I / A)</option>
+                                <option value="H">Hadir (H)</option>
+                                <option value="S">Sakit (S)</option>
+                                <option value="I">Izin (I)</option>
+                                <option value="A">Alpa (A)</option>
+                            </select>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-xs text-left">
+                                <thead class="bg-slate-50 text-slate-600 border-b">
+                                    <tr>
+                                        <th class="p-3 text-center w-10">No</th>
+                                        <th class="p-3">Tanggal</th>
+                                        <th class="p-3">Mata Pelajaran</th>
+                                        <th class="p-3 text-center">Status</th>
+                                        <th class="p-3">Keterangan</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="att-detailed-logs-tbody" class="divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ==================== MENU 5: HASIL BELAJAR AKHIR ==================== -->
+                <div id="scontent-nilai" class="hidden space-y-4">
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                        <div class="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+                            <div>
+                                <h3 class="font-extrabold text-base text-slate-900">🏆 Hasil Belajar Akhir (Nilai Final Mata Pelajaran)</h3>
+                                <p class="text-xs text-slate-500">Menampilkan nilai akhir resmi yang telah dipublikasikan oleh guru masing-masing mata pelajaran.</p>
+                            </div>
+                            <span id="published-grades-count" class="px-3 py-1 rounded-full text-xs font-extrabold bg-blue-50 text-blue-700 border border-blue-200">0 Mapel</span>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-xs text-left">
+                                <thead class="bg-slate-50 text-slate-600 border-b">
+                                    <tr>
+                                        <th class="p-3 text-center w-10">No</th>
+                                        <th class="p-3">Mata Pelajaran</th>
+                                        <th class="p-3">Guru Pengampu</th>
+                                        <th class="p-3 text-center">KKM</th>
+                                        <th class="p-3 text-center bg-blue-50/70 text-blue-900">Nilai Akhir</th>
+                                        <th class="p-3 text-center">Keterangan</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="portal-final-grades-tbody" class="divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ==================== MENU 6: PENGUMUMAN & DISKUSI KELAS ==================== -->
+                <div id="scontent-pengumuman" class="hidden space-y-4">
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                        <div class="border-b pb-3">
+                            <h3 class="font-extrabold text-base text-slate-900">📢 Pengumuman & Forum Diskusi Kelas</h3>
+                            <p class="text-xs text-slate-500">Informasi penting dari guru pengampu serta ruang tanya jawab bersama guru dan teman sekelas.</p>
+                        </div>
+                        <div id="stu-announcements-list" class="space-y-4"></div>
+                    </div>
+                </div>
+
+            </main>
+        </div>
     </div>
 
     <!-- MODAL GANTI PASSWORD SISWA -->
@@ -206,7 +412,6 @@
                     <p class="text-[11px] text-slate-400 mt-1.5">Mendukung PDF, Word, Excel, PPT, Gambar, ZIP, maupun Video.</p>
                 </div>
 
-                <!-- PROGRESS BAR UPLOAD -->
                 <div id="upload-progress-box" class="hidden space-y-2 pt-1">
                     <div class="flex justify-between text-xs font-extrabold text-blue-700">
                         <span id="upload-status-text">Menyiapkan folder Google Drive...</span>
@@ -228,11 +433,19 @@
     </div>
 
     <!-- SCRIPTS -->
-    <script src="config.js?v=6.0"></script>
+    <script src="config.js?v=7.0"></script>
     <script>
         let teachersCache = [];
         let currentPortalStudent = null;
         let currentAssessmentsList = [];
+        let currentScoresList = [];
+        let currentMaterialsList = [];
+        let currentAttLogsList = [];
+        let currentAttRecapList = [];
+        let currentPublishedGradesList = [];
+        let currentAnnouncementsList = [];
+        let currentCommentsList = [];
+        let selectedMapelFilter = 'all';
         let selectedAssessmentObj = null;
         let studentTaskChartInstance = null;
         let studentAttChartInstance = null;
@@ -281,11 +494,8 @@
             btn.disabled = false;
             btn.innerText = 'Masuk ke LMS Siswa →';
 
-            if (error || !stu) {
-                return showToast('NISN tidak terdaftar di sistem!', 'error');
-            }
+            if (error || !stu) return showToast('NISN tidak terdaftar di sistem!', 'error');
 
-            // Password default jika belum diatur adalah NISN siswa itu sendiri
             const validPassword = (stu.password && stu.password.trim() !== '') ? stu.password : stu.nisn;
             if (passInput !== validPassword) {
                 return showToast('Password salah! Gunakan NISN jika belum pernah diganti.', 'error');
@@ -302,13 +512,20 @@
             document.getElementById('view-student-lms').classList.remove('hidden');
 
             const className = currentPortalStudent.classes?.nama_kelas || 'Kelas';
+            const initials = (currentPortalStudent.nama || 'SW').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+
+            document.getElementById('stu-avatar').innerText = initials;
+            document.getElementById('stu-topbar-name').innerText = currentPortalStudent.nama;
+            document.getElementById('stu-topbar-nisn').innerText = `NISN: ${currentPortalStudent.nisn}`;
+            document.getElementById('stu-topbar-class').innerText = `Kelas: ${className}`;
             document.getElementById('portal-stu-name').innerText = currentPortalStudent.nama;
             document.getElementById('portal-stu-nisn').innerText = `NISN: ${currentPortalStudent.nisn} | Kelas: ${className}`;
 
             const { data: tchData } = await db.from('app_users').select('id, nama_lengkap, gdrive_email');
             teachersCache = tchData || [];
 
-            await loadPortalStudentData();
+            await loadAllStudentLMSData();
+            switchStudentTab('beranda');
         }
 
         function studentLogout() {
@@ -317,6 +534,42 @@
             if (studentTaskChartInstance) { studentTaskChartInstance.destroy(); studentTaskChartInstance = null; }
             if (studentAttChartInstance) { studentAttChartInstance.destroy(); studentAttChartInstance = null; }
             showLoginView();
+        }
+
+        function toggleStuSidebar(forceClose = false) {
+            const sb = document.getElementById('stu-sidebar');
+            if (!sb) return;
+            if (forceClose) sb.classList.add('hidden');
+            else sb.classList.toggle('hidden');
+        }
+
+        function switchStudentTab(tab) {
+            const titles = {
+                beranda: 'Beranda Akademik Siswa',
+                materi: 'Materi & Modul Pembelajaran',
+                tugas: 'Tugas & Pengumpulan File',
+                kehadiran: 'Kehadiran & Riwayat Ketidakhadiran',
+                nilai: 'Hasil Belajar Akhir',
+                pengumuman: 'Pengumuman & Diskusi Kelas'
+            };
+            document.getElementById('stu-page-title').innerText = titles[tab] || 'LMS Siswa';
+
+            Object.keys(titles).forEach(t => {
+                document.getElementById(`scontent-${t}`)?.classList.toggle('hidden', t !== tab);
+                const btn = document.getElementById(`stab-${t}`);
+                if (btn) {
+                    btn.className = t === tab
+                        ? 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-blue-50 text-blue-700 transition'
+                        : 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition';
+                }
+            });
+
+            if (tab === 'beranda') renderStudentBerandaTab();
+            if (tab === 'materi') renderStudentMaterialsTab();
+            if (tab === 'tugas') renderStudentTasksTab();
+            if (tab === 'kehadiran') renderStudentAttendanceTab();
+            if (tab === 'nilai') renderPublishedFinalGrades();
+            if (tab === 'pengumuman') renderStudentAnnouncementsTab();
         }
 
         // Ganti Password Siswa
@@ -336,10 +589,7 @@
             if (oldP !== currentValidPass) return showToast('Password lama tidak sesuai!', 'error');
             if (newP !== confP) return showToast('Konfirmasi password baru tidak cocok!', 'error');
 
-            const { error } = await db.from('students')
-                .update({ password: newP })
-                .eq('id', currentPortalStudent.id);
-
+            const { error } = await db.from('students').update({ password: newP }).eq('id', currentPortalStudent.id);
             if (error) return showToast('Gagal mengubah password: ' + error.message, 'error');
 
             currentPortalStudent.password = newP;
@@ -349,94 +599,259 @@
             showToast('✅ Password berhasil diperbarui!');
         }
 
-        function parseSubmittedFiles(raw) {
+        function parseFileJsonArray(raw) {
             if (!raw) return [];
             try {
                 const parsed = JSON.parse(raw);
                 if (Array.isArray(parsed)) return parsed;
             } catch {
                 if (typeof raw === 'string' && raw.startsWith('http')) {
-                    return [{ name: 'File Tugas', url: raw }];
+                    return [{ name: 'Lampiran File', url: raw }];
                 }
             }
             return [];
         }
 
-        async function loadPortalStudentData() {
+        async function loadAllStudentLMSData() {
             if (!currentPortalStudent) return;
+            const cid = currentPortalStudent.class_id;
+            const sid = currentPortalStudent.id;
 
-            const [assRes, scoresRes, attLogsRes, attRecapRes, finalRes] = await Promise.all([
-                db.from('assessments').select('*').eq('class_id', currentPortalStudent.class_id).eq('tampil_publik', true).order('id'),
-                db.from('scores').select('*').eq('student_id', currentPortalStudent.id),
-                db.from('attendance_logs').select('*').eq('class_id', currentPortalStudent.class_id).eq('student_id', currentPortalStudent.id),
-                db.from('attendance').select('*').eq('student_id', currentPortalStudent.id),
-                db.from('final_grades').select('*').eq('student_id', currentPortalStudent.id).eq('is_published', true).order('mapel')
+            const [assRes, scoresRes, attLogsRes, attRecapRes, finalRes, matRes, annRes] = await Promise.all([
+                db.from('assessments').select('*').eq('class_id', cid).eq('tampil_publik', true).order('id', { ascending: false }),
+                db.from('scores').select('*').eq('student_id', sid),
+                db.from('attendance_logs').select('*').eq('class_id', cid).eq('student_id', sid).order('tanggal', { ascending: false }),
+                db.from('attendance').select('*').eq('student_id', sid),
+                db.from('final_grades').select('*').eq('student_id', sid).eq('is_published', true).order('mapel'),
+                db.from('materials').select('*').eq('class_id', cid).eq('tampil_publik', true).order('created_at', { ascending: false }),
+                db.from('announcements').select('*').eq('class_id', cid).order('created_at', { ascending: false })
             ]);
 
             currentAssessmentsList = assRes.data || [];
-            const scores = scoresRes.data || [];
-            const attLogs = attLogsRes.data || [];
-            const attRecaps = attRecapRes.data || [];
-            const publishedGrades = finalRes.data || [];
+            currentScoresList = scoresRes.data || [];
+            currentAttLogsList = attLogsRes.data || [];
+            currentAttRecapList = attRecapRes.data || [];
+            currentPublishedGradesList = finalRes.data || [];
+            currentMaterialsList = matRes.data || [];
+            currentAnnouncementsList = annRes.data || [];
 
-            // 1. Render Hasil Belajar Final (Nilai Akhir per Mata Pelajaran yang Dipublikasikan)
-            renderPublishedFinalGrades(publishedGrades);
+            const annIds = currentAnnouncementsList.map(a => a.id);
+            if (annIds.length > 0) {
+                const comRes = await db.from('announcement_comments').select('*').in('announcement_id', annIds).order('created_at');
+                currentCommentsList = comRes.data || [];
+            } else {
+                currentCommentsList = [];
+            }
 
-            // 2. Hitung Kehadiran
-            let hadirCount = 0, sakitCount = 0, izinCount = 0, alpaCount = 0;
-            if (attLogs.length > 0) {
-                attLogs.forEach(l => {
-                    if (l.status === 'H') hadirCount++;
-                    else if (l.status === 'S') sakitCount++;
-                    else if (l.status === 'I') izinCount++;
-                    else if (l.status === 'A') alpaCount++;
+            // Isi dropdown filter mata pelajaran
+            const allMapels = [...new Set([
+                ...currentMaterialsList.map(m => m.mapel),
+                ...currentAssessmentsList.map(a => a.mapel),
+                ...currentAttLogsList.map(l => l.mapel),
+                ...currentPublishedGradesList.map(g => g.mapel),
+                ...currentAnnouncementsList.map(an => an.mapel)
+            ].filter(Boolean))].sort();
+
+            const filterSel = document.getElementById('stu-filter-mapel');
+            if (filterSel) {
+                filterSel.innerHTML = `<option value="all">Semua Mata Pelajaran (${allMapels.length})</option>` +
+                    allMapels.map(m => `<option value="${m}">${m}</option>`).join('');
+                if (allMapels.includes(selectedMapelFilter)) filterSel.value = selectedMapelFilter;
+                else selectedMapelFilter = 'all';
+            }
+
+            renderStudentBerandaTab();
+            renderStudentMaterialsTab();
+            renderStudentTasksTab();
+            renderStudentAttendanceTab();
+            renderPublishedFinalGrades();
+            renderStudentAnnouncementsTab();
+        }
+
+        function onStudentMapelFilterChange() {
+            selectedMapelFilter = document.getElementById('stu-filter-mapel').value;
+            renderStudentBerandaTab();
+            renderStudentMaterialsTab();
+            renderStudentTasksTab();
+            renderStudentAttendanceTab();
+            renderPublishedFinalGrades();
+            renderStudentAnnouncementsTab();
+        }
+
+        function filterBySelectedMapel(arr) {
+            if (selectedMapelFilter === 'all') return arr;
+            return arr.filter(item => String(item.mapel || '') === selectedMapelFilter);
+        }
+
+        // ==================== RENDER MENU 1: BERANDA ====================
+        function renderStudentBerandaTab() {
+            const assFiltered = filterBySelectedMapel(currentAssessmentsList);
+            const matFiltered = filterBySelectedMapel(currentMaterialsList);
+            const annFiltered = filterBySelectedMapel(currentAnnouncementsList);
+            const logsFiltered = filterBySelectedMapel(currentAttLogsList);
+
+            let doneCount = 0, pendingCount = 0;
+            assFiltered.forEach(a => {
+                const sc = currentScoresList.find(s => Number(s.assessment_id) === Number(a.id));
+                if (sc?.status_kumpul === true || sc?.status_pengajuan === 'approved') doneCount++;
+                else if (sc?.status_pengajuan === 'pending') pendingCount++;
+            });
+            const belumCount = Math.max(0, assFiltered.length - (doneCount + pendingCount));
+
+            let h = 0, s = 0, i = 0, a = 0;
+            if (logsFiltered.length > 0) {
+                logsFiltered.forEach(l => {
+                    if (l.status === 'H') h++; else if (l.status === 'S') s++; else if (l.status === 'I') i++; else if (l.status === 'A') a++;
                 });
-            } else if (attRecaps.length > 0) {
-                attRecaps.forEach(r => {
-                    hadirCount += Number(r.hadir || 0);
-                    sakitCount += Number(r.sakit || 0);
-                    izinCount += Number(r.izin || 0);
-                    alpaCount += Number(r.alpa || 0);
+            } else {
+                const recFiltered = filterBySelectedMapel(currentAttRecapList);
+                recFiltered.forEach(r => {
+                    h += Number(r.hadir || 0); s += Number(r.sakit || 0); i += Number(r.izin || 0); a += Number(r.alpa || 0);
+                });
+            }
+            const totAtt = h + s + i + a;
+            const attPct = totAtt > 0 ? Math.round((h / totAtt) * 100) : 100;
+
+            document.getElementById('portal-stat-att').innerText = `${attPct}%`;
+            document.getElementById('portal-stat-done').innerText = `${doneCount} / ${assFiltered.length}`;
+            document.getElementById('portal-att-summary-pill').innerText = `H:${h} S:${s} I:${i} A:${a}`;
+
+            document.getElementById('dash-stu-mat-count').innerText = matFiltered.length;
+            document.getElementById('dash-stu-pending-count').innerText = belumCount;
+            document.getElementById('dash-stu-pub-count').innerText = `${currentPublishedGradesList.length} Mapel`;
+            document.getElementById('dash-stu-ann-count').innerText = annFiltered.length;
+
+            // Pengumuman terbaru di beranda
+            const annBox = document.getElementById('beranda-latest-announcements');
+            if (annBox) {
+                annBox.innerHTML = annFiltered.length
+                    ? annFiltered.slice(0, 3).map(an => {
+                        const tch = teachersCache.find(t => Number(t.id) === Number(an.teacher_id));
+                        return `
+                            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-extrabold text-[10px]">📘 ${an.mapel}</span>
+                                    <span class="text-[10px] text-slate-400">${new Date(an.created_at).toLocaleDateString('id-ID')}</span>
+                                </div>
+                                <h4 class="font-extrabold text-slate-900 mt-1">${an.judul}</h4>
+                                <p class="text-slate-600 mt-0.5 line-clamp-2">${an.isi}</p>
+                                <span class="text-[10px] text-slate-400 block mt-1">Oleh: ${tch?.nama_lengkap || 'Guru'}</span>
+                            </div>
+                        `;
+                    }).join('')
+                    : `<p class="text-xs text-slate-400 italic">Belum ada pengumuman terbaru.</p>`;
+            }
+
+            setTimeout(() => {
+                renderStudentCharts(doneCount, pendingCount, belumCount, h, s, i, a);
+            }, 50);
+        }
+
+        function renderStudentCharts(done, pending, belum, hadir, sakit, izin, alpa) {
+            const ctxTask = document.getElementById('chartStudentTaskStatus');
+            if (ctxTask) {
+                if (studentTaskChartInstance) { studentTaskChartInstance.destroy(); studentTaskChartInstance = null; }
+                studentTaskChartInstance = new Chart(ctxTask, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Terkumpul', 'Pending', 'Belum'],
+                        datasets: [{ data: [done, pending, belum], backgroundColor: ['#10b981', '#f59e0b', '#cbd5e1'], borderWidth: 0 }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }
                 });
             }
 
-            const totalPertemuan = hadirCount + sakitCount + izinCount + alpaCount;
-            const attRatePct = totalPertemuan > 0 ? Math.round((hadirCount / totalPertemuan) * 100) : 100;
-            document.getElementById('portal-stat-att').innerText = `${attRatePct}%`;
-            document.getElementById('portal-att-summary-pill').innerText = `H:${hadirCount} S:${sakitCount} I:${izinCount} A:${alpaCount}`;
+            const ctxAtt = document.getElementById('chartStudentAttendance');
+            if (ctxAtt) {
+                if (studentAttChartInstance) { studentAttChartInstance.destroy(); studentAttChartInstance = null; }
+                const totalAtt = hadir + sakit + izin + alpa;
+                studentAttChartInstance = new Chart(ctxAtt, {
+                    type: 'doughnut',
+                    data: {
+                        labels: totalAtt > 0 ? ['Hadir', 'Sakit', 'Izin', 'Alpa'] : ['Belum Ada Data'],
+                        datasets: [{ data: totalAtt > 0 ? [hadir, sakit, izin, alpa] : [1], backgroundColor: totalAtt > 0 ? ['#10b981', '#f59e0b', '#3b82f6', '#f43f5e'] : ['#e2e8f0'], borderWidth: 0 }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }
+                });
+            }
+        }
 
-            // 3. Render Daftar Tugas
-            const container = document.getElementById('portal-tasks-container');
+        // ==================== RENDER MENU 2: MATERI PEMBELAJARAN ====================
+        function renderStudentMaterialsTab() {
+            const container = document.getElementById('stu-materials-list');
             if (!container) return;
+            const list = filterBySelectedMapel(currentMaterialsList);
 
-            if (!currentAssessmentsList.length) {
-                container.innerHTML = `<p class="text-xs text-slate-400 italic text-center py-6">Belum ada tugas atau ujian yang dipublikasikan oleh guru.</p>`;
-                document.getElementById('portal-stat-done').innerText = '0 / 0';
-                setTimeout(() => {
-                    renderStudentCharts(0, 0, 0, hadirCount, sakitCount, izinCount, alpaCount);
-                }, 50);
+            if (!list.length) {
+                container.innerHTML = `<p class="text-xs text-slate-400 italic text-center py-8">Belum ada materi pembelajaran yang dibagikan pada filter ini.</p>`;
                 return;
             }
 
-            let doneCount = 0;
-            let pendingCount = 0;
+            container.innerHTML = list.map(m => {
+                const tch = teachersCache.find(t => Number(t.id) === Number(m.teacher_id));
+                const files = parseFileJsonArray(m.file_attachments);
+                const dateStr = new Date(m.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 
-            container.innerHTML = currentAssessmentsList.map(a => {
-                const mapelName = a.mapel || 'Mata Pelajaran';
+                return `
+                    <div class="p-4 sm:p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-2.5">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <span class="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-blue-100 text-blue-800">📘 ${m.mapel}</span>
+                            <span class="text-[11px] text-slate-400">Diposting: ${dateStr} • Guru: ${tch?.nama_lengkap || 'Pengampu'}</span>
+                        </div>
+                        <h4 class="font-extrabold text-base text-slate-900">${m.judul}</h4>
+                        ${m.deskripsi ? `<div class="text-xs sm:text-sm text-slate-700 whitespace-pre-line bg-white p-3.5 rounded-xl border border-slate-200/80 leading-relaxed">${m.deskripsi}</div>` : ''}
+                        <div class="flex flex-wrap items-center gap-2 pt-1">
+                            ${m.link_eksternal ? `
+                                <a href="${m.link_eksternal}" target="_blank" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm">
+                                    🔗 Buka Tautan / Video Materi ↗
+                                </a>
+                            ` : ''}
+                            ${files.map((f, i) => `
+                                <a href="${f.url}" target="_blank" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-extrabold">
+                                    📥 Unduh Modul ${files.length > 1 ? i + 1 : ''}: ${f.name} ↗
+                                </a>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ==================== RENDER MENU 3: TUGAS & PENGUMPULAN ====================
+        function renderStudentTasksTab() {
+            const container = document.getElementById('portal-tasks-container');
+            if (!container) return;
+
+            const statusFilter = document.getElementById('stu-filter-task-status')?.value || 'all';
+            let list = filterBySelectedMapel(currentAssessmentsList);
+
+            list = list.filter(a => {
+                const sc = currentScoresList.find(s => Number(s.assessment_id) === Number(a.id));
+                const isDone = sc?.status_kumpul === true || sc?.status_pengajuan === 'approved';
+                if (statusFilter === 'submitted') return isDone;
+                if (statusFilter === 'unsubmitted') return !isDone;
+                return true;
+            });
+
+            if (!list.length) {
+                container.innerHTML = `<p class="text-xs text-slate-400 italic text-center py-8">Tidak ada tugas atau penilaian yang sesuai filter.</p>`;
+                return;
+            }
+
+            container.innerHTML = list.map(a => {
                 const teacher = teachersCache.find(t => Number(t.id) === Number(a.teacher_id));
                 const hasDriveConnected = Boolean(teacher?.gdrive_email);
+                const sc = currentScoresList.find(s => Number(s.assessment_id) === Number(a.id)) || { status_kumpul: false, status_pengajuan: 'none' };
 
-                const sc = scores.find(s => Number(s.assessment_id) === Number(a.id)) || { status_kumpul: false, status_pengajuan: 'none' };
                 const isApproved = sc.status_kumpul === true || sc.status_pengajuan === 'approved';
                 const isPending = sc.status_pengajuan === 'pending' && !isApproved;
                 const isRejected = sc.status_pengajuan === 'rejected';
 
-                if (isApproved) doneCount++;
-                if (isPending) pendingCount++;
+                const teacherFiles = parseFileJsonArray(a.lampiran_guru);
+                const studentFiles = parseFileJsonArray(sc.link_tugas_siswa);
 
-                const existingFiles = parseSubmittedFiles(sc.link_tugas_siswa);
-                const filesBadgeHtml = existingFiles.length > 0
-                    ? `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">📎 ${existingFiles.length} File Terunggah</span>`
+                const deadlineHtml = a.deadline
+                    ? `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">⏰ Tenggat: ${new Date(a.deadline).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>`
                     : '';
 
                 let badgeHtml = '';
@@ -461,51 +876,157 @@
                 }
 
                 const nilaiBadge = (sc.nilai !== null && sc.nilai !== undefined)
-                    ? `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-indigo-100 text-indigo-800">Nilai: ${sc.nilai}</span>`
+                    ? `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-indigo-100 text-indigo-800">Skor Tugas: ${sc.nilai}</span>`
                     : '';
 
                 return `
-                    <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div class="space-y-1.5">
-                            <div class="flex items-center gap-2 flex-wrap">
-                                <span class="px-2.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-100 text-blue-800">📘 ${mapelName}</span>
-                                ${badgeHtml}
-                                ${filesBadgeHtml}
-                                ${nilaiBadge}
-                            </div>
-                            <h4 class="font-extrabold text-sm sm:text-base text-slate-900">${a.judul}</h4>
-                            <p class="text-[11px] text-slate-500">Guru: ${teacher?.nama_lengkap || 'Pengampu'}</p>
-                            ${a.link_pengumpulan ? `
-                                <div class="pt-1">
-                                    <a href="${a.link_pengumpulan}" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-200/80 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition">
-                                        🔗 Tautan Eksternal Guru ↗
-                                    </a>
+                    <div class="p-4 sm:p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3">
+                        <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                            <div class="space-y-1.5">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="px-2.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-100 text-blue-800">📘 ${a.mapel}</span>
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-700 uppercase">${a.tipe_kerja || 'individu'}</span>
+                                    ${badgeHtml}
+                                    ${nilaiBadge}
+                                    ${deadlineHtml}
                                 </div>
-                            ` : ''}
+                                <h4 class="font-extrabold text-sm sm:text-base text-slate-900">${a.judul}</h4>
+                                <p class="text-[11px] text-slate-500">Guru Pengampu: ${teacher?.nama_lengkap || '-'}</p>
+                            </div>
+                            <div class="shrink-0 flex items-center gap-2">
+                                ${actionBtn}
+                            </div>
                         </div>
-                        <div class="shrink-0 flex items-center gap-2">
-                            ${actionBtn}
+
+                        ${a.deskripsi ? `
+                            <div class="bg-white p-3.5 rounded-xl border border-slate-200 text-xs text-slate-700 whitespace-pre-line leading-relaxed">
+                                <span class="text-[10px] font-extrabold uppercase text-slate-400 block mb-1">Instruksi / Deskripsi Tugas:</span>
+                                ${a.deskripsi}
+                            </div>
+                        ` : ''}
+
+                        <div class="flex flex-wrap items-center gap-2">
+                            ${teacherFiles.map((tf, i) => `
+                                <a href="${tf.url}" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-extrabold">
+                                    📄 Unduh Soal/Panduan ${teacherFiles.length > 1 ? i + 1 : ''}: ${tf.name} ↗
+                                </a>
+                            `).join('')}
+
+                            ${a.link_pengumpulan ? `
+                                <a href="${a.link_pengumpulan}" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-200/80 hover:bg-slate-200 text-slate-700 text-[11px] font-bold">
+                                    🔗 Tautan Tambahan Guru ↗
+                                </a>
+                            ` : ''}
+
+                            ${studentFiles.map((sf, i) => `
+                                <a href="${sf.url}" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold">
+                                    📎 File Terkirim ${i + 1} ↗
+                                </a>
+                            `).join('')}
                         </div>
                     </div>
                 `;
             }).join('');
-
-            document.getElementById('portal-stat-done').innerText = `${doneCount} / ${currentAssessmentsList.length}`;
-            const belumCount = Math.max(0, currentAssessmentsList.length - (doneCount + pendingCount));
-
-            setTimeout(() => {
-                renderStudentCharts(doneCount, pendingCount, belumCount, hadirCount, sakitCount, izinCount, alpaCount);
-            }, 50);
         }
 
-        function renderPublishedFinalGrades(list) {
+        // ==================== RENDER MENU 4: KEHADIRAN & RIWAYAT KETIDAKHADIRAN ====================
+        function renderStudentAttendanceTab() {
+            const logsFiltered = filterBySelectedMapel(currentAttLogsList);
+            const recFiltered = filterBySelectedMapel(currentAttRecapList);
+
+            let h = 0, s = 0, i = 0, a = 0;
+            if (logsFiltered.length > 0) {
+                logsFiltered.forEach(l => {
+                    if (l.status === 'H') h++; else if (l.status === 'S') s++; else if (l.status === 'I') i++; else if (l.status === 'A') a++;
+                });
+            } else {
+                recFiltered.forEach(r => {
+                    h += Number(r.hadir || 0); s += Number(r.sakit || 0); i += Number(r.izin || 0); a += Number(r.alpa || 0);
+                });
+            }
+
+            const tot = h + s + i + a;
+            const rate = tot > 0 ? ((h / tot) * 100).toFixed(1) : '100.0';
+
+            document.getElementById('att-tab-rate').innerText = `${rate}%`;
+            document.getElementById('att-tab-h').innerText = h;
+            document.getElementById('att-tab-s').innerText = s;
+            document.getElementById('att-tab-i').innerText = i;
+            document.getElementById('att-tab-a').innerText = a;
+
+            // Rekap per Mata Pelajaran
+            const mapelTbody = document.getElementById('att-per-mapel-tbody');
+            const mapels = [...new Set([...currentAttLogsList.map(l => l.mapel), ...currentAttRecapList.map(r => r.mapel)].filter(Boolean))].sort();
+            if (mapelTbody) {
+                mapelTbody.innerHTML = mapels.length ? mapels.map(mpl => {
+                    const mLogs = currentAttLogsList.filter(l => l.mapel === mpl);
+                    const mRec = currentAttRecapList.find(r => r.mapel === mpl);
+                    let mh = 0, ms = 0, mi = 0, ma = 0;
+                    if (mLogs.length > 0) {
+                        mLogs.forEach(l => {
+                            if (l.status === 'H') mh++; else if (l.status === 'S') ms++; else if (l.status === 'I') mi++; else if (l.status === 'A') ma++;
+                        });
+                    } else if (mRec) {
+                        mh = Number(mRec.hadir || 0); ms = Number(mRec.sakit || 0); mi = Number(mRec.izin || 0); ma = Number(mRec.alpa || 0);
+                    }
+                    const mTot = mh + ms + mi + ma;
+                    const mPct = mTot > 0 ? ((mh / mTot) * 100).toFixed(1) : '100.0';
+                    return `
+                        <tr class="hover:bg-slate-50">
+                            <td class="p-3 font-extrabold text-slate-900">${mpl}</td>
+                            <td class="p-3 text-center font-bold text-emerald-600">${mh}</td>
+                            <td class="p-3 text-center font-bold text-amber-600">${ms}</td>
+                            <td class="p-3 text-center font-bold text-blue-600">${mi}</td>
+                            <td class="p-3 text-center font-bold text-rose-600">${ma}</td>
+                            <td class="p-3 text-center font-extrabold text-slate-900">${mPct}%</td>
+                        </tr>
+                    `;
+                }).join('') : `<tr><td colspan="6" class="p-5 text-center text-slate-400 italic">Belum ada data presensi tercatat.</td></tr>`;
+            }
+
+            // Log Rincian Tanggal & Ketidakhadiran
+            const logTbody = document.getElementById('att-detailed-logs-tbody');
+            const stFilter = document.getElementById('att-log-filter-status')?.value || 'all';
+            if (logTbody) {
+                const filteredLogs = logsFiltered.filter(l => {
+                    if (stFilter === 'absent_only') return l.status !== 'H';
+                    if (stFilter !== 'all') return l.status === stFilter;
+                    return true;
+                });
+
+                logTbody.innerHTML = filteredLogs.length ? filteredLogs.map((l, idx) => {
+                    const stMap = {
+                        H: { label: 'Hadir', cls: 'bg-emerald-100 text-emerald-700', note: 'Hadir mengikuti pembelajaran' },
+                        S: { label: 'Sakit', cls: 'bg-amber-100 text-amber-800', note: 'Tidak hadir karena sakit' },
+                        I: { label: 'Izin', cls: 'bg-blue-100 text-blue-700', note: 'Tidak hadir dengan keterangan izin' },
+                        A: { label: 'Alpa', cls: 'bg-rose-100 text-rose-700', note: 'Tanpa keterangan (Alpa)' }
+                    };
+                    const info = stMap[l.status] || { label: l.status, cls: 'bg-slate-100 text-slate-700', note: '-' };
+                    const dateFormatted = new Date(l.tanggal).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+                    return `
+                        <tr class="${l.status !== 'H' ? 'bg-rose-50/30' : 'hover:bg-slate-50'}">
+                            <td class="p-3 text-center text-slate-400">${idx + 1}</td>
+                            <td class="p-3 font-bold text-slate-900">${dateFormatted}</td>
+                            <td class="p-3 font-semibold text-slate-700">${l.mapel || '-'}</td>
+                            <td class="p-3 text-center"><span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${info.cls}">${info.label}</span></td>
+                            <td class="p-3 text-slate-600">${info.note}</td>
+                        </tr>
+                    `;
+                }).join('') : `<tr><td colspan="5" class="p-6 text-center text-slate-400 italic">Tidak ada riwayat presensi/ketidakhadiran yang sesuai filter.</td></tr>`;
+            }
+        }
+
+        // ==================== RENDER MENU 5: HASIL BELAJAR AKHIR ====================
+        function renderPublishedFinalGrades() {
             const tbody = document.getElementById('portal-final-grades-tbody');
             const badge = document.getElementById('published-grades-count');
+            const list = filterBySelectedMapel(currentPublishedGradesList);
             if (!tbody) return;
             if (badge) badge.innerText = `${list.length} Mapel Dipublikasikan`;
 
             if (!list.length) {
-                tbody.innerHTML = `<tr><td colspan="6" class="p-5 text-center text-slate-400 italic">Belum ada hasil belajar akhir yang dipublikasikan oleh guru mata pelajaran.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400 italic">Belum ada hasil belajar akhir yang dipublikasikan oleh guru mata pelajaran.</td></tr>`;
                 return;
             }
 
@@ -534,40 +1055,73 @@
             }).join('');
         }
 
-        function renderStudentCharts(done, pending, belum, hadir, sakit, izin, alpa) {
-            const ctxTask = document.getElementById('chartStudentTaskStatus');
-            if (ctxTask) {
-                if (studentTaskChartInstance) { studentTaskChartInstance.destroy(); studentTaskChartInstance = null; }
-                studentTaskChartInstance = new Chart(ctxTask, {
-                    type: 'doughnut',
-                    data: {
-                        labels: ['Terkumpul', 'Pending', 'Belum'],
-                        datasets: [{ data: [done, pending, belum], backgroundColor: ['#10b981', '#f59e0b', '#cbd5e1'], borderWidth: 0 }]
-                    },
-                    options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }
-                });
+        // ==================== RENDER MENU 6: PENGUMUMAN & DISKUSI ====================
+        function renderStudentAnnouncementsTab() {
+            const container = document.getElementById('stu-announcements-list');
+            if (!container) return;
+            const list = filterBySelectedMapel(currentAnnouncementsList);
+
+            if (!list.length) {
+                container.innerHTML = `<p class="text-xs text-slate-400 italic text-center py-8">Belum ada pengumuman atau diskusi kelas.</p>`;
+                return;
             }
 
-            const ctxAtt = document.getElementById('chartStudentAttendance');
-            if (ctxAtt) {
-                if (studentAttChartInstance) { studentAttChartInstance.destroy(); studentAttChartInstance = null; }
-                const totalAtt = hadir + sakit + izin + alpa;
-                const attData = totalAtt > 0 ? [hadir, sakit, izin, alpa] : [1];
-                const attLabels = totalAtt > 0 ? ['Hadir', 'Sakit', 'Izin', 'Alpa'] : ['Belum Ada Data'];
-                const attColors = totalAtt > 0 ? ['#10b981', '#f59e0b', '#3b82f6', '#f43f5e'] : ['#e2e8f0'];
+            container.innerHTML = list.map(an => {
+                const tch = teachersCache.find(t => Number(t.id) === Number(an.teacher_id));
+                const comments = currentCommentsList.filter(c => Number(c.announcement_id) === Number(an.id));
+                const dateStr = new Date(an.created_at).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-                studentAttChartInstance = new Chart(ctxAtt, {
-                    type: 'doughnut',
-                    data: {
-                        labels: attLabels,
-                        datasets: [{ data: attData, backgroundColor: attColors, borderWidth: 0 }]
-                    },
-                    options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }
-                });
-            }
+                return `
+                    <div class="p-4 sm:p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <span class="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-indigo-100 text-indigo-800">📘 ${an.mapel}</span>
+                            <span class="text-[11px] text-slate-400">${dateStr} • ${tch?.nama_lengkap || 'Guru'}</span>
+                        </div>
+                        <h4 class="font-extrabold text-base text-slate-900">${an.judul}</h4>
+                        <p class="text-xs sm:text-sm text-slate-700 whitespace-pre-line bg-white p-3.5 rounded-xl border border-slate-200">${an.isi}</p>
+
+                        <!-- KOMENTAR / DISKUSI -->
+                        <div class="pt-2 space-y-2">
+                            <span class="text-[11px] font-extrabold text-slate-500">💬 Diskusi & Pertanyaan (${comments.length})</span>
+                            <div class="space-y-1.5 max-h-48 overflow-y-auto">
+                                ${comments.map(c => `
+                                    <div class="p-2.5 rounded-xl text-xs ${c.author_role === 'guru' ? 'bg-blue-50 border border-blue-200' : 'bg-white border border-slate-200'}">
+                                        <div class="flex items-center justify-between">
+                                            <b class="${c.author_role === 'guru' ? 'text-blue-800' : 'text-slate-800'}">${c.author_name} ${c.author_role === 'guru' ? '(Guru)' : ''}</b>
+                                            <span class="text-[10px] text-slate-400">${new Date(c.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+                                        </div>
+                                        <p class="text-slate-700 mt-0.5">${c.komentar}</p>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <form onsubmit="postStudentComment(event, ${an.id})" class="flex gap-2 pt-1">
+                                <input type="text" id="stu-comment-inp-${an.id}" required placeholder="Tulis pertanyaan atau tanggapan..." class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs bg-white">
+                                <button type="submit" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shrink-0">Kirim</button>
+                            </form>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
 
-        // ==================== MODAL & UPLOAD MULTI-FILE KE GOOGLE DRIVE ====================
+        async function postStudentComment(e, announcementId) {
+            e.preventDefault();
+            const inp = document.getElementById(`stu-comment-inp-${announcementId}`);
+            const text = inp?.value.trim();
+            if (!text) return;
+
+            const { error } = await db.from('announcement_comments').insert([{
+                announcement_id: announcementId,
+                author_name: currentPortalStudent.nama,
+                author_role: 'siswa',
+                komentar: text
+            }]);
+            if (error) return showToast('Gagal mengirim komentar: ' + error.message, 'error');
+            inp.value = '';
+            await loadAllStudentLMSData();
+        }
+
+        // ==================== UPLOAD MULTI-FILE KE GOOGLE DRIVE GURU ====================
         function previewSelectedFiles() {
             const files = [...(document.getElementById('portal-file-input')?.files || [])];
             const box = document.getElementById('selected-files-preview');
@@ -626,9 +1180,7 @@
 
             const fileInput = document.getElementById('portal-file-input');
             const files = [...(fileInput?.files || [])];
-            if (!files.length) {
-                return showToast('Silakan pilih minimal 1 file tugas terlebih dahulu!', 'error');
-            }
+            if (!files.length) return showToast('Silakan pilih minimal 1 file tugas terlebih dahulu!', 'error');
 
             isUploadingNow = true;
             setUploadControlsDisabled(true);
@@ -677,17 +1229,14 @@
                     });
 
                     const fileViewUrl = driveResponse.webViewLink || (driveResponse.id ? `https://drive.google.com/file/d/${driveResponse.id}/view` : null);
-                    if (fileViewUrl) {
-                        uploadedResults.push({ name: formattedFileName, url: fileViewUrl });
-                    }
+                    if (fileViewUrl) uploadedResults.push({ name: formattedFileName, url: fileViewUrl });
                 }
 
-                progTxt.innerText = 'Mencatat semua bukti pengumpulan...';
+                progTxt.innerText = 'Mencatat bukti pengumpulan...';
                 progBar.style.width = '100%';
                 progPct.innerText = '100%';
 
                 await recordSubmissionToSupabase(uploadedResults, 'approved');
-
             } catch (err) {
                 console.error(err);
                 showToast('❌ Gagal mengunggah: ' + err.message, 'error');
@@ -701,14 +1250,9 @@
                 const xhr = new XMLHttpRequest();
                 xhr.open('PUT', uploadUrl, true);
                 xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-
                 xhr.upload.onprogress = (e) => {
-                    if (e.lengthComputable) {
-                        const pct = Math.round((e.loaded / e.total) * 100);
-                        onProgress(pct);
-                    }
+                    if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
                 };
-
                 xhr.onload = () => {
                     if (xhr.status >= 200 && xhr.status < 300) {
                         try { resolve(JSON.parse(xhr.responseText)); } catch { resolve({}); }
@@ -716,7 +1260,6 @@
                         reject(new Error(`Google Drive menolak file (HTTP ${xhr.status})`));
                     }
                 };
-
                 xhr.onerror = () => reject(new Error('Koneksi internet terputus saat mengunggah file.'));
                 xhr.send(file);
             });
@@ -730,29 +1273,19 @@
                 .eq('student_id', currentPortalStudent.id)
                 .maybeSingle();
 
-            const prevFiles = parseSubmittedFiles(existing?.link_tugas_siswa);
+            const prevFiles = parseFileJsonArray(existing?.link_tugas_siswa);
             const mergedFiles = [...prevFiles, ...newFilesArray];
             const serializedLinks = mergedFiles.length > 0 ? JSON.stringify(mergedFiles) : null;
 
             let error = null;
             if (existing) {
                 const res = await db.from('scores')
-                    .update({
-                        status_pengajuan: statusPengajuan,
-                        status_kumpul: isApproved,
-                        link_tugas_siswa: serializedLinks
-                    })
+                    .update({ status_pengajuan: statusPengajuan, status_kumpul: isApproved, link_tugas_siswa: serializedLinks })
                     .eq('id', existing.id);
                 error = res.error;
             } else {
                 const res = await db.from('scores')
-                    .insert([{
-                        assessment_id: selectedAssessmentObj.id,
-                        student_id: currentPortalStudent.id,
-                        status_pengajuan: statusPengajuan,
-                        status_kumpul: isApproved,
-                        link_tugas_siswa: serializedLinks
-                    }]);
+                    .insert([{ assessment_id: selectedAssessmentObj.id, student_id: currentPortalStudent.id, status_pengajuan: statusPengajuan, status_kumpul: isApproved, link_tugas_siswa: serializedLinks }]);
                 error = res.error;
             }
 
@@ -761,11 +1294,8 @@
             closePortalSubmitModal();
 
             if (error) return showToast('Gagal mencatat pengumpulan: ' + error.message, 'error');
-
-            showToast(isApproved
-                ? `✅ ${newFilesArray.length} file berhasil masuk ke Google Drive guru!`
-                : '✅ Pengajuan berhasil dikirim! Menunggu verifikasi guru.');
-            await loadPortalStudentData();
+            showToast(isApproved ? `✅ ${newFilesArray.length} file berhasil masuk ke Google Drive guru!` : '✅ Pengajuan berhasil dikirim!');
+            await loadAllStudentLMSData();
         }
 
         function setUploadControlsDisabled(disabled) {
