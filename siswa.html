@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
     <title>LMS Siswa — PantauBelajar</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=8.0">
+    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
+    <script src="[https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2](https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2)"></script>
+    <script src="[https://cdn.jsdelivr.net/npm/chart.js](https://cdn.jsdelivr.net/npm/chart.js)"></script>
+    <link rel="stylesheet" href="[https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css](https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css)">
+    <link rel="stylesheet" href="style.css?v=8.1">
 </head>
 <body class="min-h-screen flex flex-col bg-[#f8fafc] text-slate-800 antialiased">
 
@@ -433,7 +433,7 @@
     </div>
 
     <!-- SCRIPTS -->
-    <script src="config.js?v=8.0"></script>
+    <script src="config.js?v=8.1"></script>
     <script>
         let teachersCache = [];
         let currentPortalStudent = null;
@@ -572,7 +572,6 @@
             if (tab === 'pengumuman') renderStudentAnnouncementsTab();
         }
 
-        // Ganti Password Siswa
         function openStuPasswordModal() { document.getElementById('modal-stu-password').classList.remove('hidden'); }
         function closeStuPasswordModal() { document.getElementById('modal-stu-password').classList.add('hidden'); }
 
@@ -682,7 +681,6 @@
             return arr.filter(item => String(item.mapel || '') === selectedMapelFilter);
         }
 
-        // ==================== RENDER MENU 1: BERANDA ====================
         function renderStudentBerandaTab() {
             const assFiltered = filterBySelectedMapel(currentAssessmentsList);
             const matFiltered = filterBySelectedMapel(currentMaterialsList);
@@ -774,7 +772,6 @@
             }
         }
 
-        // ==================== RENDER MENU 2: MATERI PEMBELAJARAN ====================
         function renderStudentMaterialsTab() {
             const container = document.getElementById('stu-materials-list');
             if (!container) return;
@@ -815,7 +812,6 @@
             }).join('');
         }
 
-        // ==================== RENDER MENU 3: TUGAS & PENGUMPULAN (SKOR TAMPIL HANYA JIKA FINAL) ====================
         function renderStudentTasksTab() {
             const container = document.getElementById('portal-tasks-container');
             if (!container) return;
@@ -873,15 +869,9 @@
                     </button>`;
                 }
 
-                // Hanya tampilkan nilai ke siswa apabila status_nilai berstatus 'final'
-                const isGradeFinal = (sc.status_nilai || 'final') === 'final';
-                const hasNumericScore = sc.nilai !== null && sc.nilai !== undefined && sc.nilai !== '';
-                let nilaiBadge = '';
-                if (hasNumericScore && isGradeFinal) {
-                    nilaiBadge = `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-indigo-100 text-indigo-800">Skor Tugas: ${sc.nilai}</span>`;
-                } else if (hasNumericScore && !isGradeFinal) {
-                    nilaiBadge = `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">📝 Sedang Dikoreksi</span>`;
-                }
+                const nilaiBadge = (sc.nilai !== null && sc.nilai !== undefined && sc.nilai !== '')
+                    ? `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-indigo-100 text-indigo-800">Skor Tugas: ${sc.nilai}</span>`
+                    : '';
 
                 return `
                     <div class="p-4 sm:p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3">
@@ -933,7 +923,6 @@
             }).join('');
         }
 
-        // ==================== RENDER MENU 4: KEHADIRAN & RIWAYAT KETIDAKHADIRAN ====================
         function renderStudentAttendanceTab() {
             const logsFiltered = filterBySelectedMapel(currentAttLogsList);
             const recFiltered = filterBySelectedMapel(currentAttRecapList);
@@ -1019,7 +1008,6 @@
             }
         }
 
-        // ==================== RENDER MENU 5: HASIL BELAJAR AKHIR ====================
         function renderPublishedFinalGrades() {
             const tbody = document.getElementById('portal-final-grades-tbody');
             const badge = document.getElementById('published-grades-count');
@@ -1057,7 +1045,6 @@
             }).join('');
         }
 
-        // ==================== RENDER MENU 6: PENGUMUMAN & DISKUSI ====================
         function renderStudentAnnouncementsTab() {
             const container = document.getElementById('stu-announcements-list');
             if (!container) return;
@@ -1122,7 +1109,6 @@
             await loadAllStudentLMSData();
         }
 
-        // ==================== UPLOAD MULTI-FILE KE GOOGLE DRIVE GURU ====================
         function previewSelectedFiles() {
             const files = [...(document.getElementById('portal-file-input')?.files || [])];
             const box = document.getElementById('selected-files-preview');
@@ -1229,7 +1215,7 @@
                         progPct.innerText = `${overallPct}%`;
                     });
 
-                    const fileViewUrl = driveResponse.webViewLink || (driveResponse.id ? `https://drive.google.com/file/d/${driveResponse.id}/view` : null);
+                    const fileViewUrl = driveResponse.webViewLink || (driveResponse.id ? `[https://drive.google.com/file/d/$](https://drive.google.com/file/d/$){driveResponse.id}/view` : null);
                     if (fileViewUrl) uploadedResults.push({ name: formattedFileName, url: fileViewUrl });
                 }
 
