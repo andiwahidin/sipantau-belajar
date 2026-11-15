@@ -11,7 +11,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=8.0">
+    <link rel="stylesheet" href="style.css?v=8.1">
 </head>
 <body class="bg-[#f8fafc] text-slate-800 antialiased">
 
@@ -236,9 +236,9 @@
                             <div id="dash-stat-tasks-detail" class="text-[11px] text-slate-500 flex justify-between"></div>
                         </div>
                         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-1">
-                            <span class="text-xs font-bold text-slate-500">Rata-rata Nilai Akhir (Final)</span>
+                            <span class="text-xs font-bold text-slate-500">Rata-rata Nilai Akhir</span>
                             <div id="dash-stat-avg" class="text-2xl font-extrabold text-emerald-600">0.0</div>
-                            <span class="text-[11px] text-slate-400">Hanya menghitung nilai Final</span>
+                            <span class="text-[11px] text-slate-400">Hanya menghitung nilai terisi</span>
                         </div>
                         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-1">
                             <span class="text-xs font-bold text-slate-500">Butuh Perhatian</span>
@@ -263,9 +263,8 @@
                     </div>
 
                     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                        <div class="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                        <div class="p-4 border-b border-slate-100">
                             <h3 id="dash-table-title" class="font-extrabold text-sm text-slate-900">Daftar Pemantauan Siswa</h3>
-                            <span class="text-[11px] text-slate-400">Kalkulasi rata-rata hanya memproses nilai yang berstatus <b>Final</b>.</span>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="w-full text-xs text-left">
@@ -510,7 +509,7 @@
                     </div>
                 </div>
 
-                <!-- TAB TUGAS & UJIAN (DENGAN SIMPAN DRAFT & FINAL) -->
+                <!-- TAB TUGAS & UJIAN -->
                 <div id="gcontent-nilai" class="hidden space-y-5">
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
@@ -526,7 +525,7 @@
                             <div id="tgs-stat-ungraded" class="text-2xl font-extrabold text-amber-500 mt-1">0</div>
                         </div>
                         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                            <span class="text-xs text-slate-500 font-bold">Rata-rata Final Tugas Ini</span>
+                            <span class="text-xs text-slate-500 font-bold">Rata-rata Tugas Ini</span>
                             <div id="tgs-stat-avg" class="text-2xl font-extrabold text-blue-600 mt-1">0.0</div>
                         </div>
                     </div>
@@ -580,27 +579,9 @@
                                 <select id="active-assessment" onchange="loadAssessmentScores()" class="border border-slate-300 rounded-xl p-2 text-xs font-extrabold text-blue-900 bg-blue-50 min-w-[220px]"></select>
                                 <button type="button" onclick="deleteCurrentAssessment()" class="px-2.5 py-2 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 text-xs font-bold">🗑️ Hapus</button>
                             </div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <button type="button" onclick="saveAssessmentScores('draft')" class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-extrabold shadow-sm">
-                                    📝 Simpan Draft
-                                </button>
-                                <button type="button" onclick="saveAssessmentScores('final')" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-sm">
-                                    ✅ Simpan Final
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- STATUS BAR DRAFT VS FINAL -->
-                        <div id="assessment-grade-status-bar" class="hidden bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
-                            <div id="grade-status-summary" class="font-bold text-slate-700"></div>
-                            <div class="flex flex-wrap items-center gap-1.5">
-                                <button type="button" onclick="bulkConvertAssessmentStatus('final')" class="px-2.5 py-1 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-extrabold text-[11px]">
-                                    ✅ Jadikan Semua Final
-                                </button>
-                                <button type="button" onclick="bulkConvertAssessmentStatus('draft')" class="px-2.5 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 font-extrabold text-[11px]">
-                                    ↩️ Ubah Semua ke Draft
-                                </button>
-                            </div>
+                            <button type="button" onclick="saveAssessmentScores()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-sm">
+                                💾 Simpan Semua Nilai
+                            </button>
                         </div>
 
                         <!-- EDITOR METADATA, DESKRIPSI & LAMPIRAN FILE TUGAS -->
@@ -672,7 +653,7 @@
                     <div class="flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <h2 class="text-lg font-extrabold text-slate-900">Rekapitulasi Nilai Akhir & Publikasi LMS Siswa</h2>
-                            <p class="text-xs text-slate-500">Rekap otomatis menghitung hanya penilaian yang berstatus <b>Final</b>. Nilai berstatus <b>Draft</b> tidak diikutsertakan.</p>
+                            <p class="text-xs text-slate-500">Perhitungan rata-rata hanya memproses penilaian yang sudah diisi nilainya (nilai kosong diabaikan).</p>
                         </div>
                         <div class="flex flex-wrap gap-2">
                             <button type="button" onclick="publishFinalGradesToLMS(true)" class="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-sm">🌐 Simpan & Publikasikan ke Siswa</button>
@@ -689,7 +670,7 @@
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                            <h3 class="font-extrabold text-xs text-slate-800 mb-3">Rata-rata Capaian Komponen (Nilai Final)</h3>
+                            <h3 class="font-extrabold text-xs text-slate-800 mb-3">Rata-rata Capaian Komponen</h3>
                             <div class="h-48"><canvas id="chartRekapComponents"></canvas></div>
                         </div>
                         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
@@ -728,7 +709,7 @@
                     <div class="flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <h2 class="text-lg font-extrabold text-slate-900">Bimbingan Akademik & Guru Wali (PA 360°)</h2>
-                            <p class="text-xs text-slate-500">Pantau perkembangan akademik (berdasarkan nilai Final), presensi, dan tunggakan tugas siswa binaan lintas kelas.</p>
+                            <p class="text-xs text-slate-500">Pantau perkembangan akademik, presensi, dan tunggakan tugas siswa binaan lintas kelas.</p>
                         </div>
                         <div class="flex flex-wrap gap-2">
                             <button type="button" onclick="openManageBinaanModal()" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-sm">👥 Pilih / Kelola Siswa Binaan</button>
@@ -1123,7 +1104,7 @@
         </div>
     </div>
 
-    <script src="config.js?v=8.0"></script>
-    <script src="app-guru.js?v=8.0"></script>
+    <script src="config.js?v=8.1"></script>
+    <script src="app-guru.js?v=8.1"></script>
 </body>
 </html>
