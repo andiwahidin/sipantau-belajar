@@ -1,141 +1,147 @@
 /* ============================================================================
-   FILE: style.css (v4.0 - Tema PantauBelajar + Kompatibilitas Penuh v3.7)
+   PANTAU BELAJAR — STYLE.CSS (v9.0 — ADAPTIVE LIGHT/DARK & MODAL 360°)
    ============================================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+:root {
+    --bg-canvas: #f8fafc;
+    --bg-surface: #ffffff;
+    --border-subtle: #e2e8f0;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --scrollbar-track: #f1f5f9;
+    --scrollbar-thumb: #cbd5e1;
+}
 
-*, *::before, *::after {
+html.dark {
+    --bg-canvas: #0b1120;
+    --bg-surface: #0f172a;
+    --border-subtle: #1e293b;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --scrollbar-track: #0f172a;
+    --scrollbar-thumb: #334155;
+}
+
+* {
     box-sizing: border-box;
 }
 
-html, body {
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: #f1f5f9;
-    color: #0f172a;
-    max-width: 100vw;
-    overflow-x: hidden;
-    -webkit-tap-highlight-color: transparent;
+body {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    margin: 0;
+    padding: 0;
 }
 
-select, input, button, textarea {
-    max-width: 100%;
+/* Utilitas dasar & responsivitas sidebar */
+.hidden {
+    display: none;
 }
 
-select {
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    overflow: hidden;
+@media (min-width: 1024px) {
+    #main-sidebar,
+    #stu-sidebar {
+        display: flex !important;
+    }
 }
 
-/* Efek Glassmorphism */
-.glass-nav {
-    background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-}
-
-/* Navigasi Sidebar Kiri PantauBelajar */
-.pb-sidebar-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    width: 100%;
-    padding: 0.65rem 0.9rem;
-    border-radius: 0.65rem;
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: #475569;
-    transition: all 0.15s ease;
-    text-align: left;
-}
-
-.pb-sidebar-btn:hover {
-    background-color: #f1f5f9;
-    color: #0f172a;
-}
-
-.pb-sidebar-btn.active {
-    background-color: #dbeafe;
-    color: #1d4ed8;
-    font-weight: 700;
-}
-
-.pb-sidebar-btn i {
-    width: 1.25rem;
-    text-align: center;
-    font-size: 0.95rem;
-}
-
-/* Sub-menu Pengaturan */
-.pb-setting-tab {
-    display: block;
-    width: 100%;
-    text-align: left;
-    padding: 0.75rem 1.1rem;
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: #475569;
-    border-left: 3px solid transparent;
-    transition: all 0.15s ease;
-}
-
-.pb-setting-tab:hover {
-    background-color: #f8fafc;
-    color: #0f172a;
-}
-
-.pb-setting-tab.active {
-    background-color: #dbeafe;
-    color: #1d4ed8;
-    font-weight: 700;
-    border-left-color: #1d4ed8;
-}
-
-/* Animasi Halus untuk Modal */
-.modal-backdrop {
-    background: rgba(15, 23, 42, 0.6);
-    backdrop-filter: blur(4px);
-    animation: fadeIn 0.2s ease-out;
-}
-
-.modal-card {
-    animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
-@keyframes slideUp {
-    from { opacity: 0; transform: translateY(16px) scale(0.98); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-/* Kontainer Tabel Responsif */
-.table-responsive-wrapper {
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-}
-
-.col-nisn { min-width: 105px; }
-.col-nama { min-width: 175px; }
-.col-aksi { min-width: 135px; }
-
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-}
-
+/* Scrollbar halus untuk tabel, modal 360°, & panel analisis AI */
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
 }
-::-webkit-scrollbar-track { background: #f1f5f9; }
-::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
+
+::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
     border-radius: 9999px;
 }
-::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+}
+
+/* Efek fokus input & kontrol form */
+input:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+button {
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+/* Formatting tipografi hasil analisis AI Gemini di Modal 360° */
+#w360-ai-output strong,
+#w360-ai-output b {
+    color: #1e3a8a;
+    font-weight: 800;
+}
+
+html.dark #w360-ai-output strong,
+html.dark #w360-ai-output b {
+    color: #93c5fd;
+}
+
+#w360-ai-output p {
+    margin-bottom: 0.5rem;
+}
+
+#w360-ai-output p:last-child {
+    margin-bottom: 0;
+}
+
+#w360-ai-output ul,
+#w360-ai-output ol {
+    padding-left: 1.15rem;
+    margin-bottom: 0.5rem;
+}
+
+#w360-ai-output li {
+    margin-bottom: 0.25rem;
+}
+
+/* Animasi masuk modal & toast */
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px) scale(0.99);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+#modal-wali-360 > div,
+#modal-add-ampuan > div,
+#modal-group-manager > div,
+#modal-wali-manage > div {
+    animation: modalFadeIn 0.18s ease-out;
+}
+
+/* Pengaturan cetak browser */
+@media print {
+    #main-sidebar,
+    header,
+    button {
+        display: none !important;
+    }
+    .lg\:ml-64 {
+        margin-left: 0 !important;
+    }
+}
