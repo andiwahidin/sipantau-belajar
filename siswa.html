@@ -8,7 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=8.4">
+    <link rel="stylesheet" href="style.css?v=8.5">
     <style>
         /* Fallback CSS Inti & Responsivitas Sidebar */
         .hidden { display: none; }
@@ -233,7 +233,7 @@
                         <div class="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
                             <div>
                                 <h3 class="font-extrabold text-base text-slate-900">📝 Daftar Tugas & Penilaian</h3>
-                                <p class="text-xs text-slate-500">Baca instruksi tugas, unduh file soal dari guru (jika ada), dan unggah file jawaban Anda.</p>
+                                <p class="text-xs text-slate-500">Baca instruksi tugas, unduh file soal dari guru (jika ada), lalu kirim file atau tautan (link) jawaban Anda.</p>
                             </div>
                             <select id="stu-filter-task-status" onchange="renderStudentTasksTab()" class="border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold">
                                 <option value="all">Semua Status</option>
@@ -393,33 +393,42 @@
         </div>
     </div>
 
-    <!-- MODAL UPLOAD MULTI-FILE LANGSUNG KE GOOGLE DRIVE GURU -->
+    <!-- MODAL UPLOAD FILE & LINK TUGAS -->
     <div id="modal-portal-submit" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 border border-slate-100 space-y-4">
             <div class="flex items-center justify-between border-b pb-3">
                 <div class="flex items-center gap-3">
                     <div class="w-9 h-9 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
-                        <i class="fa-brands fa-google-drive"></i>
+                        <i class="fa-solid fa-paperclip"></i>
                     </div>
                     <div>
-                        <h3 class="font-extrabold text-sm text-slate-900">Kirim File Tugas</h3>
-                        <p id="modal-task-subtitle" class="text-[11px] text-slate-500">Otomatis tersimpan ke folder tugas guru</p>
+                        <h3 class="font-extrabold text-sm text-slate-900">Kirim File atau Link Tugas</h3>
+                        <p id="modal-task-subtitle" class="text-[11px] text-slate-500">Pilih file dari perangkat atau tempel tautan tugas Anda</p>
                     </div>
                 </div>
                 <button type="button" id="btn-close-upload-modal" onclick="closePortalSubmitModal()" class="text-slate-400 hover:text-slate-600">✕</button>
             </div>
 
-            <div class="space-y-3 text-xs">
+            <div class="space-y-3.5 text-xs">
                 <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
                     <span class="text-[10px] font-bold uppercase text-slate-400 block">Judul Penilaian</span>
                     <b id="modal-task-title" class="text-sm text-slate-900"></b>
                 </div>
 
-                <div id="upload-file-box">
-                    <label class="block font-bold text-slate-700 mb-1.5">Pilih File Tugas (Bisa Lebih dari 1 File)</label>
-                    <input type="file" id="portal-file-input" multiple onchange="previewSelectedFiles()" class="w-full border border-slate-300 rounded-xl p-2.5 text-xs bg-white file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-extrabold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-                    <div id="selected-files-preview" class="mt-2 space-y-1 text-[11px] text-slate-600 max-h-32 overflow-y-auto"></div>
-                    <p class="text-[11px] text-slate-400 mt-1.5">Mendukung PDF, Word, Excel, PPT, Gambar, ZIP, maupun Video.</p>
+                <!-- OPSI 1: UPLOAD FILE KE GOOGLE DRIVE GURU -->
+                <div id="upload-file-box" class="p-3 rounded-xl border border-slate-200 bg-white space-y-1.5">
+                    <label class="block font-extrabold text-slate-800">📁 Opsi 1: Unggah File dari Perangkat (Bisa &gt; 1 File)</label>
+                    <input type="file" id="portal-file-input" multiple onchange="previewSelectedFiles()" class="w-full border border-slate-300 rounded-xl p-2 text-xs bg-slate-50 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-extrabold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    <div id="selected-files-preview" class="mt-1.5 space-y-1 text-[11px] text-slate-600 max-h-28 overflow-y-auto"></div>
+                    <p class="text-[11px] text-slate-400">Mendukung PDF, Word, Excel, PPT, Gambar, ZIP, maupun Video.</p>
+                </div>
+
+                <!-- OPSI 2: KIRIM TAUTAN / LINK EKSTERNAL -->
+                <div id="upload-link-box" class="p-3 rounded-xl border border-indigo-200 bg-indigo-50/40 space-y-2">
+                    <label class="block font-extrabold text-indigo-950">🔗 Opsi 2: Kirim Tautan / Link Tugas</label>
+                    <input type="url" id="portal-link-input" placeholder="https://docs.google.com/... atau link Canva / YouTube / GitHub" class="w-full border border-slate-300 rounded-xl p-2.5 text-xs bg-white outline-none focus:ring-2 focus:ring-indigo-500">
+                    <input type="text" id="portal-link-label" placeholder="Keterangan link (opsional, misal: Slide Presentasi Kelompok)" class="w-full border border-slate-300 rounded-xl p-2 text-xs bg-white outline-none focus:ring-2 focus:ring-indigo-500">
+                    <p class="text-[11px] text-slate-500">Anda dapat mengisi <b>File saja</b>, <b>Link saja</b>, atau <b>keduanya sekaligus</b>.</p>
                 </div>
 
                 <div id="upload-progress-box" class="hidden space-y-2 pt-1">
@@ -436,14 +445,14 @@
             <div class="flex justify-end gap-2 pt-2 border-t">
                 <button type="button" id="btn-cancel-upload" onclick="closePortalSubmitModal()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-600">Batal</button>
                 <button type="button" id="btn-confirm-upload" onclick="executeDirectDriveUpload()" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center gap-1.5">
-                    <i class="fa-solid fa-cloud-arrow-up"></i> Unggah & Kumpulkan
+                    <i class="fa-solid fa-paper-plane"></i> Kirim Tugas
                 </button>
             </div>
         </div>
     </div>
 
     <!-- SCRIPTS -->
-    <script src="config.js?v=8.4"></script>
+    <script src="config.js?v=8.5"></script>
     <script>
         let teachersCache = [];
         let currentPortalStudent = null;
@@ -557,7 +566,7 @@
             const titles = {
                 beranda: 'Beranda Akademik Siswa',
                 materi: 'Materi & Modul Pembelajaran',
-                tugas: 'Tugas & Pengumpulan File',
+                tugas: 'Tugas & Pengumpulan File / Link',
                 kehadiran: 'Kehadiran & Riwayat Ketidakhadiran',
                 nilai: 'Hasil Belajar Akhir',
                 pengumuman: 'Pengumuman & Diskusi Kelas'
@@ -844,7 +853,6 @@
 
             container.innerHTML = list.map(a => {
                 const teacher = teachersCache.find(t => Number(t.id) === Number(a.teacher_id));
-                const hasDriveConnected = Boolean(teacher?.gdrive_email);
                 const sc = currentScoresList.find(s => Number(s.assessment_id) === Number(a.id)) || { status_kumpul: false, status_pengajuan: 'none' };
 
                 const isApproved = sc.status_kumpul === true || sc.status_pengajuan === 'approved';
@@ -852,7 +860,7 @@
                 const isRejected = sc.status_pengajuan === 'rejected';
 
                 const teacherFiles = parseFileJsonArray(a.lampiran_guru);
-                const studentFiles = parseFileJsonArray(sc.link_tugas_siswa);
+                const studentItems = parseFileJsonArray(sc.link_tugas_siswa);
 
                 const deadlineHtml = a.deadline
                     ? `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">⏰ Tenggat: ${new Date(a.deadline).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>`
@@ -863,19 +871,17 @@
 
                 if (isApproved) {
                     badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800">✅ Terkumpul</span>`;
-                    actionBtn = hasDriveConnected
-                        ? `<button type="button" onclick="openPortalSubmitModal(${a.id})" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition">➕ Tambah File</button>`
-                        : `<span class="text-xs font-extrabold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">Selesai</span>`;
+                    actionBtn = `<button type="button" onclick="openPortalSubmitModal(${a.id})" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition">➕ Tambah File / Link</button>`;
                 } else if (isPending) {
                     badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-800">⏳ Menunggu Verifikasi</span>`;
-                    actionBtn = `<button type="button" onclick="openPortalSubmitModal(${a.id})" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200">Unggah Ulang</button>`;
+                    actionBtn = `<button type="button" onclick="openPortalSubmitModal(${a.id})" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200">Unggah Ulang / Link</button>`;
                 } else if (isRejected) {
                     badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-rose-100 text-rose-800">❌ Perlu Revisi</span>`;
-                    actionBtn = `<button type="button" onclick="openPortalSubmitModal(${a.id})" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-sm">📤 Unggah Revisi</button>`;
+                    actionBtn = `<button type="button" onclick="openPortalSubmitModal(${a.id})" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-sm">📤 Kirim Revisi</button>`;
                 } else {
                     badgeHtml = `<span class="px-3 py-1 rounded-full text-xs font-extrabold bg-slate-100 text-slate-600">Belum Mengumpulkan</span>`;
                     actionBtn = `<button type="button" onclick="openPortalSubmitModal(${a.id})" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-1.5">
-                        <i class="fa-solid fa-cloud-arrow-up"></i> ${hasDriveConnected ? 'Kirim File Tugas' : 'Ajukan Selesai'}
+                        <i class="fa-solid fa-paper-plane"></i> Kirim File / Link
                     </button>`;
                 }
 
@@ -922,11 +928,16 @@
                                 </a>
                             ` : ''}
 
-                            ${studentFiles.map((sf, i) => `
-                                <a href="${sf.url}" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold">
-                                    📎 File Terkirim ${i + 1} ↗
-                                </a>
-                            `).join('')}
+                            ${studentItems.map((sf, i) => {
+                                const isLink = sf.type === 'link' || String(sf.name || '').startsWith('Link:');
+                                return isLink
+                                    ? `<a href="${sf.url}" target="_blank" title="${sf.url}" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-extrabold">
+                                        🔗 ${sf.name} ↗
+                                       </a>`
+                                    : `<a href="${sf.url}" target="_blank" title="${sf.name}" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold">
+                                        📎 File Terkirim ${i + 1} ↗
+                                       </a>`;
+                            }).join('')}
                         </div>
                     </div>
                 `;
@@ -1138,6 +1149,8 @@
             document.getElementById('modal-task-title').innerText = `${selectedAssessmentObj.mapel} — ${selectedAssessmentObj.judul}`;
             document.getElementById('portal-file-input').value = '';
             document.getElementById('selected-files-preview').innerHTML = '';
+            document.getElementById('portal-link-input').value = '';
+            document.getElementById('portal-link-label').value = '';
             document.getElementById('upload-progress-box').classList.add('hidden');
             document.getElementById('upload-progress-bar').style.width = '0%';
             document.getElementById('upload-percent-text').innerText = '0%';
@@ -1147,12 +1160,12 @@
 
             if (hasDrive) {
                 fileBox.classList.remove('hidden');
-                document.getElementById('modal-task-subtitle').innerText = 'Semua file otomatis tersimpan rapi ke folder tugas guru';
-                confirmBtn.innerHTML = `<i class="fa-solid fa-cloud-arrow-up"></i> Unggah & Kumpulkan`;
+                document.getElementById('modal-task-subtitle').innerText = 'Unggah file ke folder guru dan/atau tempel tautan tugas';
+                confirmBtn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> Kirim Tugas`;
             } else {
                 fileBox.classList.add('hidden');
-                document.getElementById('modal-task-subtitle').innerText = 'Guru belum menautkan Google Drive — Konfirmasi manual';
-                confirmBtn.innerHTML = `✅ Konfirmasi Selesai`;
+                document.getElementById('modal-task-subtitle').innerText = 'Tempel tautan tugas Anda atau konfirmasi selesai';
+                confirmBtn.innerHTML = `✅ Kirim / Konfirmasi Selesai`;
             }
 
             document.getElementById('modal-portal-submit').classList.remove('hidden');
@@ -1164,20 +1177,62 @@
             document.getElementById('modal-portal-submit').classList.add('hidden');
         }
 
+        function normalizeSubmittedUrl(rawUrl) {
+            const trimmed = rawUrl.trim();
+            if (!trimmed) return '';
+            const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+            try {
+                const parsed = new URL(withProto);
+                if (!parsed.hostname.includes('.')) return null;
+                return parsed.href;
+            } catch {
+                return null;
+            }
+        }
+
         async function executeDirectDriveUpload() {
             if (!currentPortalStudent || !selectedAssessmentObj || isUploadingNow) return;
 
             const teacher = teachersCache.find(t => Number(t.id) === Number(selectedAssessmentObj.teacher_id));
             const hasDrive = Boolean(teacher?.gdrive_email);
 
-            if (!hasDrive) {
+            const fileInput = document.getElementById('portal-file-input');
+            const files = hasDrive ? [...(fileInput?.files || [])] : [];
+            const rawLink = document.getElementById('portal-link-input')?.value.trim() || '';
+            const linkLabel = document.getElementById('portal-link-label')?.value.trim() || '';
+
+            let normalizedLink = '';
+            if (rawLink) {
+                normalizedLink = normalizeSubmittedUrl(rawLink);
+                if (!normalizedLink) {
+                    return showToast('Format tautan (URL) tidak valid! Contoh: https://canva.com/...', 'error');
+                }
+            }
+
+            // Jika guru terhubung Drive, siswa wajib mengisi minimal 1 file ATAU 1 link
+            if (hasDrive && files.length === 0 && !normalizedLink) {
+                return showToast('Silakan pilih minimal 1 file atau tempel tautan (link) tugas!', 'error');
+            }
+
+            // Jika guru belum terhubung Drive dan siswa tidak mengisi link, kirim konfirmasi manual (pending)
+            if (!hasDrive && !normalizedLink) {
                 await recordSubmissionToSupabase([], 'pending');
                 return;
             }
 
-            const fileInput = document.getElementById('portal-file-input');
-            const files = [...(fileInput?.files || [])];
-            if (!files.length) return showToast('Silakan pilih minimal 1 file tugas terlebih dahulu!', 'error');
+            const linkItemArray = normalizedLink
+                ? [{
+                    name: linkLabel ? `Link: ${linkLabel}` : `Link: ${normalizedLink}`,
+                    url: normalizedLink,
+                    type: 'link'
+                }]
+                : [];
+
+            // Jika hanya mengirim link tanpa file, langsung simpan ke Supabase tanpa perlu upload Drive
+            if (files.length === 0 && linkItemArray.length > 0) {
+                await recordSubmissionToSupabase(linkItemArray, 'approved');
+                return;
+            }
 
             isUploadingNow = true;
             setUploadControlsDisabled(true);
@@ -1226,14 +1281,14 @@
                     });
 
                     const fileViewUrl = driveResponse.webViewLink || (driveResponse.id ? `https://drive.google.com/file/d/${driveResponse.id}/view` : null);
-                    if (fileViewUrl) uploadedResults.push({ name: formattedFileName, url: fileViewUrl });
+                    if (fileViewUrl) uploadedResults.push({ name: formattedFileName, url: fileViewUrl, type: 'file' });
                 }
 
                 progTxt.innerText = 'Mencatat bukti pengumpulan...';
                 progBar.style.width = '100%';
                 progPct.innerText = '100%';
 
-                await recordSubmissionToSupabase(uploadedResults, 'approved');
+                await recordSubmissionToSupabase([...uploadedResults, ...linkItemArray], 'approved');
             } catch (err) {
                 console.error(err);
                 showToast('❌ Gagal mengunggah: ' + err.message, 'error');
@@ -1262,7 +1317,7 @@
             });
         }
 
-        async function recordSubmissionToSupabase(newFilesArray, statusPengajuan) {
+        async function recordSubmissionToSupabase(newItemsArray, statusPengajuan) {
             const isApproved = statusPengajuan === 'approved';
             const { data: existing } = await db.from('scores')
                 .select('*')
@@ -1270,9 +1325,9 @@
                 .eq('student_id', currentPortalStudent.id)
                 .maybeSingle();
 
-            const prevFiles = parseFileJsonArray(existing?.link_tugas_siswa);
-            const mergedFiles = [...prevFiles, ...newFilesArray];
-            const serializedLinks = mergedFiles.length > 0 ? JSON.stringify(mergedFiles) : null;
+            const prevItems = parseFileJsonArray(existing?.link_tugas_siswa);
+            const mergedItems = [...prevItems, ...newItemsArray];
+            const serializedLinks = mergedItems.length > 0 ? JSON.stringify(mergedItems) : null;
 
             let error = null;
             if (existing) {
@@ -1302,7 +1357,7 @@
             closePortalSubmitModal();
 
             if (error) return showToast('Gagal mencatat pengumpulan: ' + error.message, 'error');
-            showToast(isApproved ? `✅ ${newFilesArray.length} file berhasil masuk ke Google Drive guru!` : '✅ Pengajuan berhasil dikirim!');
+            showToast(isApproved ? `✅ ${newItemsArray.length} lampiran tugas berhasil dikirim!` : '✅ Pengajuan berhasil dikirim!');
             await loadAllStudentLMSData();
         }
 
@@ -1310,6 +1365,8 @@
             document.getElementById('btn-confirm-upload').disabled = disabled;
             document.getElementById('btn-cancel-upload').disabled = disabled;
             document.getElementById('portal-file-input').disabled = disabled;
+            document.getElementById('portal-link-input').disabled = disabled;
+            document.getElementById('portal-link-label').disabled = disabled;
         }
 
         function showToast(msg, type = 'success') {
