@@ -1,5 +1,5 @@
 // ============================================================================
-// PANTAU BELAJAR — APP-GURU.JS (v8.5 — DUKUNG LINK TUGAS SISWA & NILAI TERISI)
+// PANTAU BELAJAR — APP-GURU.JS (v9.0 — PERIODE OTOMATIS, 360° CHARTS & AI GEMINI)
 // ============================================================================
 const GOOGLE_OAUTH_CLIENT_ID = '565864753824-3ahjeunj19r6am2fgg2n1fv721kqfp77.apps.googleusercontent.com';
 
@@ -10,6 +10,12 @@ let ampuanCache = [];
 let activeClassId = null;
 let activeAmpuanId = null;
 let isSharedClassLocked = false;
+
+// Manajemen Periode Akademik Otomatis
+let periodsCache = [];
+let currentDatePeriodName = '';
+let activePeriodName = '';
+
 let studentsCache = [];
 let allStudentsGlobal = [];
 let assessmentsCache = [];
@@ -29,7 +35,7 @@ let activeWaliStudentId = null;
 let globalSearchQuery = '';
 let chartInstances = {};
 
-// Cache Global untuk Analisis PA 360° Guru Wali
+// Cache Global & State Modal 360° Guru Wali
 let waliMetricsCache = {};
 let waliGlobalSettings = [];
 let waliGlobalUsers = [];
@@ -37,9 +43,21 @@ let waliGlobalAssessments = [];
 let waliGlobalScores = [];
 let waliGlobalAttLogs = [];
 let waliGlobalAttRecap = [];
+let waliActiveHistoricalGrades = [];
+let waliCurrentAIAnalysisText = '';
+let waliCurrentTimelineData = null;
+let waliCurrentSWData = null;
 
-// ==================== 1. INISIALISASI & AUTENTIKASI ====================
+// ==================== 1. INISIALISASI, TEMA & AUTENTIKASI ====================
 window.addEventListener('DOMContentLoaded', async () => {
+    // Dengarkan perubahan tema perangkat secara otomatis jika user belum memilih manual
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (!localStorage.getItem('sipantau_theme')) {
+            document.documentElement.classList.toggle('dark', e.matches);
+            refreshVisibleChartsTheme();
+        }
+    });
+
     const saved = localStorage.getItem('sipantau_user');
     if (saved) {
         try {
@@ -57,11 +75,38 @@ window.addEventListener('DOMContentLoaded', async () => {
     } else {
         showSection('view-login');
     }
+
     setTimeout(() => {
         updateGDriveConnectionUI();
+        updateGeminiKeyUI();
         handleGoogleOAuthCallback();
     }, 300);
 });
+
+function toggleAppTheme() {
+    const isDark = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('sipantau_theme', isDark ? 'dark' : 'light');
+    refreshVisibleChartsTheme();
+}
+
+function getChartThemeColors() {
+    const isDark = document.documentElement.classList.contains('dark');
+    return {
+        isDark,
+        text: isDark ? '#cbd5e1' : '#475569',
+        heading: isDark ? '#f8fafc' : '#0f172a',
+        grid: isDark ? 'rgba(148, 163, 184, 0.12)' : 'rgba(148, 163, 184, 0.22)',
+        tooltipBg: isDark ? '#1e293b' : '#0f172a'
+    };
+}
+
+function refreshVisibleChartsTheme() {
+    if (!document.getElementById('gcontent-dashboard')?.classList.contains('hidden')) renderDashboard();
+    if (!document.getElementById('gcontent-rekap')?.classList.contains('hidden')) renderRekapTab();
+    if (!document.getElementById('modal-wali-360')?.classList.contains('hidden') && activeWaliStudentId) {
+        renderWali360Visuals(activeWaliStudentId);
+    }
+}
 
 function showSection(id) {
     ['view-login', 'view-admin', 'view-guru'].forEach(sec => {
@@ -118,6 +163,7 @@ function setupTopbarUser() {
     document.getElementById('user-display-name').innerText = fullName;
     document.getElementById('user-role-subtitle').innerText = currentUser.role === 'admin' ? 'Administrator' : 'Guru & Pembimbing';
     updateGDriveConnectionUI();
+    updateGeminiKeyUI();
 }
 
 function logout() {
@@ -148,17 +194,89 @@ async function handleChangePassword(e) {
     showToast('✅ Password berhasil diperbarui!');
 }
 
+// ==================== 1B. ENGINE PERIODE AKADEMIK OTOMATIS ====================
+function detectPeriodFromDate(dateObj = new Date()) {
+    const year = dateObj.getFullYear();
+    const month = dateObj.getMonth() + 1; // 1 - 12
+    const semester = month <= 6 ? 'Genap' : 'Ganjil';
+    return {
+        nama_periode: `Semester ${semester} ${year}`,
+        semester,
+        tahun: year,
+        tanggal_mulai: month <= 6 ? `${year}-01-01` : `${year}-07-01`,
+        tanggal_selesai: month <= 6 ? `${year}-06-30` : `${year}-12-31`
+    };
+}
+
+async function initAcademicPeriods() {
+    const todayInfo = detectPeriodFromDate(new Date());
+    currentDatePeriodName = todayInfo.nama_periode;
+
+    // Pastikan periode hari ini otomatis terdaftar di database
+    await db.from('academic_periods').upsert([todayInfo], { onConflict: 'nama_periode' });
+
+    const { data } = await db.from('academic_periods')
+        .select('*')
+        .order('tahun', { ascending: false })
+        .order('semester', { ascending: true });
+
+    periodsCache = data || [todayInfo];
+    if (!activePeriodName) activePeriodName = currentDatePeriodName;
+
+    const sel = document.getElementById('guru-active-period');
+    if (sel) {
+        sel.innerHTML = periodsCache.map(p => {
+            const isNow = p.nama_periode === currentDatePeriodName;
+            return `<option value="${p.nama_periode}">${p.nama_periode}${isNow ? ' (Aktif)' : ' (Arsip)'}</option>`;
+        }).join('');
+        sel.value = activePeriodName;
+    }
+
+    updateArchivePeriodBanner();
+}
+
+function updateArchivePeriodBanner() {
+    const banner = document.getElementById('archive-period-banner');
+    const lbl = document.getElementById('archive-period-label');
+    if (!banner) return;
+    const isArchive = activePeriodName && activePeriodName !== currentDatePeriodName;
+    banner.classList.toggle('hidden', !isArchive);
+    if (lbl) lbl.innerText = activePeriodName;
+}
+
+async function onGuruPeriodChange() {
+    const sel = document.getElementById('guru-active-period');
+    activePeriodName = sel?.value || currentDatePeriodName;
+    updateArchivePeriodBanner();
+    await loadWorkspaceData();
+    if (!document.getElementById('gcontent-wali')?.classList.contains('hidden')) {
+        await loadGuruWaliTab();
+    }
+}
+
+async function resetToCurrentDatePeriod() {
+    activePeriodName = currentDatePeriodName;
+    const sel = document.getElementById('guru-active-period');
+    if (sel) sel.value = activePeriodName;
+    updateArchivePeriodBanner();
+    await loadWorkspaceData();
+    if (!document.getElementById('gcontent-wali')?.classList.contains('hidden')) {
+        await loadGuruWaliTab();
+    }
+}
+
 // ==================== 2. PANEL ADMINISTRATOR ====================
 async function switchAdminMode(mode) {
     adminMode = mode;
     if (mode === 'teachers') {
         showSection('view-admin');
         document.getElementById('adm-tab-teachers').className = 'px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-blue-600 text-white';
-        document.getElementById('adm-tab-students').className = 'px-2.5 py-1 rounded-lg text-[11px] font-extrabold text-slate-600';
+        document.getElementById('adm-tab-students').className = 'px-2.5 py-1 rounded-lg text-[11px] font-extrabold text-slate-600 dark:text-slate-300';
         await loadAdminUsers();
     } else {
         showSection('view-guru');
         setupTopbarUser();
+        await initAcademicPeriods();
         document.getElementById('admin-student-mode-banner').classList.remove('hidden');
         isSharedClassLocked = false;
         updateStudentLockUI();
@@ -180,12 +298,16 @@ async function loadAdminUsers() {
     if (!tbody) return;
     tbody.innerHTML = (data || []).map(u => `
         <tr>
-            <td class="p-3 font-bold text-slate-900">${u.nama_lengkap || '-'}</td>
+            <td class="p-3 font-bold text-slate-900 dark:text-white">${u.nama_lengkap || '-'}</td>
             <td class="p-3 font-mono text-xs">${u.username}</td>
-            <td class="p-3 text-xs">${u.gdrive_email ? `<span class="text-emerald-600 font-bold">✅ Drive: ${u.gdrive_email}</span>` : '<span class="text-slate-400">Standar</span>'}</td>
+            <td class="p-3 text-xs space-x-1">
+                ${u.gdrive_email ? `<span class="text-emerald-600 font-bold">☁️ Drive</span>` : ''}
+                ${u.gemini_api_key ? `<span class="text-indigo-600 font-bold">✨ AI Mandiri</span>` : ''}
+                ${!u.gdrive_email && !u.gemini_api_key ? '<span class="text-slate-400">Standar</span>' : ''}
+            </td>
             <td class="p-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${u.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}">${u.role}</span></td>
             <td class="p-3 text-right space-x-1">
-                <button onclick="openEditTeacherModal(${u.id}, '${(u.nama_lengkap || '').replace(/'/g, "\\'")}', '${u.username}')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold">Edit</button>
+                <button onclick="openEditTeacherModal(${u.id}, '${(u.nama_lengkap || '').replace(/'/g, "\\'")}', '${u.username}')" class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-xs font-bold">Edit</button>
                 <button onclick="resetTeacherPassword(${u.id})" class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold">Reset PW</button>
                 ${u.role !== 'admin' ? `<button onclick="deleteTeacher(${u.id})" class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 text-xs font-bold">Hapus</button>` : ''}
             </td>
@@ -247,6 +369,7 @@ async function resetStudentPasswordToNISN(studentId, nisn, nama) {
 // ==================== 3. WORKSPACE GURU ====================
 async function initGuruWorkspace() {
     document.getElementById('admin-student-mode-banner').classList.add('hidden');
+    await initAcademicPeriods();
     await loadAllClasses();
     await loadTeacherAmpuan();
     const today = new Date().toISOString().split('T')[0];
@@ -295,7 +418,7 @@ function renderTeacherAmpuanCards() {
         const isActive = Number(a.id) === Number(activeAmpuanId);
         return `
             <button type="button" onclick="selectAmpuanShortcut(${a.class_id}, ${a.id})"
-                class="px-3 py-1.5 rounded-xl text-[11px] font-extrabold border shrink-0 transition ${isActive ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-blue-50'}">
+                class="px-3 py-1.5 rounded-xl text-[11px] font-extrabold border shrink-0 transition ${isActive ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-blue-50'}">
                 ${a.classes?.nama_kelas || 'Kelas'} • ${a.mapel}
             </button>
         `;
@@ -452,7 +575,7 @@ async function deleteCurrentAmpuan() {
     await loadTeacherAmpuan();
 }
 
-// ==================== 4. NAVIGASI TAB & MUAT DATA ====================
+// ==================== 4. NAVIGASI TAB & MUAT DATA PER PERIODE ====================
 function toggleMobileSidebar(forceClose = false) {
     const sb = document.getElementById('main-sidebar');
     if (!sb) return;
@@ -467,8 +590,8 @@ function switchGuruTab(tab) {
         const btn = document.getElementById(`gtab-${t}`);
         if (btn) {
             btn.className = t === tab
-                ? 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-blue-50 text-blue-700 transition'
-                : 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition';
+                ? 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 transition'
+                : 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
         }
     });
 
@@ -487,6 +610,7 @@ function switchGuruTab(tab) {
     if (tab === 'bobot') {
         populateSettingsForm();
         updateGDriveConnectionUI();
+        updateGeminiKeyUI();
     }
 }
 
@@ -501,6 +625,12 @@ function onGlobalSearchInput(val) {
     globalSearchQuery = val.trim().toLowerCase();
     renderDashboard();
     renderStudentsTable();
+}
+
+function matchesActivePeriod(recordPeriode) {
+    const target = activePeriodName || currentDatePeriodName;
+    if (!recordPeriode) return target === 'Semester Ganjil 2026';
+    return recordPeriode === target;
 }
 
 async function loadWorkspaceData() {
@@ -534,11 +664,11 @@ async function loadWorkspaceData() {
     ]);
 
     studentsCache = stuRes.data || [];
-    assessmentsCache = assRes.data || [];
-    attLogsCache = (attLogsRes.data || []).filter(l => !l.mapel || l.mapel === mapelName);
-    finalGradesCache = fgRes.data || [];
-    materialsCache = matRes.data || [];
-    announcementsCache = annRes.data || [];
+    assessmentsCache = (assRes.data || []).filter(a => matchesActivePeriod(a.periode));
+    attLogsCache = (attLogsRes.data || []).filter(l => (!l.mapel || l.mapel === mapelName) && matchesActivePeriod(l.periode));
+    finalGradesCache = (fgRes.data || []).filter(f => matchesActivePeriod(f.periode));
+    materialsCache = (matRes.data || []).filter(m => matchesActivePeriod(m.periode));
+    announcementsCache = (annRes.data || []).filter(an => matchesActivePeriod(an.periode));
 
     const annIds = announcementsCache.map(a => a.id);
     if (annIds.length > 0) {
@@ -551,7 +681,7 @@ async function loadWorkspaceData() {
     const stuIds = studentsCache.map(s => s.id);
     if (stuIds.length > 0 && mapelName) {
         const recapRes = await db.from('attendance').select('*').in('student_id', stuIds).eq('mapel', mapelName);
-        attRecapCache = recapRes.data || [];
+        attRecapCache = (recapRes.data || []).filter(r => matchesActivePeriod(r.periode));
     } else {
         attRecapCache = [];
     }
@@ -662,6 +792,7 @@ async function createMaterial(e) {
             teacher_id: currentUser.id,
             class_id: activeClassId,
             mapel: amp.mapel,
+            periode: activePeriodName || currentDatePeriodName,
             judul,
             deskripsi,
             link_eksternal,
@@ -687,7 +818,7 @@ function renderGuruMaterialsTab() {
     if (!container) return;
 
     if (!materialsCache.length) {
-        container.innerHTML = `<p class="text-xs text-slate-400 italic text-center py-6">Belum ada materi pembelajaran di kelas & mapel ini.</p>`;
+        container.innerHTML = `<p class="text-xs text-slate-400 italic text-center py-6">Belum ada materi pembelajaran di kelas, mapel, & periode ini.</p>`;
         return;
     }
 
@@ -695,7 +826,7 @@ function renderGuruMaterialsTab() {
         const files = parseStudentSubmittedFiles(m.file_attachments);
         const dateStr = new Date(m.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
         return `
-            <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-2">
+            <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 space-y-2">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                     <div class="flex items-center gap-2">
                         <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${m.tampil_publik ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}">
@@ -704,14 +835,14 @@ function renderGuruMaterialsTab() {
                         <span class="text-[11px] text-slate-400">${dateStr}</span>
                     </div>
                     <div class="flex items-center gap-1.5">
-                        <button type="button" onclick="toggleMaterialVisibility(${m.id}, ${!m.tampil_publik})" class="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-xs font-bold hover:bg-slate-100">
+                        <button type="button" onclick="toggleMaterialVisibility(${m.id}, ${!m.tampil_publik})" class="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold hover:bg-slate-100">
                             ${m.tampil_publik ? 'Sembunyikan' : 'Publikasikan'}
                         </button>
-                        <button type="button" onclick="deleteMaterial(${m.id})" class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 text-xs font-bold">Hapus</button>
+                        <button type="button" onclick="deleteMaterial(${m.id})" class="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 text-xs font-bold">Hapus</button>
                     </div>
                 </div>
-                <h4 class="font-extrabold text-sm text-slate-900">${m.judul}</h4>
-                ${m.deskripsi ? `<p class="text-xs text-slate-600 whitespace-pre-line bg-white p-3 rounded-xl border border-slate-200/70">${m.deskripsi}</p>` : ''}
+                <h4 class="font-extrabold text-sm text-slate-900 dark:text-white">${m.judul}</h4>
+                ${m.deskripsi ? `<p class="text-xs text-slate-600 dark:text-slate-300 whitespace-pre-line bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/70 dark:border-slate-700">${m.deskripsi}</p>` : ''}
                 <div class="flex flex-wrap gap-1.5 pt-1">
                     ${m.link_eksternal ? `<a href="${m.link_eksternal}" target="_blank" class="px-3 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-extrabold">🔗 Link Referensi ↗</a>` : ''}
                     ${files.map((f, i) => `<a href="${f.url}" target="_blank" class="px-3 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-extrabold">📄 Modul ${i + 1}: ${f.name} ↗</a>`).join('')}
@@ -747,6 +878,7 @@ async function createAnnouncement(e) {
         teacher_id: currentUser.id,
         class_id: activeClassId,
         mapel: amp.mapel,
+        periode: activePeriodName || currentDatePeriodName,
         judul,
         isi
     }]);
@@ -762,7 +894,7 @@ function renderGuruAnnouncementsTab() {
     if (!container) return;
 
     if (!announcementsCache.length) {
-        container.innerHTML = `<div class="bg-white p-6 rounded-2xl border border-slate-200 text-center text-xs text-slate-400 italic">Belum ada pengumuman atau forum diskusi pada kelas & mapel ini.</div>`;
+        container.innerHTML = `<div class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400 italic">Belum ada pengumuman atau forum diskusi pada kelas, mapel, & periode ini.</div>`;
         return;
     }
 
@@ -771,29 +903,29 @@ function renderGuruAnnouncementsTab() {
         const dateStr = new Date(an.created_at).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
         return `
-            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+            <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
                 <div class="flex items-center justify-between gap-2">
                     <span class="text-[11px] text-slate-400 font-bold">Diposting: ${dateStr}</span>
-                    <button type="button" onclick="deleteAnnouncement(${an.id})" class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 text-xs font-bold">🗑️ Hapus</button>
+                    <button type="button" onclick="deleteAnnouncement(${an.id})" class="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 text-xs font-bold">🗑️ Hapus</button>
                 </div>
-                <h4 class="font-extrabold text-base text-slate-900">${an.judul}</h4>
-                <p class="text-xs sm:text-sm text-slate-700 whitespace-pre-line bg-slate-50 p-3.5 rounded-xl border border-slate-200">${an.isi}</p>
+                <h4 class="font-extrabold text-base text-slate-900 dark:text-white">${an.judul}</h4>
+                <p class="text-xs sm:text-sm text-slate-700 dark:text-slate-300 whitespace-pre-line bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700">${an.isi}</p>
 
                 <div class="pt-2 space-y-2">
                     <span class="text-[11px] font-extrabold text-slate-500">💬 Balasan & Diskusi (${comments.length})</span>
                     <div class="space-y-1.5 max-h-48 overflow-y-auto">
                         ${comments.map(c => `
-                            <div class="p-2.5 rounded-xl text-xs ${c.author_role === 'guru' ? 'bg-blue-50 border border-blue-200' : 'bg-slate-50 border border-slate-200'}">
+                            <div class="p-2.5 rounded-xl text-xs ${c.author_role === 'guru' ? 'bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800' : 'bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700'}">
                                 <div class="flex justify-between">
-                                    <b class="${c.author_role === 'guru' ? 'text-blue-800' : 'text-slate-800'}">${c.author_name} ${c.author_role === 'guru' ? '(Guru)' : ''}</b>
+                                    <b class="${c.author_role === 'guru' ? 'text-blue-800 dark:text-blue-300' : 'text-slate-800 dark:text-slate-200'}">${c.author_name} ${c.author_role === 'guru' ? '(Guru)' : ''}</b>
                                     <span class="text-[10px] text-slate-400">${new Date(c.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
                                 </div>
-                                <p class="text-slate-700 mt-0.5">${c.komentar}</p>
+                                <p class="text-slate-700 dark:text-slate-300 mt-0.5">${c.komentar}</p>
                             </div>
                         `).join('')}
                     </div>
                     <form onsubmit="postTeacherComment(event, ${an.id})" class="flex gap-2 pt-1">
-                        <input type="text" id="tch-comment-inp-${an.id}" required placeholder="Tulis balasan guru..." class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs">
+                        <input type="text" id="tch-comment-inp-${an.id}" required placeholder="Tulis balasan guru..." class="w-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl px-3 py-2 text-xs">
                         <button type="submit" class="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-extrabold shrink-0">Balas</button>
                     </form>
                 </div>
@@ -865,7 +997,6 @@ function computeStudentMetrics(studentId) {
         : 100;
     const attRate = totalPertemuan > 0 ? (h / totalPertemuan) * 100 : 100;
 
-    // Hanya menghitung penilaian yang sudah diisi nilainya (nilai kosong tidak ikut sebagai pembagi)
     const calcCatAvg = (targetNorm) => {
         const list = assessmentsCache.filter(as => normalizeKategori(as.kategori) === targetNorm);
         let sum = 0;
@@ -877,17 +1008,13 @@ function computeStudentMetrics(studentId) {
                 gradedCount++;
             }
         });
-        return {
-            avg: gradedCount > 0 ? (sum / gradedCount) : 0,
-            hasData: gradedCount > 0
-        };
+        return { avg: gradedCount > 0 ? (sum / gradedCount) : 0, hasData: gradedCount > 0 };
     };
 
     const resTugas = calcCatAvg('tugas');
     const resBab = calcCatAvg('ujian_bab');
     const resSmt = calcCatAvg('ujian_semester');
 
-    // Sesuaikan pembagi bobot hanya untuk komponen yang sudah memiliki data penilaian/kehadiran
     let activeWeightSum = 0;
     let weightedTotal = 0;
 
@@ -964,21 +1091,21 @@ function renderDashboard() {
         if (isAttention) attentionCount++;
 
         return `
-            <tr class="hover:bg-slate-50">
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                 <td class="p-3">
-                    <div class="font-bold text-slate-900">${s.nama}</div>
+                    <div class="font-bold text-slate-900 dark:text-white">${s.nama}</div>
                     <div class="text-[10px] font-mono text-slate-400">${s.nisn}</div>
                 </td>
                 <td class="p-3 text-center font-bold">${m.attRate.toFixed(0)}%</td>
                 <td class="p-3 text-center font-bold">${m.doneTasks} / ${m.totalTasks}</td>
-                <td class="p-3 text-center font-extrabold text-blue-700">${m.hasAnyGrade ? m.finalScore.toFixed(1) : '-'}</td>
+                <td class="p-3 text-center font-extrabold text-blue-700 dark:text-blue-400">${m.hasAnyGrade ? m.finalScore.toFixed(1) : '-'}</td>
                 <td class="p-3 text-center">
-                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${!m.hasAnyGrade ? 'bg-slate-100 text-slate-500' : m.finalScore >= m.kkm ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">
+                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${!m.hasAnyGrade ? 'bg-slate-100 dark:bg-slate-800 text-slate-500' : m.finalScore >= m.kkm ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">
                         ${!m.hasAnyGrade ? 'Belum Dinilai' : m.finalScore >= m.kkm ? 'Tuntas' : 'Perlu Bimbingan'}
                     </span>
                 </td>
                 <td class="p-3 text-center">
-                    <button onclick="switchGuruTab('nilai')" class="text-xs font-bold text-blue-600 hover:underline">Nilai →</button>
+                    <button onclick="switchGuruTab('nilai')" class="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline">Nilai →</button>
                 </td>
             </tr>
         `;
@@ -1000,6 +1127,8 @@ function renderDashboard() {
 }
 
 function renderDashboardCharts(h, s, i, a) {
+    const theme = getChartThemeColors();
+
     destroyChart('chartDashDonutAtt');
     const c1 = document.getElementById('chartDashDonutAtt');
     if (c1) {
@@ -1013,13 +1142,13 @@ function renderDashboardCharts(h, s, i, a) {
             type: 'doughnut',
             data: {
                 labels: hasData ? ['Hadir', 'Sakit', 'Izin', 'Alpa'] : ['Belum Ada Data'],
-                datasets: [{ data: pctData, backgroundColor: hasData ? ['#10b981', '#f59e0b', '#3b82f6', '#f43f5e'] : ['#e2e8f0'], borderWidth: 0 }]
+                datasets: [{ data: pctData, backgroundColor: hasData ? ['#10b981', '#f59e0b', '#3b82f6', '#f43f5e'] : [theme.isDark ? '#1e293b' : '#e2e8f0'], borderWidth: 0 }]
             },
             options: {
                 responsive: true, maintainAspectRatio: false, cutout: '68%',
                 plugins: {
-                    legend: { position: 'right', labels: { boxWidth: 10, font: { size: 10 } } },
-                    tooltip: { callbacks: { label: (ctx) => hasData ? ` ${ctx.label}: ${ctx.parsed}%` : ' Belum ada data' } }
+                    legend: { position: 'right', labels: { color: theme.text, boxWidth: 10, font: { size: 10 } } },
+                    tooltip: { backgroundColor: theme.tooltipBg, callbacks: { label: (ctx) => hasData ? ` ${ctx.label}: ${ctx.parsed}%` : ' Belum ada data' } }
                 }
             }
         });
@@ -1038,13 +1167,18 @@ function renderDashboardCharts(h, s, i, a) {
             type: 'line',
             data: {
                 labels: dates.length ? dates.map(d => d.slice(5)) : ['Belum Ada'],
-                datasets: [{ label: 'Kehadiran (%)', data: dates.length ? rates : [100], borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.1)', fill: true, tension: 0.3 }]
+                datasets: [{ label: 'Kehadiran (%)', data: dates.length ? rates : [100], borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.12)', fill: true, tension: 0.35 }]
             },
             options: {
-                responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } },
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    x: { ticks: { color: theme.text, font: { size: 10 } }, grid: { color: theme.grid } },
+                    y: { min: 0, max: 100, ticks: { color: theme.text, font: { size: 10 } }, grid: { color: theme.grid } }
+                },
                 plugins: {
                     legend: { display: false },
                     tooltip: {
+                        backgroundColor: theme.tooltipBg,
                         callbacks: {
                             title: (items) => dates[items[0].dataIndex] ? `Tanggal: ${dates[items[0].dataIndex]}` : 'Belum Ada Data',
                             label: (ctx) => ` Kehadiran: ${ctx.parsed.y}%`
@@ -1081,8 +1215,12 @@ function renderDashboardCharts(h, s, i, a) {
                 datasets: [{ label: 'Ketuntasan (%)', data: catRates, backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981'], borderRadius: 6 }]
             },
             options: {
-                responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } },
-                plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ` Terkumpul: ${ctx.parsed.y}%` } } }
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    x: { ticks: { color: theme.text, font: { size: 10 } }, grid: { display: false } },
+                    y: { min: 0, max: 100, ticks: { color: theme.text, font: { size: 10 } }, grid: { color: theme.grid } }
+                },
+                plugins: { legend: { display: false }, tooltip: { backgroundColor: theme.tooltipBg, callbacks: { label: (ctx) => ` Terkumpul: ${ctx.parsed.y}%` } } }
             }
         });
     }
@@ -1161,17 +1299,17 @@ function renderStudentsTable() {
     );
 
     tbody.innerHTML = filtered.map((s, idx) => `
-        <tr class="hover:bg-slate-50">
+        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
             ${isSharedClassLocked ? '' : `<td class="p-3 text-center"><input type="checkbox" ${selectedStudentIds.has(s.id) ? 'checked' : ''} onchange="toggleSingleStudentSelect(${s.id}, this.checked)" class="w-4 h-4 accent-blue-600"></td>`}
             <td class="p-3 text-center text-slate-400">${idx + 1}</td>
             <td class="p-3 font-mono text-xs">${s.nisn}</td>
-            <td class="p-3 font-bold text-slate-900">${s.nama}</td>
+            <td class="p-3 font-bold text-slate-900 dark:text-white">${s.nama}</td>
             <td class="p-3 text-center space-x-1">
                 ${isSharedClassLocked
-                    ? `<span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500 text-[11px] font-bold">🔒 Terkunci</span>`
-                    : `<button onclick="openEditStudentModal(${s.id})" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold">Edit</button>
+                    ? `<span class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 text-[11px] font-bold">🔒 Terkunci</span>`
+                    : `<button onclick="openEditStudentModal(${s.id})" class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-xs font-bold">Edit</button>
                        ${isAdmin ? `<button onclick="resetStudentPasswordToNISN(${s.id}, '${s.nisn}', '${s.nama.replace(/'/g, "\\'")}')" class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold">Reset PW</button>` : ''}
-                       <button onclick="initiateSingleStudentDelete(${s.id})" class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 text-xs font-bold">Hapus</button>`
+                       <button onclick="initiateSingleStudentDelete(${s.id})" class="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 text-xs font-bold">Hapus</button>`
                 }
             </td>
         </tr>
@@ -1260,8 +1398,8 @@ function loadRecordedDates() {
     if (sel) sel.innerHTML = `<option value="">-- Riwayat Tanggal (${dates.length}) --</option>` + dates.map(d => `<option value="${d}">${d}</option>`).join('');
     if (chips) {
         chips.innerHTML = dates.length
-            ? dates.map(d => `<button type="button" onclick="selectRecordedDate('${d}')" class="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold border border-blue-200">${d}</button>`).join('')
-            : `<span class="text-xs text-slate-400 italic">Belum ada pertemuan tercatat.</span>`;
+            ? dates.map(d => `<button type="button" onclick="selectRecordedDate('${d}')" class="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-blue-700 dark:text-blue-300 text-[11px] font-bold border border-blue-200 dark:border-blue-800">${d}</button>`).join('')
+            : `<span class="text-xs text-slate-400 italic">Belum ada pertemuan tercatat pada periode ini.</span>`;
     }
 }
 
@@ -1286,11 +1424,11 @@ function loadDailyAttendanceForDate() {
             <tr data-stu-id="${s.id}">
                 <td class="p-2.5 text-center text-slate-400">${idx + 1}</td>
                 <td class="p-2.5 font-mono text-xs">${s.nisn}</td>
-                <td class="p-2.5 font-bold text-slate-900">${s.nama}</td>
+                <td class="p-2.5 font-bold text-slate-900 dark:text-white">${s.nama}</td>
                 <td class="p-2.5 text-center">
-                    <div class="inline-flex rounded-xl border border-slate-200 overflow-hidden text-xs font-extrabold">
+                    <div class="inline-flex rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden text-xs font-extrabold">
                         ${['H', 'S', 'I', 'A'].map(opt => `
-                            <label class="cursor-pointer px-3 py-1.5 ${st === opt ? (opt === 'H' ? 'bg-emerald-600 text-white' : opt === 'A' ? 'bg-rose-600 text-white' : 'bg-amber-500 text-white') : 'bg-white text-slate-600 hover:bg-slate-50'}">
+                            <label class="cursor-pointer px-3 py-1.5 ${st === opt ? (opt === 'H' ? 'bg-emerald-600 text-white' : opt === 'A' ? 'bg-rose-600 text-white' : 'bg-amber-500 text-white') : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50'}">
                                 <input type="radio" name="att_${s.id}" value="${opt}" ${st === opt ? 'checked' : ''} onchange="refreshDailyAttStats()" class="hidden">
                                 ${opt}
                             </label>
@@ -1319,7 +1457,7 @@ function refreshDailyAttStats() {
             const lbl = inp.parentElement;
             lbl.className = inp.checked
                 ? `cursor-pointer px-3 py-1.5 ${inp.value === 'H' ? 'bg-emerald-600 text-white' : inp.value === 'A' ? 'bg-rose-600 text-white' : 'bg-amber-500 text-white'}`
-                : 'cursor-pointer px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50';
+                : 'cursor-pointer px-3 py-1.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50';
         });
     });
     const tot = studentsCache.length || 1;
@@ -1340,6 +1478,7 @@ function markAllPresentDaily() {
 async function saveDailyAttendance() {
     const dateVal = document.getElementById('abs-date-picker').value;
     const amp = getActiveAmpuan();
+    const targetPeriod = activePeriodName || currentDatePeriodName;
     if (!activeClassId || !dateVal || !amp) return showToast('Pilih kelas dan tanggal pertemuan!', 'error');
 
     await db.from('attendance_logs').delete().eq('class_id', activeClassId).eq('tanggal', dateVal).eq('mapel', amp.mapel);
@@ -1348,6 +1487,7 @@ async function saveDailyAttendance() {
         class_id: activeClassId,
         student_id: s.id,
         mapel: amp.mapel,
+        periode: targetPeriod,
         tanggal: dateVal,
         status: document.querySelector(`input[name="att_${s.id}"]:checked`)?.value || 'H'
     }));
@@ -1355,7 +1495,7 @@ async function saveDailyAttendance() {
     const { error } = await db.from('attendance_logs').insert(payload);
     if (error) return showToast('Gagal menyimpan absensi: ' + error.message, 'error');
 
-    showToast(`✅ Absensi tanggal ${dateVal} tersimpan!`);
+    showToast(`✅ Absensi tanggal ${dateVal} (${targetPeriod}) tersimpan!`);
     await loadWorkspaceData();
 }
 
@@ -1379,7 +1519,7 @@ function exportDailyAttendanceExcel() {
     const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Matriks_Kehadiran');
-    XLSX.writeFile(wb, 'Matriks_Kehadiran_Siswa.xlsx');
+    XLSX.writeFile(wb, `Matriks_Kehadiran_${activePeriodName}.xlsx`);
 }
 
 function renderAttendanceRecapTable() {
@@ -1391,11 +1531,11 @@ function renderAttendanceRecapTable() {
             <tr data-recap-stu="${s.id}">
                 <td class="p-2.5 font-mono text-xs">${s.nisn}</td>
                 <td class="p-2.5 font-bold">${s.nama}</td>
-                <td class="p-2.5 text-center"><input type="number" class="recap-h w-14 border rounded-lg p-1 text-center" value="${m.h}"></td>
-                <td class="p-2.5 text-center"><input type="number" class="recap-s w-14 border rounded-lg p-1 text-center" value="${m.s}"></td>
-                <td class="p-2.5 text-center"><input type="number" class="recap-i w-14 border rounded-lg p-1 text-center" value="${m.i}"></td>
-                <td class="p-2.5 text-center"><input type="number" class="recap-a w-14 border rounded-lg p-1 text-center" value="${m.a}"></td>
-                <td class="p-2.5 text-center font-extrabold text-blue-700">${m.attScore.toFixed(1)}</td>
+                <td class="p-2.5 text-center"><input type="number" class="recap-h w-14 border dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg p-1 text-center" value="${m.h}"></td>
+                <td class="p-2.5 text-center"><input type="number" class="recap-s w-14 border dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg p-1 text-center" value="${m.s}"></td>
+                <td class="p-2.5 text-center"><input type="number" class="recap-i w-14 border dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg p-1 text-center" value="${m.i}"></td>
+                <td class="p-2.5 text-center"><input type="number" class="recap-a w-14 border dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg p-1 text-center" value="${m.a}"></td>
+                <td class="p-2.5 text-center font-extrabold text-blue-700 dark:text-blue-400">${m.attScore.toFixed(1)}</td>
             </tr>
         `;
     }).join('');
@@ -1403,13 +1543,17 @@ function renderAttendanceRecapTable() {
 
 async function saveAttendanceManual() {
     const amp = getActiveAmpuan();
+    const targetPeriod = activePeriodName || currentDatePeriodName;
     if (!activeClassId || !amp) return;
     const stuIds = studentsCache.map(s => s.id);
-    if (stuIds.length) await db.from('attendance').delete().in('student_id', stuIds).eq('mapel', amp.mapel);
+    if (stuIds.length) {
+        await db.from('attendance').delete().in('student_id', stuIds).eq('mapel', amp.mapel).eq('periode', targetPeriod);
+    }
     const payload = [...document.querySelectorAll('#absen-tbody tr')].map(tr => ({
         teacher_id: currentUser.id,
         student_id: Number(tr.dataset.recapStu),
         mapel: amp.mapel,
+        periode: targetPeriod,
         hadir: Number(tr.querySelector('.recap-h').value || 0),
         sakit: Number(tr.querySelector('.recap-s').value || 0),
         izin: Number(tr.querySelector('.recap-i').value || 0),
@@ -1477,6 +1621,7 @@ async function createAssessment(e) {
             class_id: activeClassId,
             teacher_id: currentUser.id,
             mapel: amp.mapel,
+            periode: activePeriodName || currentDatePeriodName,
             judul,
             deskripsi,
             deadline,
@@ -1593,7 +1738,7 @@ function loadAssessmentScores() {
     if (isGroup) loadGroupPresetsDropdown();
 
     thead.innerHTML = `
-        <tr class="bg-slate-50 text-slate-600 border-b">
+        <tr class="bg-slate-50 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 border-b dark:border-slate-800">
             <th class="p-3 text-center w-10">No</th>
             <th class="p-3">Nama Siswa</th>
             ${isGroup ? '<th class="p-3 w-36">Kelompok</th>' : ''}
@@ -1632,24 +1777,24 @@ function loadAssessmentScores() {
             : `<span class="text-[11px] text-slate-400">-</span>`;
 
         return `
-            <tr data-score-stu="${s.id}" class="hover:bg-slate-50">
+            <tr data-score-stu="${s.id}" class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                 <td class="p-2.5 text-center text-slate-400">${idx + 1}</td>
                 <td class="p-2.5">
-                    <div class="font-bold text-slate-900">${s.nama}</div>
+                    <div class="font-bold text-slate-900 dark:text-white">${s.nama}</div>
                     <div class="text-[10px] font-mono text-slate-400">${s.nisn}</div>
                 </td>
-                ${isGroup ? `<td class="p-2.5"><input type="text" list="datalist-kelompok-options" value="${sc.nama_kelompok || ''}" oninput="syncGroupRowChange(${s.id})" class="sc-kelompok w-full border rounded-lg p-1.5 text-xs font-bold"></td>` : ''}
+                ${isGroup ? `<td class="p-2.5"><input type="text" list="datalist-kelompok-options" value="${sc.nama_kelompok || ''}" oninput="syncGroupRowChange(${s.id})" class="sc-kelompok w-full border dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg p-1.5 text-xs font-bold"></td>` : ''}
                 <td class="p-2.5 text-center">${fileLinkHtml}</td>
                 <td class="p-2.5 text-center">
                     <label class="inline-flex items-center gap-1.5 cursor-pointer">
                         <input type="checkbox" ${isDone ? 'checked' : ''} onchange="syncGroupRowChange(${s.id})" class="sc-kumpul w-4 h-4 accent-emerald-600">
-                        <span class="text-[11px] font-bold ${isDone ? 'text-emerald-700' : isPending ? 'text-amber-600' : 'text-slate-400'}">
+                        <span class="text-[11px] font-bold ${isDone ? 'text-emerald-700 dark:text-emerald-400' : isPending ? 'text-amber-600' : 'text-slate-400'}">
                             ${isDone ? 'Sudah' : isPending ? 'Pending' : 'Belum'}
                         </span>
                     </label>
                 </td>
                 <td class="p-2.5 text-center">
-                    <input type="number" min="0" max="100" step="0.1" value="${val}" placeholder="-" oninput="syncGroupRowChange(${s.id})" class="sc-nilai w-20 border border-slate-300 rounded-lg p-1.5 text-center font-extrabold text-blue-800">
+                    <input type="number" min="0" max="100" step="0.1" value="${val}" placeholder="-" oninput="syncGroupRowChange(${s.id})" class="sc-nilai w-20 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg p-1.5 text-center font-extrabold text-blue-800 dark:text-blue-300">
                 </td>
             </tr>
         `;
@@ -1845,7 +1990,6 @@ function loadPresetIntoModal() {
     modalGroupMap = p ? { ...(p.mapping || {}) } : {};
     renderGroupManagerRows();
 }
-function createNewGroupPreset() { document.getElementById('gm-preset-select').value = ''; document.getElementById('gm-preset-name').value = ''; modalGroupMap = {}; renderGroupManagerRows(); }
 async function deleteCurrentGroupPreset() {
     const idx = document.getElementById('gm-preset-select').value;
     const amp = getActiveAmpuan();
@@ -1854,7 +1998,10 @@ async function deleteCurrentGroupPreset() {
     await db.from('teacher_settings').update({ kelompok_template: updatedList }).eq('id', amp.id);
     amp.kelompok_template = updatedList;
     loadGroupPresetsDropdown();
-    createNewGroupPreset();
+    document.getElementById('gm-preset-select').value = '';
+    document.getElementById('gm-preset-name').value = '';
+    modalGroupMap = {};
+    renderGroupManagerRows();
 }
 function autoGenerateGroups(mode) {
     const count = Math.max(2, Number(document.getElementById('gm-auto-count').value || 5));
@@ -1872,7 +2019,7 @@ function renderGroupManagerRows() {
             <td class="p-2 text-center">${idx + 1}</td>
             <td class="p-2 font-mono">${s.nisn}</td>
             <td class="p-2 font-bold">${s.nama}</td>
-            <td class="p-2"><input type="text" value="${modalGroupMap[s.id] || ''}" oninput="modalGroupMap[${s.id}] = this.value" class="w-full border rounded p-1"></td>
+            <td class="p-2"><input type="text" value="${modalGroupMap[s.id] || ''}" oninput="modalGroupMap[${s.id}] = this.value" class="w-full border dark:border-slate-700 bg-white dark:bg-slate-800 rounded p-1"></td>
         </tr>
     `).join('');
 }
@@ -1902,12 +2049,13 @@ async function saveGroupPresetFromModal(andApply) {
 function renderRekapTab() {
     const tbody = document.getElementById('rekap-tbody');
     if (!tbody) return;
+    const theme = getChartThemeColors();
 
     const anyPublished = finalGradesCache.some(f => f.is_published === true);
     const pubLabel = document.getElementById('rekap-pub-label');
     if (pubLabel) {
         pubLabel.innerText = anyPublished ? '🌐 Sudah Dipublikasikan ke LMS Siswa' : '🔒 Belum Dipublikasikan (Disembunyikan dari Siswa)';
-        pubLabel.className = anyPublished ? 'text-emerald-700 font-extrabold' : 'text-slate-600 font-bold';
+        pubLabel.className = anyPublished ? 'text-emerald-700 dark:text-emerald-400 font-extrabold' : 'text-slate-600 dark:text-slate-400 font-bold';
     }
 
     let tuntas = 0, belum = 0;
@@ -1929,13 +2077,13 @@ function renderRekapTab() {
                 <td class="p-2.5 text-center">${m.avgTugas.toFixed(1)}</td>
                 <td class="p-2.5 text-center">${m.avgBab.toFixed(1)}</td>
                 <td class="p-2.5 text-center">${m.avgSmt.toFixed(1)}</td>
-                <td class="p-2.5 text-center bg-slate-100/80 font-semibold text-slate-600">${m.autoFinalScore.toFixed(1)}</td>
-                <td class="p-2.5 text-center bg-amber-50/60">
+                <td class="p-2.5 text-center bg-slate-100/80 dark:bg-slate-800 font-semibold text-slate-600 dark:text-slate-300">${m.autoFinalScore.toFixed(1)}</td>
+                <td class="p-2.5 text-center bg-amber-50/60 dark:bg-amber-950/40">
                     <input type="number" min="0" max="100" step="0.1" value="${manualValStr}" placeholder="Otomatis"
                         oninput="onManualFinalGradeInput(this)"
-                        class="inp-manual-final w-20 border border-amber-300 bg-white rounded-lg p-1 text-center font-extrabold text-amber-900 text-xs">
+                        class="inp-manual-final w-20 border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 rounded-lg p-1 text-center font-extrabold text-amber-900 dark:text-amber-200 text-xs">
                 </td>
-                <td class="p-2.5 text-center font-extrabold bg-blue-50/60 text-blue-800 cell-final-lms">${m.finalScore.toFixed(1)}</td>
+                <td class="p-2.5 text-center font-extrabold bg-blue-50/60 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 cell-final-lms">${m.finalScore.toFixed(1)}</td>
                 <td class="p-2.5 text-center cell-status-kkm">
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">${ok ? 'TUNTAS' : 'REMEDIAL'}</span>
                 </td>
@@ -1954,7 +2102,14 @@ function renderRekapTab() {
                 labels: ['Absen', 'Tugas', 'Ujian Akhir Bab', 'Ujian Semester'],
                 datasets: [{ label: 'Rata-rata', data: [sumAbs / n, sumTgs / n, sumBab / n, sumSmt / n], backgroundColor: ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b'], borderRadius: 6 }]
             },
-            options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } }
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    x: { ticks: { color: theme.text }, grid: { display: false } },
+                    y: { min: 0, max: 100, ticks: { color: theme.text }, grid: { color: theme.grid } }
+                },
+                plugins: { legend: { display: false } }
+            }
         });
     }
 
@@ -1964,7 +2119,7 @@ function renderRekapTab() {
         chartInstances['chartRekapKKM'] = new Chart(c2, {
             type: 'doughnut',
             data: { labels: ['Tuntas KKM', 'Belum Tuntas'], datasets: [{ data: [tuntas, belum], backgroundColor: ['#10b981', '#f43f5e'], borderWidth: 0 }] },
-            options: { responsive: true, maintainAspectRatio: false, cutout: '65%' }
+            options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { labels: { color: theme.text } } } }
         });
     }
 }
@@ -1982,6 +2137,7 @@ function onManualFinalGradeInput(inp) {
 
 async function publishFinalGradesToLMS(publishState) {
     const amp = getActiveAmpuan();
+    const targetPeriod = activePeriodName || currentDatePeriodName;
     if (!activeClassId || !amp) return showToast('Pilih kelas dan mata pelajaran terlebih dahulu!', 'error');
 
     const rows = [...document.querySelectorAll('#rekap-tbody tr[data-rekap-final-stu]')];
@@ -1995,15 +2151,15 @@ async function publishFinalGradesToLMS(publishState) {
 
         return {
             class_id: activeClassId, student_id, teacher_id: currentUser.id,
-            mapel: amp.mapel, nilai_otomatis: autoVal, nilai_manual,
+            mapel: amp.mapel, periode: targetPeriod, nilai_otomatis: autoVal, nilai_manual,
             kkm: Number(amp.kkm || 75), is_published: publishState, updated_at: new Date().toISOString()
         };
     });
 
-    const { error } = await db.from('final_grades').upsert(payload, { onConflict: 'class_id,student_id,mapel' });
+    const { error } = await db.from('final_grades').upsert(payload, { onConflict: 'class_id,student_id,mapel,periode' });
     if (error) return showToast('Gagal menyimpan/publikasi nilai: ' + error.message, 'error');
 
-    showToast(publishState ? `🌐 Nilai akhir ${amp.mapel} berhasil dipublikasikan ke LMS Siswa!` : `🔒 Publikasi nilai ${amp.mapel} ditarik.`);
+    showToast(publishState ? `🌐 Nilai akhir ${amp.mapel} (${targetPeriod}) berhasil dipublikasikan!` : `🔒 Publikasi nilai ${amp.mapel} ditarik.`);
     await loadWorkspaceData();
 }
 
@@ -2011,7 +2167,7 @@ function exportRekapExcel() {
     const rows = studentsCache.map((s, idx) => {
         const m = computeStudentMetrics(s.id);
         return {
-            No: idx + 1, NISN: s.nisn, Nama: s.nama,
+            No: idx + 1, NISN: s.nisn, Nama: s.nama, Periode: activePeriodName,
             Absen: Number(m.attScore.toFixed(1)), Tugas: Number(m.avgTugas.toFixed(1)),
             Ujian_Bab: Number(m.avgBab.toFixed(1)), Semester: Number(m.avgSmt.toFixed(1)),
             Otomatis: Number(m.autoFinalScore.toFixed(1)), Manual: m.manualScore !== null ? m.manualScore : '',
@@ -2021,7 +2177,7 @@ function exportRekapExcel() {
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Rekap_Nilai');
-    XLSX.writeFile(wb, 'Rekap_Nilai_Akhir.xlsx');
+    XLSX.writeFile(wb, `Rekap_Nilai_${activePeriodName}.xlsx`);
 }
 
 function printClassRekapPDF() {
@@ -2029,17 +2185,19 @@ function printClassRekapPDF() {
     const doc = new jsPDF();
     const amp = getActiveAmpuan();
     const cls = classesCache.find(c => Number(c.id) === Number(activeClassId));
-    doc.setFontSize(14);
-    doc.text(`REKAPITULASI NILAI — ${cls?.nama_kelas || ''} (${amp?.mapel || ''})`, 14, 16);
+    doc.setFontSize(13);
+    doc.text(`REKAPITULASI NILAI — ${cls?.nama_kelas || ''} (${amp?.mapel || ''})`, 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Periode: ${activePeriodName}`, 14, 21);
     doc.autoTable({
-        startY: 22,
+        startY: 26,
         head: [['No', 'NISN', 'Nama Siswa', 'Absen', 'Tugas', 'Bab', 'Smt', 'Akhir', 'Status']],
         body: studentsCache.map((s, idx) => {
             const m = computeStudentMetrics(s.id);
             return [idx + 1, s.nisn, s.nama, m.attScore.toFixed(1), m.avgTugas.toFixed(1), m.avgBab.toFixed(1), m.avgSmt.toFixed(1), m.finalScore.toFixed(1), m.finalScore >= m.kkm ? 'TUNTAS' : 'REMEDIAL'];
         })
     });
-    doc.save('Rekap_Nilai_Kelas.pdf');
+    doc.save(`Rekap_Nilai_${activePeriodName}.pdf`);
 }
 
 function printStudentRaporPDF(studentId) {
@@ -2051,12 +2209,12 @@ function printStudentRaporPDF(studentId) {
     doc.setFontSize(14);
     doc.text(`LAPORAN CAPAIAN BELAJAR SISWA`, 14, 18);
     doc.setFontSize(11);
-    doc.text(`Nama: ${s.nama} (${s.nisn})`, 14, 28);
+    doc.text(`Nama: ${s.nama} (${s.nisn}) | Periode: ${activePeriodName}`, 14, 28);
     doc.text(`Nilai Akhir: ${m.finalScore.toFixed(1)} | KKM: ${m.kkm} | Status: ${m.finalScore >= m.kkm ? 'TUNTAS' : 'REMEDIAL'}`, 14, 36);
     doc.save(`Rapor_${s.nama.replace(/\s+/g, '_')}.pdf`);
 }
 
-// ==================== 10. GURU WALI (PA 360° LINTAS MAPEL — ABAIKAN NILAI KOSONG) ====================
+// ==================== 10. GURU WALI (PA 360° LINTAS MAPEL, HISTORI & AI GEMINI) ====================
 async function loadGuruWaliTab() {
     const tbody = document.getElementById('wali-tbody');
     if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400">⏳ Memuat data akademik lintas mata pelajaran siswa binaan...</td></tr>`;
@@ -2073,7 +2231,7 @@ async function loadGuruWaliTab() {
     binaanIdsCache = new Set((binRes.data || []).map(x => Number(x.student_id)));
     waliGlobalSettings = setRes.data || [];
     waliGlobalUsers = usrRes.data || [];
-    waliGlobalAssessments = assRes.data || [];
+    waliGlobalAssessments = (assRes.data || []).filter(a => matchesActivePeriod(a.periode));
 
     const binaanIds = [...binaanIdsCache];
     if (binaanIds.length > 0) {
@@ -2083,8 +2241,8 @@ async function loadGuruWaliTab() {
             db.from('attendance').select('*').in('student_id', binaanIds)
         ]);
         waliGlobalScores = scRes.data || [];
-        waliGlobalAttLogs = logRes.data || [];
-        waliGlobalAttRecap = recRes.data || [];
+        waliGlobalAttLogs = (logRes.data || []).filter(l => matchesActivePeriod(l.periode));
+        waliGlobalAttRecap = (recRes.data || []).filter(r => matchesActivePeriod(r.periode));
     } else {
         waliGlobalScores = []; waliGlobalAttLogs = []; waliGlobalAttRecap = [];
     }
@@ -2125,6 +2283,8 @@ function computeAllWaliStudentMetrics() {
         let sumSubjectFinal = 0;
         let gradedSubjectsCount = 0;
         let belowKkmCount = 0;
+        let totalAssCount = 0;
+        let totalDoneCount = 0;
 
         classSettings.forEach(st => {
             const teacherObj = waliGlobalUsers.find(u => Number(u.id) === Number(st.teacher_id));
@@ -2140,7 +2300,6 @@ function computeAllWaliStudentMetrics() {
             const mTot = mh + ms + mi + ma;
             const mAttScore = mTot > 0 ? ((mh * (st.p_hadir ?? 100) + ms * (st.p_sakit ?? 80) + mi * (st.p_izin ?? 80) + ma * (st.p_alpa ?? 0)) / mTot) : 100;
 
-            // Hanya hitung nilai yang sudah terisi (nilai kosong diabaikan)
             const calcCat = (catKey) => {
                 const list = mapelAss.filter(as => normalizeKategori(as.kategori) === catKey);
                 let tot = 0;
@@ -2175,6 +2334,9 @@ function computeAllWaliStudentMetrics() {
                 else pendingTasks.push({ mapel: st.mapel, judul: as.judul, kategori: getKategoriLabel(as.kategori) });
             });
 
+            totalAssCount += mapelAss.length;
+            totalDoneCount += doneInMapel;
+
             const kkm = Number(st.kkm || 75);
             if (activeW > 0) {
                 if (finalVal < kkm) belowKkmCount++;
@@ -2192,11 +2354,17 @@ function computeAllWaliStudentMetrics() {
         });
 
         const avgFinalAllSubjects = gradedSubjectsCount > 0 ? (sumSubjectFinal / gradedSubjectsCount) : 0;
+        const taskCompletionRate = totalAssCount > 0 ? (totalDoneCount / totalAssCount) * 100 : 100;
+
         let ews = 'aman';
         if (a >= 3 || attRate < 80 || pendingTasks.length >= 3 || belowKkmCount >= 2) ews = 'kritis';
         else if (a >= 1 || attRate < 90 || pendingTasks.length >= 1 || belowKkmCount >= 1) ews = 'waspada';
 
-        waliMetricsCache[sid] = { h, s, i, a, attRate, absenceDates, pendingTasks, subjectDetails, avgFinalAllSubjects, hasAnySubjectData: gradedSubjectsCount > 0, ews };
+        waliMetricsCache[sid] = {
+            h, s, i, a, attRate, taskCompletionRate, absenceDates,
+            pendingTasks, subjectDetails, avgFinalAllSubjects,
+            hasAnySubjectData: gradedSubjectsCount > 0, ews
+        };
     });
 }
 
@@ -2232,15 +2400,15 @@ function renderGuruWaliRows() {
         else if (m.ews === 'waspada') ewsBadge = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-700">🟡 Waspada</span>`;
 
         return `
-            <tr class="hover:bg-slate-50">
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                 <td class="p-3 text-center">${idx + 1}</td>
-                <td class="p-3"><div class="font-bold text-slate-900">${s.nama}</div><div class="text-[10px] text-slate-500">${s.classes?.nama_kelas || '-'} • ${s.nisn}</div></td>
+                <td class="p-3"><div class="font-bold text-slate-900 dark:text-white">${s.nama}</div><div class="text-[10px] text-slate-500">${s.classes?.nama_kelas || '-'} • ${s.nisn}</div></td>
                 <td class="p-3 text-center"><div class="font-extrabold ${m.attRate >= 90 ? 'text-emerald-600' : m.attRate >= 80 ? 'text-amber-600' : 'text-rose-600'}">${m.attRate.toFixed(0)}%</div><div class="text-[10px] text-slate-400">H:${m.h} S:${m.s} I:${m.i} A:${m.a}</div></td>
-                <td class="p-3 text-center"><span class="px-2 py-0.5 rounded-full text-[11px] font-extrabold ${m.pendingTasks.length > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-slate-100 text-slate-600'}">${m.pendingTasks.length} Tugas</span></td>
-                <td class="p-3 text-center font-extrabold text-blue-700">${m.hasAnySubjectData ? m.avgFinalAllSubjects.toFixed(1) : '-'}</td>
+                <td class="p-3 text-center"><span class="px-2 py-0.5 rounded-full text-[11px] font-extrabold ${m.pendingTasks.length > 0 ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 border border-rose-200 dark:border-rose-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}">${m.pendingTasks.length} Tugas</span></td>
+                <td class="p-3 text-center font-extrabold text-blue-700 dark:text-blue-400">${m.hasAnySubjectData ? m.avgFinalAllSubjects.toFixed(1) : '-'}</td>
                 <td class="p-3 text-center">${ewsBadge}</td>
-                <td class="p-3 text-center"><button onclick="openWali360Modal(${s.id})" class="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold text-xs">Bedah 360°</button></td>
-                <td class="p-3 text-center"><button onclick="openWali360Modal(${s.id})" class="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-bold text-xs">Jurnal</button></td>
+                <td class="p-3 text-center"><button onclick="openWali360Modal(${s.id})" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-sm">✨ Bedah 360° & AI</button></td>
+                <td class="p-3 text-center"><button onclick="openWali360Modal(${s.id})" class="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-bold text-xs">Jurnal</button></td>
             </tr>
         `;
     }).join('') : `<tr><td colspan="8" class="p-6 text-center text-slate-400 italic">Tidak ada siswa binaan yang sesuai filter.</td></tr>`;
@@ -2279,64 +2447,676 @@ async function saveWaliBinaanSelection() {
     await loadGuruWaliTab();
 }
 
+// ==================== MODAL BEDAH 360°, HISTORI SEMESTER, RADAR & AI ====================
+function switchWali360SubTab(subTab) {
+    const tabs = ['overview', 'mapel', 'sw'];
+    tabs.forEach(t => {
+        document.getElementById(`w360-content-${t}`)?.classList.toggle('hidden', t !== subTab);
+        const btn = document.getElementById(`w360-tab-${t}`);
+        if (btn) {
+            btn.className = t === subTab
+                ? 'px-3.5 py-2 rounded-xl text-xs font-extrabold bg-blue-600 text-white shadow-sm shrink-0 transition'
+                : 'px-3.5 py-2 rounded-xl text-xs font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 shrink-0 transition';
+        }
+    });
+    if (activeWaliStudentId) renderWali360Visuals(activeWaliStudentId);
+}
+
 async function openWali360Modal(studentId) {
-    activeWaliStudentId = studentId;
-    const s = allStudentsGlobal.find(x => Number(x.id) === Number(studentId));
+    activeWaliStudentId = Number(studentId);
+    const s = allStudentsGlobal.find(x => Number(x.id) === activeWaliStudentId);
     if (!s) return;
 
-    const m = waliMetricsCache[Number(studentId)] || { h: 0, s: 0, i: 0, a: 0, absenceDates: [], pendingTasks: [], subjectDetails: [] };
     const initials = (s.nama || 'SW').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
-
     document.getElementById('w360-avatar').innerText = initials;
     document.getElementById('w360-nama').innerText = s.nama;
     document.getElementById('w360-kelas').innerText = s.classes?.nama_kelas || '-';
     document.getElementById('w360-nisn').innerText = s.nisn;
+    document.getElementById('w360-active-period-badge').innerText = activePeriodName || currentDatePeriodName;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const logDateInp = document.getElementById('w360-log-date');
+    if (logDateInp && !logDateInp.value) logDateInp.value = todayStr;
+
+    document.getElementById('modal-wali-360').classList.remove('hidden');
+    switchWali360SubTab('overview');
+
+    await loadWaliHistoricalGrades(activeWaliStudentId);
+    renderWali360Visuals(activeWaliStudentId);
+    await loadWaliCachedAIAnalysis(activeWaliStudentId);
+    await loadWaliLogsList(activeWaliStudentId);
+}
+
+function closeWali360Modal() {
+    document.getElementById('modal-wali-360').classList.add('hidden');
+    activeWaliStudentId = null;
+}
+
+async function loadWaliHistoricalGrades(studentId) {
+    const { data } = await db.from('wali_historical_grades')
+        .select('*')
+        .eq('student_id', studentId)
+        .order('urutan_semester', { ascending: true })
+        .order('mapel', { ascending: true });
+
+    waliActiveHistoricalGrades = data || [];
+    renderWaliHistoricalTable();
+}
+
+function renderWaliHistoricalTable() {
+    const tbody = document.getElementById('w360-hist-tbody');
+    if (!tbody) return;
+    if (!waliActiveHistoricalGrades.length) {
+        tbody.innerHTML = `<tr><td colspan="5" class="p-3 text-center text-slate-400 italic">Belum ada riwayat nilai semester sebelumnya yang ditambahkan.</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = waliActiveHistoricalGrades.map(h => `
+        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/60">
+            <td class="p-2 font-bold text-slate-800 dark:text-slate-200">${h.periode}</td>
+            <td class="p-2 font-semibold">${h.mapel}</td>
+            <td class="p-2 text-center font-extrabold ${Number(h.nilai_akhir) >= Number(h.kkm || 75) ? 'text-emerald-600' : 'text-rose-600'}">${Number(h.nilai_akhir).toFixed(1)}</td>
+            <td class="p-2 text-center text-slate-400">${h.kkm || 75}</td>
+            <td class="p-2 text-right">
+                <button type="button" onclick="deleteWaliHistoricalGrade(${h.id})" class="text-rose-600 hover:underline font-bold text-[11px]">Hapus</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function addWaliHistoricalGrade(e) {
+    e.preventDefault();
+    if (!activeWaliStudentId) return;
+    const sem = document.getElementById('w360-hist-semester').value;
+    const tahun = Number(document.getElementById('w360-hist-tahun').value);
+    const mapel = document.getElementById('w360-hist-mapel').value.trim();
+    const nilai_akhir = Number(document.getElementById('w360-hist-nilai').value);
+    const periodeLabel = `${sem} ${tahun}`;
+    const urutan_semester = tahun * 10 + (sem.includes('Genap') ? 1 : 2);
+
+    const { error } = await db.from('wali_historical_grades').upsert([{
+        student_id: activeWaliStudentId,
+        teacher_id: currentUser.id,
+        periode: periodeLabel,
+        urutan_semester,
+        mapel,
+        nilai_akhir,
+        kkm: 75
+    }], { onConflict: 'student_id,periode,mapel' });
+
+    if (error) return showToast('Gagal menambah nilai riwayat: ' + error.message, 'error');
+
+    document.getElementById('w360-hist-mapel').value = '';
+    document.getElementById('w360-hist-nilai').value = '';
+    showToast(`✅ Nilai ${mapel} (${periodeLabel}) ditambahkan!`);
+    await loadWaliHistoricalGrades(activeWaliStudentId);
+    renderWali360Visuals(activeWaliStudentId);
+}
+
+async function deleteWaliHistoricalGrade(id) {
+    if (!confirm('Hapus catatan nilai riwayat ini?')) return;
+    await db.from('wali_historical_grades').delete().eq('id', id);
+    showToast('Catatan riwayat dihapus.');
+    await loadWaliHistoricalGrades(activeWaliStudentId);
+    renderWali360Visuals(activeWaliStudentId);
+}
+
+function classifySubjectRumpun(mapelName) {
+    const n = String(mapelName || '').toLowerCase();
+    if (/(matematika|fisika|kimia|biologi|ipa|sains|kalkulus)/.test(n)) return 'Sains & Matematika';
+    if (/(informatika|tik|komputer|koding|prakarya|pkwu|desain|seni|pjok|olahraga|teknik)/.test(n)) return 'Teknologi & Praktis';
+    if (/(bahasa|inggris|indonesia|arab|jepang|jerman|sastra|daerah)/.test(n)) return 'Bahasa & Linguistik';
+    return 'Sosial & Humaniora';
+}
+
+function buildWaliTimelineAndSW(studentId) {
+    const m = waliMetricsCache[Number(studentId)] || { h: 0, s: 0, i: 0, a: 0, attRate: 100, taskCompletionRate: 100, absenceDates: [], pendingTasks: [], subjectDetails: [], avgFinalAllSubjects: 0, hasAnySubjectData: false };
+    const currentPeriod = activePeriodName || currentDatePeriodName;
+
+    // 1. Kumpulkan seluruh periode kronologis (historis + semester aktif)
+    const periodOrderMap = {};
+    waliActiveHistoricalGrades.forEach(h => {
+        if (h.periode !== currentPeriod) {
+            periodOrderMap[h.periode] = h.urutan_semester || 1;
+        }
+    });
+    const sortedHistPeriods = Object.keys(periodOrderMap).sort((a, b) => periodOrderMap[a] - periodOrderMap[b]);
+    const allPeriods = [...sortedHistPeriods, currentPeriod];
+
+    // 2. Kumpulkan seluruh nama mata pelajaran unik
+    const allMapelNames = [...new Set([
+        ...waliActiveHistoricalGrades.map(h => h.mapel),
+        ...m.subjectDetails.map(sb => sb.mapel)
+    ].filter(Boolean))];
+
+    // 3. Matriks Nilai per Mapel per Periode
+    const mapelSeries = {};
+    allMapelNames.forEach(mpl => {
+        mapelSeries[mpl] = allPeriods.map(per => {
+            if (per === currentPeriod) {
+                const cur = m.subjectDetails.find(x => x.mapel.toLowerCase() === mpl.toLowerCase());
+                return cur && cur.hasData ? Number(cur.finalVal.toFixed(1)) : null;
+            }
+            const hist = waliActiveHistoricalGrades.find(x => x.periode === per && x.mapel.toLowerCase() === mpl.toLowerCase());
+            return hist ? Number(Number(hist.nilai_akhir).toFixed(1)) : null;
+        });
+    });
+
+    // 4. Rata-rata keseluruhan per periode
+    const periodAverages = allPeriods.map((per, pIdx) => {
+        const vals = allMapelNames.map(mpl => mapelSeries[mpl][pIdx]).filter(v => v !== null && !isNaN(v));
+        return vals.length > 0 ? Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1)) : null;
+    });
+
+    // 5. Ringkasan Kumulatif per Mapel
+    const cumulativeSummary = allMapelNames.map(mpl => {
+        const vals = mapelSeries[mpl].filter(v => v !== null && !isNaN(v));
+        const curObj = m.subjectDetails.find(x => x.mapel.toLowerCase() === mpl.toLowerCase());
+        const avg = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+        const maxVal = vals.length ? Math.max(...vals) : 0;
+        const minVal = vals.length ? Math.min(...vals) : 0;
+        const currentVal = curObj && curObj.hasData ? curObj.finalVal : (vals.length ? vals[vals.length - 1] : null);
+        const kkm = curObj ? curObj.kkm : 75;
+        return {
+            mapel: mpl,
+            guru: curObj?.guru || 'Riwayat Rapor',
+            avg,
+            maxVal,
+            minVal,
+            currentVal,
+            kkm,
+            tuntas: currentVal !== null ? currentVal >= kkm : true
+        };
+    });
+
+    // 6. Agregasi Rumpun untuk Radar Chart & Strength/Weakness
+    const rumpunBuckets = {
+        'Sains & Matematika': [],
+        'Teknologi & Praktis': [],
+        'Bahasa & Linguistik': [],
+        'Sosial & Humaniora': []
+    };
+    cumulativeSummary.forEach(item => {
+        if (item.currentVal !== null) {
+            const r = classifySubjectRumpun(item.mapel);
+            rumpunBuckets[r].push(item.currentVal);
+        }
+    });
+
+    const getBucketAvg = (key) => {
+        const arr = rumpunBuckets[key];
+        return arr.length ? Number((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1)) : 75;
+    };
+
+    const karakterScore = Number(((m.attRate * 0.6) + (m.taskCompletionRate * 0.4)).toFixed(1));
+    const radarLabels = ['Sains & Matematika', 'Teknologi & Praktis', 'Bahasa & Linguistik', 'Sosial & Humaniora', 'Karakter & Disiplin'];
+    const radarScores = [
+        getBucketAvg('Sains & Matematika'),
+        getBucketAvg('Teknologi & Praktis'),
+        getBucketAvg('Bahasa & Linguistik'),
+        getBucketAvg('Sosial & Humaniora'),
+        karakterScore
+    ];
+
+    waliCurrentTimelineData = { allPeriods, allMapelNames, mapelSeries, periodAverages, cumulativeSummary };
+    waliCurrentSWData = { radarLabels, radarScores, rumpunBuckets, karakterScore };
+    return { m, timeline: waliCurrentTimelineData, sw: waliCurrentSWData };
+}
+
+function renderWali360Visuals(studentId) {
+    const theme = getChartThemeColors();
+    const { m, timeline, sw } = buildWaliTimelineAndSW(studentId);
+
+    // --- CHART 1: AREA LINE CHART TREN LINTAS SEMESTER ---
+    destroyChart('chartWaliSemesterTrend');
+    const cTrend = document.getElementById('chartWaliSemesterTrend');
+    if (cTrend) {
+        const validPairs = timeline.allPeriods.map((p, idx) => ({ p, v: timeline.periodAverages[idx] })).filter(x => x.v !== null);
+        const labels = validPairs.length ? validPairs.map(x => x.p) : [activePeriodName];
+        const values = validPairs.length ? validPairs.map(x => x.v) : [0];
+
+        const pill = document.getElementById('w360-trend-pill');
+        if (pill && values.length >= 2) {
+            const diff = values[values.length - 1] - values[0];
+            pill.innerText = diff > 1 ? `📈 Naik +${diff.toFixed(1)}` : diff < -1 ? `📉 Turun ${diff.toFixed(1)}` : '➡️ Stabil';
+            pill.className = `px-2 py-0.5 rounded-full text-[10px] font-extrabold ${diff > 1 ? 'bg-emerald-100 text-emerald-700' : diff < -1 ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`;
+        }
+
+        chartInstances['chartWaliSemesterTrend'] = new Chart(cTrend, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Rata-rata Nilai',
+                    data: values,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.16)',
+                    pointBackgroundColor: '#2563eb',
+                    pointRadius: 5,
+                    borderWidth: 2.5,
+                    fill: true,
+                    tension: 0.35
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    x: { ticks: { color: theme.text, font: { size: 10 } }, grid: { color: theme.grid } },
+                    y: { min: 50, max: 100, ticks: { color: theme.text, font: { size: 10 } }, grid: { color: theme.grid } }
+                },
+                plugins: { legend: { display: false }, tooltip: { backgroundColor: theme.tooltipBg } }
+            }
+        });
+    }
+
+    // --- CHART 2: BAR CHART CAPAIAN SEMESTER BERJALAN + GARIS KKM ---
+    destroyChart('chartWaliCurrentBar');
+    const cBar = document.getElementById('chartWaliCurrentBar');
+    if (cBar) {
+        const curSubjects = m.subjectDetails.filter(sb => sb.hasData);
+        const labels = curSubjects.length ? curSubjects.map(sb => sb.mapel) : ['Belum Ada Nilai'];
+        const values = curSubjects.length ? curSubjects.map(sb => Number(sb.finalVal.toFixed(1))) : [0];
+        const colors = curSubjects.length
+            ? curSubjects.map(sb => sb.finalVal >= 85 ? '#6366f1' : sb.finalVal >= sb.kkm ? '#10b981' : '#f43f5e')
+            : ['#cbd5e1'];
+
+        const belowCount = curSubjects.filter(sb => sb.finalVal < sb.kkm).length;
+        const belowPill = document.getElementById('w360-below-kkm-pill');
+        if (belowPill) {
+            belowPill.innerText = belowCount > 0 ? `⚠️ ${belowCount} Mapel < KKM` : '✅ Semua Tuntas KKM';
+            belowPill.className = `px-2 py-0.5 rounded-full text-[10px] font-extrabold ${belowCount > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`;
+        }
+
+        chartInstances['chartWaliCurrentBar'] = new Chart(cBar, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'Nilai Akhir', data: values, backgroundColor: colors, borderRadius: 6, barPercentage: 0.6 },
+                    { type: 'line', label: 'Batas KKM (75)', data: labels.map(() => 75), borderColor: '#f59e0b', borderDash: [5, 5], borderWidth: 1.5, pointRadius: 0, fill: false }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    x: { ticks: { color: theme.text, font: { size: 10 } }, grid: { display: false } },
+                    y: { min: 0, max: 100, ticks: { color: theme.text, font: { size: 10 } }, grid: { color: theme.grid } }
+                },
+                plugins: { legend: { display: false }, tooltip: { backgroundColor: theme.tooltipBg } }
+            }
+        });
+    }
+
+    // --- CHART 3: DONUT KEHADIRAN + PILLS + TUNGGAKAN ---
+    destroyChart('chartWaliAttDonut');
+    const cDonut = document.getElementById('chartWaliAttDonut');
+    if (cDonut) {
+        const tot = m.h + m.s + m.i + m.a;
+        chartInstances['chartWaliAttDonut'] = new Chart(cDonut, {
+            type: 'doughnut',
+            data: {
+                labels: tot > 0 ? ['Hadir', 'Sakit', 'Izin', 'Alpa'] : ['Belum Ada'],
+                datasets: [{ data: tot > 0 ? [m.h, m.s, m.i, m.a] : [1], backgroundColor: tot > 0 ? ['#10b981', '#f59e0b', '#3b82f6', '#f43f5e'] : ['#cbd5e1'], borderWidth: 0 }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { display: false } } }
+        });
+    }
 
     document.getElementById('w360-att-pills').innerHTML = `
-        <div class="p-2 rounded-xl bg-emerald-50 border border-emerald-200"><b class="text-sm text-emerald-700 block">${m.h}</b><span class="text-[10px] text-emerald-600 font-bold">Hadir</span></div>
-        <div class="p-2 rounded-xl bg-amber-50 border border-amber-200"><b class="text-sm text-amber-700 block">${m.s}</b><span class="text-[10px] text-amber-600 font-bold">Sakit</span></div>
-        <div class="p-2 rounded-xl bg-blue-50 border border-blue-200"><b class="text-sm text-blue-700 block">${m.i}</b><span class="text-[10px] text-blue-600 font-bold">Izin</span></div>
-        <div class="p-2 rounded-xl bg-rose-50 border border-rose-200"><b class="text-sm text-rose-700 block">${m.a}</b><span class="text-[10px] text-rose-600 font-bold">Alpa</span></div>
+        <div class="p-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800"><b class="text-xs text-emerald-700 dark:text-emerald-300 block">${m.h}</b><span class="text-[9px] text-emerald-600 font-bold">Hadir</span></div>
+        <div class="p-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800"><b class="text-xs text-amber-700 dark:text-amber-300 block">${m.s}</b><span class="text-[9px] text-amber-600 font-bold">Sakit</span></div>
+        <div class="p-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800"><b class="text-xs text-blue-700 dark:text-blue-300 block">${m.i}</b><span class="text-[9px] text-blue-600 font-bold">Izin</span></div>
+        <div class="p-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800"><b class="text-xs text-rose-700 dark:text-rose-300 block">${m.a}</b><span class="text-[9px] text-rose-600 font-bold">Alpa</span></div>
     `;
 
     document.getElementById('w360-absence-dates').innerHTML = m.absenceDates.length
         ? `<b>Catatan Ketidakhadiran:</b><br>` + m.absenceDates.map(d => `• ${d}`).join('<br>')
-        : `<span class="text-emerald-700 font-semibold">✅ Tidak ada catatan ketidakhadiran (S/I/A).</span>`;
+        : `<span class="text-emerald-700 dark:text-emerald-400 font-semibold">✅ Tidak ada catatan ketidakhadiran (S/I/A).</span>`;
 
     document.getElementById('w360-pending-badge').innerText = `${m.pendingTasks.length} Tunggakan`;
     document.getElementById('w360-pending-list').innerHTML = m.pendingTasks.length
-        ? m.pendingTasks.map(t => `<div class="p-2 rounded-xl bg-rose-50 border border-rose-200 text-xs flex justify-between items-center"><div><b class="text-rose-800">${t.mapel}</b> — ${t.judul}</div><span class="text-[10px] font-bold px-2 py-0.5 rounded bg-white text-rose-700">${t.kategori}</span></div>`).join('')
-        : `<div class="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-700 font-bold">🎉 Seluruh tugas pada semua mata pelajaran telah terkumpul!</div>`;
+        ? m.pendingTasks.map(t => `<div class="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs flex justify-between items-center"><div><b class="text-rose-800 dark:text-rose-300">${t.mapel}</b> — ${t.judul}</div><span class="text-[10px] font-bold px-2 py-0.5 rounded bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-300">${t.kategori}</span></div>`).join('')
+        : `<div class="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-700 dark:text-emerald-300 font-bold">🎉 Seluruh tugas lintas mapel telah terkumpul!</div>`;
 
-    document.getElementById('w360-subjects-tbody').innerHTML = m.subjectDetails.length
-        ? m.subjectDetails.map(sb => `
-            <tr>
-                <td class="p-2.5 font-bold text-slate-900">${sb.mapel}</td>
-                <td class="p-2.5 text-slate-600">${sb.guru}</td>
-                <td class="p-2.5 text-center font-bold">${sb.attPct}%</td>
-                <td class="p-2.5 text-center font-bold">${sb.doneCount}/${sb.totalCount}</td>
-                <td class="p-2.5 text-center">${sb.nTugas.toFixed(1)}</td>
-                <td class="p-2.5 text-center">${sb.nBab.toFixed(1)}</td>
-                <td class="p-2.5 text-center">${sb.nSmt.toFixed(1)}</td>
-                <td class="p-2.5 text-center font-extrabold text-blue-700">${sb.hasData ? sb.finalVal.toFixed(1) : '-'}</td>
-                <td class="p-2.5 text-center">${sb.kkm}</td>
-                <td class="p-2.5 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${!sb.hasData ? 'bg-slate-100 text-slate-500' : sb.tuntas ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">${!sb.hasData ? 'Belum Ada Nilai' : sb.tuntas ? 'Tuntas' : 'Belum'}</span></td>
-            </tr>
-        `).join('')
-        : `<tr><td colspan="10" class="p-4 text-center text-slate-400 italic">Belum ada data mata pelajaran di kelas siswa ini.</td></tr>`;
+    // --- SUB-TAB 2: MULTI-LINE TREN PER MATA PELAJARAN ---
+    const filterSel = document.getElementById('w360-mapel-filter');
+    if (filterSel) {
+        const prevVal = filterSel.value;
+        filterSel.innerHTML = `<option value="all">Semua Mata Pelajaran (${timeline.allMapelNames.length})</option>` +
+            timeline.allMapelNames.map(mpl => `<option value="${mpl}">${mpl}</option>`).join('');
+        if (timeline.allMapelNames.includes(prevVal)) filterSel.value = prevVal;
+    }
+    renderWaliMapelTrendChart();
 
-    document.getElementById('modal-wali-360').classList.remove('hidden');
+    const focusBox = document.getElementById('w360-focus-badges');
+    if (focusBox) {
+        const remedialMapels = timeline.cumulativeSummary.filter(x => x.currentVal !== null && x.currentVal < x.kkm).map(x => x.mapel);
+        const topMapels = timeline.cumulativeSummary.filter(x => x.currentVal !== null && x.currentVal >= 85).map(x => x.mapel);
+        focusBox.innerHTML = [
+            remedialMapels.length ? `<span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-600 text-white">Fokus Remedial: ${remedialMapels.join(', ')}</span>` : '',
+            topMapels.length ? `<span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-600 text-white">Pertahankan: ${topMapels.join(', ')}</span>` : ''
+        ].join('');
+    }
 
+    const subjTbody = document.getElementById('w360-subjects-tbody');
+    if (subjTbody) {
+        subjTbody.innerHTML = timeline.cumulativeSummary.length
+            ? timeline.cumulativeSummary.map(sb => `
+                <tr>
+                    <td class="p-2.5 font-bold text-slate-900 dark:text-white">${sb.mapel}</td>
+                    <td class="p-2.5 text-slate-500">${sb.guru}</td>
+                    <td class="p-2.5 text-center font-bold">${sb.avg > 0 ? sb.avg.toFixed(1) : '-'}</td>
+                    <td class="p-2.5 text-center text-emerald-600 font-bold">${sb.maxVal > 0 ? sb.maxVal.toFixed(1) : '-'}</td>
+                    <td class="p-2.5 text-center text-amber-600 font-bold">${sb.minVal > 0 ? sb.minVal.toFixed(1) : '-'}</td>
+                    <td class="p-2.5 text-center font-extrabold text-blue-700 dark:text-blue-400">${sb.currentVal !== null ? sb.currentVal.toFixed(1) : '-'}</td>
+                    <td class="p-2.5 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${sb.currentVal === null ? 'bg-slate-100 text-slate-500' : sb.tuntas ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">${sb.currentVal === null ? 'Belum Ada Nilai' : sb.tuntas ? 'Tuntas' : 'Remedial'}</span></td>
+                </tr>
+            `).join('')
+            : `<tr><td colspan="7" class="p-4 text-center text-slate-400 italic">Belum ada data mata pelajaran.</td></tr>`;
+    }
+
+    // --- SUB-TAB 3: RADAR CHART & RUMPUN STRENGTH / WEAKNESS ---
+    destroyChart('chartWaliRadarSW');
+    const cRadar = document.getElementById('chartWaliRadarSW');
+    if (cRadar) {
+        chartInstances['chartWaliRadarSW'] = new Chart(cRadar, {
+            type: 'radar',
+            data: {
+                labels: sw.radarLabels,
+                datasets: [
+                    {
+                        label: 'Kompetensi Siswa',
+                        data: sw.radarScores,
+                        backgroundColor: 'rgba(59, 130, 246, 0.25)',
+                        borderColor: '#2563eb',
+                        pointBackgroundColor: '#2563eb',
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Batas Standar KKM (75)',
+                        data: [75, 75, 75, 75, 75],
+                        backgroundColor: 'rgba(245, 158, 11, 0.05)',
+                        borderColor: '#f59e0b',
+                        borderDash: [4, 4],
+                        pointRadius: 0,
+                        borderWidth: 1.5
+                    }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        min: 40, max: 100,
+                        ticks: { display: false },
+                        pointLabels: { color: theme.text, font: { size: 10, weight: 'bold' } },
+                        grid: { color: theme.grid },
+                        angleLines: { color: theme.grid }
+                    }
+                },
+                plugins: { legend: { position: 'bottom', labels: { color: theme.text, boxWidth: 10, font: { size: 10 } } } }
+            }
+        });
+    }
+
+    const rumpunBox = document.getElementById('w360-rumpun-bars');
+    if (rumpunBox) {
+        const items = sw.radarLabels.map((lbl, idx) => ({ lbl, score: sw.radarScores[idx] }));
+        rumpunBox.innerHTML = items.map(it => {
+            const tier = it.score >= 82 ? { tag: 'Tinggi (Strength)', bar: 'bg-emerald-500', txt: 'text-emerald-700 dark:text-emerald-400' }
+                : it.score >= 75 ? { tag: 'Stabil', bar: 'bg-blue-500', txt: 'text-blue-700 dark:text-blue-400' }
+                : { tag: 'Perlu Penguatan', bar: 'bg-rose-500', txt: 'text-rose-700 dark:text-rose-400' };
+            return `
+                <div class="space-y-1">
+                    <div class="flex justify-between font-bold">
+                        <span>${it.lbl}</span>
+                        <span class="${tier.txt}">${it.score.toFixed(1)} — ${tier.tag}</span>
+                    </div>
+                    <div class="w-full bg-slate-100 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                        <div class="${tier.bar} h-full rounded-full" style="width:${Math.min(100, it.score)}%"></div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    const swBadgesBox = document.getElementById('w360-sw-badges');
+    if (swBadgesBox) {
+        const badges = [];
+        const sortedItems = sw.radarLabels.map((lbl, idx) => ({ lbl, score: sw.radarScores[idx] })).sort((a, b) => b.score - a.score);
+        if (sortedItems[0]?.score >= 80) badges.push(`<span class="px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-extrabold">🏆 Unggul di ${sortedItems[0].lbl}</span>`);
+        if (m.attRate >= 95 && m.pendingTasks.length === 0) badges.push(`<span class="px-3 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-extrabold">⭐ Kedisiplinan & Tugas Teladan</span>`);
+        const weak = sortedItems[sortedItems.length - 1];
+        if (weak && weak.score < 75) badges.push(`<span class="px-3 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-xs font-extrabold">📌 Pendampingan ${weak.lbl}</span>`);
+        swBadgesBox.innerHTML = badges.length ? badges.join('') : `<span class="text-xs text-slate-400 italic">Tambahkan nilai mata pelajaran untuk melihat lencana kompetensi otomatis.</span>`;
+    }
+}
+
+function renderWaliMapelTrendChart() {
+    const cMulti = document.getElementById('chartWaliAllMapelTrend');
+    if (!cMulti || !waliCurrentTimelineData) return;
+    const theme = getChartThemeColors();
+    const selectedMpl = document.getElementById('w360-mapel-filter')?.value || 'all';
+    const palette = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899'];
+
+    const targetMapels = selectedMpl === 'all'
+        ? waliCurrentTimelineData.allMapelNames
+        : waliCurrentTimelineData.allMapelNames.filter(m => m === selectedMpl);
+
+    const datasets = targetMapels.map((mpl, idx) => ({
+        label: mpl,
+        data: waliCurrentTimelineData.mapelSeries[mpl],
+        borderColor: palette[idx % palette.length],
+        backgroundColor: palette[idx % palette.length],
+        borderWidth: 2.5,
+        pointRadius: 4,
+        spanGaps: true,
+        tension: 0.25
+    }));
+
+    datasets.push({
+        label: 'Batas KKM (75)',
+        data: waliCurrentTimelineData.allPeriods.map(() => 75),
+        borderColor: '#94a3b8',
+        borderDash: [5, 5],
+        borderWidth: 1.5,
+        pointRadius: 0
+    });
+
+    destroyChart('chartWaliAllMapelTrend');
+    chartInstances['chartWaliAllMapelTrend'] = new Chart(cMulti, {
+        type: 'line',
+        data: { labels: waliCurrentTimelineData.allPeriods, datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+                x: { ticks: { color: theme.text, font: { size: 10 } }, grid: { color: theme.grid } },
+                y: { min: 50, max: 100, ticks: { color: theme.text, font: { size: 10 } }, grid: { color: theme.grid } }
+            },
+            plugins: { legend: { position: 'top', labels: { color: theme.text, boxWidth: 10, font: { size: 10 } } }, tooltip: { backgroundColor: theme.tooltipBg } }
+        }
+    });
+}
+
+// ==================== 10B. ENGINE ANALISIS AI GEMINI (HEMAT TOKEN / CACHE) ====================
+function buildWaliStudentSummaryPayload(studentId) {
+    const s = allStudentsGlobal.find(x => Number(x.id) === Number(studentId));
+    const m = waliMetricsCache[Number(studentId)] || { h: 0, s: 0, i: 0, a: 0, attRate: 100, pendingTasks: [], subjectDetails: [] };
+    return {
+        nama: s?.nama || 'Siswa',
+        kelas: s?.classes?.nama_kelas || '-',
+        periode_aktif: activePeriodName || currentDatePeriodName,
+        kehadiran: {
+            persentase: `${m.attRate.toFixed(0)}%`,
+            hadir: m.h, sakit: m.s, izin: m.i, alpa: m.a
+        },
+        riwayat_semester_lalu: waliActiveHistoricalGrades.map(h => ({
+            periode: h.periode, mapel: h.mapel, nilai: Number(h.nilai_akhir)
+        })),
+        capaian_semester_berjalan: m.subjectDetails.filter(sb => sb.hasData).map(sb => ({
+            mapel: sb.mapel, nilai: Number(sb.finalVal.toFixed(1)), kkm: sb.kkm
+        })),
+        profil_rumpun: waliCurrentSWData ? waliCurrentSWData.radarLabels.map((lbl, idx) => ({
+            dimensi: lbl, skor: waliCurrentSWData.radarScores[idx]
+        })) : [],
+        jumlah_tugas_tertunggak: m.pendingTasks.length,
+        daftar_tunggakan: m.pendingTasks.slice(0, 6).map(t => `${t.mapel}: ${t.judul}`)
+    };
+}
+
+function computeDataFingerprint(obj) {
+    const str = JSON.stringify(obj);
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0;
+    }
+    return `fp_${Math.abs(hash)}_${str.length}`;
+}
+
+function formatAIAnalysisHTML(rawText) {
+    if (!rawText) return '';
+    return rawText
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
+        .map(line => `<p>${line}</p>`)
+        .join('');
+}
+
+async function loadWaliCachedAIAnalysis(studentId) {
+    const outBox = document.getElementById('w360-ai-output');
+    const badge = document.getElementById('w360-ai-badge');
+    if (!outBox || !badge) return;
+
+    const summary = buildWaliStudentSummaryPayload(studentId);
+    const currentFp = computeDataFingerprint(summary);
+
+    const { data: cached } = await db.from('wali_ai_analyses')
+        .select('*')
+        .eq('student_id', studentId)
+        .maybeSingle();
+
+    if (cached && cached.ringkasan_ai) {
+        waliCurrentAIAnalysisText = cached.ringkasan_ai;
+        outBox.innerHTML = formatAIAnalysisHTML(cached.ringkasan_ai);
+        if (cached.data_fingerprint === currentFp) {
+            badge.innerText = '✨ Tersimpan (0 Token)';
+            badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-700 shrink-0';
+        } else {
+            badge.innerText = '🔄 Ada Pembaruan Data';
+            badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 shrink-0';
+        }
+    } else {
+        waliCurrentAIAnalysisText = '';
+        badge.innerText = 'Siap Analisis';
+        badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-100 dark:bg-indigo-900/70 text-indigo-700 dark:text-indigo-300 shrink-0';
+        outBox.innerHTML = `<p class="text-slate-400 italic">Klik tombol <b>✨ Analisis AI</b> di bawah untuk membaca tren nilai lintas semester, kekuatan (strength), dan tantangan belajar siswa ini.</p>`;
+    }
+}
+
+async function runWaliAIAnalysis(forceRefresh = true) {
+    if (!activeWaliStudentId) return;
+    const outBox = document.getElementById('w360-ai-output');
+    const badge = document.getElementById('w360-ai-badge');
+    const btn = document.getElementById('btn-run-wali-ai');
+
+    const summary = buildWaliStudentSummaryPayload(activeWaliStudentId);
+    const currentFp = computeDataFingerprint(summary);
+
+    if (!forceRefresh) {
+        const { data: cached } = await db.from('wali_ai_analyses').select('*').eq('student_id', activeWaliStudentId).maybeSingle();
+        if (cached && cached.data_fingerprint === currentFp) {
+            waliCurrentAIAnalysisText = cached.ringkasan_ai;
+            outBox.innerHTML = formatAIAnalysisHTML(cached.ringkasan_ai);
+            badge.innerText = '✨ Hemat Token (0 Token)';
+            return;
+        }
+    }
+
+    btn.disabled = true;
+    badge.innerText = '⏳ Menganalisis...';
+    outBox.innerHTML = `<p class="text-indigo-600 dark:text-indigo-400 font-bold animate-pulse">🤖 Sedang menganalisis grafik perkembangan lintas semester & profil kompetensi siswa...</p>`;
+
+    try {
+        const { data, error } = await db.functions.invoke('ai-advisor', {
+            body: {
+                teacher_id: currentUser.id,
+                student_summary: summary
+            }
+        });
+
+        if (error || !data?.success) {
+            throw new Error(data?.error || error?.message || 'Gagal terhubung ke layanan AI.');
+        }
+
+        waliCurrentAIAnalysisText = data.analysis;
+        outBox.innerHTML = formatAIAnalysisHTML(data.analysis);
+        badge.innerText = data.key_source === 'personal' ? '✨ AI Mandiri Aktif' : '✨ AI Sekolah Aktif';
+        badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-700 shrink-0';
+
+        await db.from('wali_ai_analyses').upsert({
+            student_id: activeWaliStudentId,
+            periode: activePeriodName || currentDatePeriodName,
+            data_fingerprint: currentFp,
+            ringkasan_ai: data.analysis,
+            model_used: data.model || 'gemini-3.5-flash-lite',
+            updated_at: new Date().toISOString()
+        });
+
+        showToast('✅ Analisis AI selesai & disimpan ke cache!');
+    } catch (err) {
+        badge.innerText = '⚠️ Perlu API Key';
+        badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-700 shrink-0';
+        outBox.innerHTML = `<p class="text-rose-600 font-bold">⚠️ ${err.message}</p><p class="text-[11px] text-slate-500">Anda dapat menempelkan API Key gratis di menu <b>Pengaturan</b> atau menekan tombol <b>Buka Prompt di Gemini Web</b> di bawah.</p>`;
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function saveWaliAIToJournal() {
+    if (!activeWaliStudentId || !waliCurrentAIAnalysisText) {
+        return showToast('Jalankan Analisis AI terlebih dahulu sebelum menyimpan ke jurnal!', 'error');
+    }
+    const todayStr = new Date().toISOString().split('T')[0];
+    const cleanSummary = waliCurrentAIAnalysisText.replace(/\*\*/g, '');
+    const { error } = await db.from('wali_logs').insert([{
+        teacher_id: currentUser.id,
+        student_id: activeWaliStudentId,
+        tanggal: todayStr,
+        topik: `Evaluasi Perkembangan Belajar (${activePeriodName})`,
+        catatan: cleanSummary,
+        tindak_lanjut: 'Pemantauan berkala oleh Guru Wali'
+    }]);
+    if (error) return showToast('Gagal menyimpan ke jurnal: ' + error.message, 'error');
+    showToast('✅ Hasil analisis AI berhasil dicatat ke Jurnal Bimbingan!');
+    await loadWaliLogsList(activeWaliStudentId);
+}
+
+function openWaliGeminiWebFallback() {
+    if (!activeWaliStudentId) return;
+    const summary = buildWaliStudentSummaryPayload(activeWaliStudentId);
+    const promptText = `Analisislah perkembangan hasil belajar siswa SMA berikut secara objektif, ringkas, dan berbasis data (tren lintas semester, perbandingan per mata pelajaran, kekuatan/strength, kelemahan/weakness, serta kaitannya dengan kehadiran & tunggakan tugas):\n\n${JSON.stringify(summary, null, 2)}`;
+    navigator.clipboard.writeText(promptText);
+    showToast('📋 Prompt data siswa disalin! Tempel (Ctrl+V) di tab Gemini Web.');
+    window.open('https://gemini.google.com/app', '_blank');
+}
+
+async function loadWaliLogsList(studentId) {
     const { data: logs } = await db.from('wali_logs').select('*').eq('student_id', studentId).order('tanggal', { ascending: false });
-    document.getElementById('w360-logs-list').innerHTML = (logs || []).map(l => `
-        <div class="p-2.5 rounded-xl bg-slate-50 border text-xs">
-            <div class="font-extrabold text-slate-900">${l.tanggal} — ${l.topik}</div>
-            <p class="text-slate-600 mt-1">${l.catatan}</p>
-            ${l.tindak_lanjut ? `<p class="text-[11px] text-blue-700 font-semibold mt-1">Tindak Lanjut: ${l.tindak_lanjut}</p>` : ''}
+    const box = document.getElementById('w360-logs-list');
+    if (!box) return;
+    box.innerHTML = (logs || []).map(l => `
+        <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70 border dark:border-slate-700 text-xs">
+            <div class="font-extrabold text-slate-900 dark:text-white">${l.tanggal} — ${l.topik}</div>
+            <p class="text-slate-600 dark:text-slate-300 mt-1 whitespace-pre-line">${l.catatan}</p>
+            ${l.tindak_lanjut ? `<p class="text-[11px] text-blue-700 dark:text-blue-400 font-semibold mt-1">Tindak Lanjut: ${l.tindak_lanjut}</p>` : ''}
         </div>
     `).join('') || `<p class="text-xs text-slate-400 italic">Belum ada catatan bimbingan.</p>`;
 }
-function closeWali360Modal() { document.getElementById('modal-wali-360').classList.add('hidden'); }
 
 async function addWaliCounselingLog(e) {
     e.preventDefault();
@@ -2349,22 +3129,62 @@ async function addWaliCounselingLog(e) {
     }]);
     e.target.reset();
     showToast('✅ Jurnal bimbingan dicatat');
-    openWali360Modal(activeWaliStudentId);
+    await loadWaliLogsList(activeWaliStudentId);
+}
+
+function printWali360PDF() {
+    if (!activeWaliStudentId) return;
+    const s = allStudentsGlobal.find(x => Number(x.id) === activeWaliStudentId);
+    const m = waliMetricsCache[activeWaliStudentId] || { h: 0, s: 0, i: 0, a: 0, attRate: 100 };
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    doc.setFontSize(14);
+    doc.text(`LAPORAN PERKEMBANGAN AKADEMIK SISWA 360°`, 14, 16);
+    doc.setFontSize(10);
+    doc.text(`Nama: ${s?.nama || '-'} (${s?.nisn || '-'}) | Kelas: ${s?.classes?.nama_kelas || '-'}`, 14, 23);
+    doc.text(`Periode: ${activePeriodName} | Kehadiran: ${m.attRate.toFixed(0)}% (H:${m.h} S:${m.s} I:${m.i} A:${m.a})`, 14, 29);
+
+    if (waliCurrentTimelineData?.cumulativeSummary?.length) {
+        doc.autoTable({
+            startY: 35,
+            head: [['Mata Pelajaran', 'Rata-rata Kumulatif', 'Tertinggi', 'Terendah', 'Semester Aktif', 'Status']],
+            body: waliCurrentTimelineData.cumulativeSummary.map(sb => [
+                sb.mapel,
+                sb.avg > 0 ? sb.avg.toFixed(1) : '-',
+                sb.maxVal > 0 ? sb.maxVal.toFixed(1) : '-',
+                sb.minVal > 0 ? sb.minVal.toFixed(1) : '-',
+                sb.currentVal !== null ? sb.currentVal.toFixed(1) : '-',
+                sb.currentVal === null ? 'Belum Ada' : sb.tuntas ? 'Tuntas' : 'Remedial'
+            ])
+        });
+    }
+
+    const afterTableY = (doc.lastAutoTable?.finalY || 40) + 10;
+    if (waliCurrentAIAnalysisText) {
+        doc.setFontSize(11);
+        doc.text('Ringkasan Analisis Perkembangan Belajar (AI):', 14, afterTableY);
+        doc.setFontSize(9.5);
+        const lines = doc.splitTextToSize(waliCurrentAIAnalysisText.replace(/\*\*/g, ''), 180);
+        doc.text(lines, 14, afterTableY + 6);
+    }
+
+    doc.save(`Laporan_360_${(s?.nama || 'Siswa').replace(/\s+/g, '_')}.pdf`);
 }
 
 function exportWaliBinaanExcel() {
     const list = allStudentsGlobal.filter(s => binaanIdsCache.has(Number(s.id)));
     const rows = list.map((s, i) => {
         const m = waliMetricsCache[Number(s.id)] || { attRate: 100, pendingTasks: [], avgFinalAllSubjects: 0, ews: 'aman' };
-        return { No: i + 1, NISN: s.nisn, Nama: s.nama, Kelas: s.classes?.nama_kelas || '-', Kehadiran_Pct: Number(m.attRate.toFixed(1)), Tunggakan_Tugas: m.pendingTasks.length, Rata2_Nilai: Number(m.avgFinalAllSubjects.toFixed(1)), Status_EWS: m.ews.toUpperCase() };
+        return { No: i + 1, NISN: s.nisn, Nama: s.nama, Kelas: s.classes?.nama_kelas || '-', Periode: activePeriodName, Kehadiran_Pct: Number(m.attRate.toFixed(1)), Tunggakan_Tugas: m.pendingTasks.length, Rata2_Nilai: Number(m.avgFinalAllSubjects.toFixed(1)), Status_EWS: m.ews.toUpperCase() };
     });
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Siswa_Binaan');
-    XLSX.writeFile(wb, 'Laporan_Siswa_Binaan_PA.xlsx');
+    XLSX.writeFile(wb, `Laporan_Siswa_Binaan_${activePeriodName}.xlsx`);
 }
 
-// ==================== 11. PENGATURAN BOBOT & KKM ====================
+// ==================== 11. PENGATURAN BOBOT, KKM & API KEY GEMINI MANDIRI ====================
 function populateSettingsForm() {
     const amp = getActiveAmpuan();
     if (!amp) return;
@@ -2398,6 +3218,68 @@ async function saveSettings(e) {
     }).eq('id', amp.id);
     showToast('✅ Pengaturan berhasil disimpan!');
     await loadTeacherAmpuan();
+}
+
+function updateGeminiKeyUI() {
+    const badgeEl = document.getElementById('gemini-key-status-badge');
+    const inpEl = document.getElementById('gemini-api-key-input');
+    const btnWrap = document.getElementById('gemini-key-action-buttons');
+    if (!badgeEl || !btnWrap || !currentUser) return;
+
+    const hasKey = Boolean(currentUser.gemini_api_key && currentUser.gemini_api_key.trim() !== '');
+    if (hasKey) {
+        const masked = currentUser.gemini_api_key.slice(0, 6) + '••••••••••••••••••••';
+        if (inpEl) inpEl.placeholder = `Kunci Aktif: ${masked} (tempel kunci baru untuk mengganti)`;
+        badgeEl.innerHTML = `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">✅ AI Mandiri Aktif</span>`;
+        btnWrap.innerHTML = `
+            <a href="https://aistudio.google.com/apikey" target="_blank" class="px-3 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold inline-flex items-center gap-1">🔑 AI Studio ↗</a>
+            <button type="button" id="btn-save-gemini-key" onclick="saveAndTestTeacherGeminiKey()" class="px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold">Perbarui Kunci</button>
+            <button type="button" onclick="removeTeacherGeminiKey()" class="px-3 py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 border border-rose-200 dark:border-rose-800 font-bold">Hapus</button>
+        `;
+    } else {
+        if (inpEl) inpEl.placeholder = 'Tempel API Key Gemini Anda (contoh: AIzaSy...)';
+        badgeEl.innerHTML = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">⚪ Belum Diatur</span>`;
+        btnWrap.innerHTML = `
+            <a href="https://aistudio.google.com/apikey" target="_blank" class="px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200 font-bold inline-flex items-center gap-1.5">🔑 Dapatkan API Key ↗</a>
+            <button type="button" id="btn-save-gemini-key" onclick="saveAndTestTeacherGeminiKey()" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold shadow-sm">Simpan & Uji Koneksi</button>
+        `;
+    }
+}
+
+async function saveAndTestTeacherGeminiKey() {
+    const inp = document.getElementById('gemini-api-key-input');
+    const btn = document.getElementById('btn-save-gemini-key');
+    const rawKey = inp?.value.trim() || '';
+    if (!rawKey) return showToast('Silakan tempel API Key Gemini terlebih dahulu!', 'error');
+
+    if (btn) { btn.disabled = true; btn.innerText = '⏳ Menguji koneksi...'; }
+    try {
+        const { data, error } = await db.functions.invoke('ai-advisor', {
+            body: { action: 'save_and_test_key', teacher_id: currentUser.id, api_key: rawKey }
+        });
+        if (error || !data?.success) throw new Error(data?.error || error?.message || 'API Key tidak valid.');
+
+        currentUser.gemini_api_key = rawKey;
+        localStorage.setItem('sipantau_user', JSON.stringify(currentUser));
+        inp.value = '';
+        updateGeminiKeyUI();
+        showToast(`✅ API Key Gemini valid & aktif (Model: ${data.model})!`);
+    } catch (err) {
+        showToast('❌ Gagal verifikasi API Key: ' + err.message, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerText = 'Simpan & Uji Koneksi'; }
+    }
+}
+
+async function removeTeacherGeminiKey() {
+    if (!confirm('Hapus API Key Gemini pribadi dari akun Anda?')) return;
+    await db.functions.invoke('ai-advisor', {
+        body: { action: 'remove_key', teacher_id: currentUser.id }
+    });
+    currentUser.gemini_api_key = null;
+    localStorage.setItem('sipantau_user', JSON.stringify(currentUser));
+    updateGeminiKeyUI();
+    showToast('API Key Gemini pribadi dihapus.');
 }
 
 // ==================== 12. INTEGRASI OAUTH GOOGLE DRIVE GURU ====================
@@ -2458,9 +3340,9 @@ function updateGDriveConnectionUI() {
 
     if (currentUser.gdrive_email) {
         badgeEl.innerHTML = `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">✅ Terhubung: ${currentUser.gdrive_email}</span>`;
-        btnContainer.innerHTML = `<button type="button" onclick="connectGoogleDrive()" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">🔄 Ganti Akun</button><button type="button" onclick="disconnectGoogleDrive()" class="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-bold transition">Putuskan</button>`;
+        btnContainer.innerHTML = `<button type="button" onclick="connectGoogleDrive()" class="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition">🔄 Ganti Akun</button><button type="button" onclick="disconnectGoogleDrive()" class="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-600 border border-rose-200 dark:border-rose-800 text-xs font-bold transition">Putuskan</button>`;
     } else {
-        badgeEl.innerHTML = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600">⚪ Belum Terhubung</span>`;
+        badgeEl.innerHTML = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">⚪ Belum Terhubung</span>`;
         btnContainer.innerHTML = `<button type="button" onclick="connectGoogleDrive()" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-sm transition flex items-center gap-2"><i class="fa-brands fa-google"></i> Hubungkan Google Drive</button>`;
     }
 }
@@ -2469,7 +3351,7 @@ function showToast(msg, type = 'success') {
     const t = document.getElementById('toast');
     if (!t) return;
     t.innerText = msg;
-    t.className = `fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg text-white transition-all duration-300 ${type === 'error' ? 'bg-rose-600' : 'bg-slate-900'}`;
+    t.className = `fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg text-white transition-all duration-300 ${type === 'error' ? 'bg-rose-600' : 'bg-slate-900 dark:bg-blue-600'}`;
     t.classList.remove('hidden');
     setTimeout(() => t.classList.add('hidden'), 3500);
 }
