@@ -1,5 +1,5 @@
 // ============================================================================
-// PANTAU BELAJAR — APP-GURU.JS (v8.1 — KALKULASI HANYA NILAI YANG TERISI)
+// PANTAU BELAJAR — APP-GURU.JS (v8.5 — DUKUNG LINK TUGAS SISWA & NILAI TERISI)
 // ============================================================================
 const GOOGLE_OAUTH_CLIENT_ID = '565864753824-3ahjeunj19r6am2fgg2n1fv721kqfp77.apps.googleusercontent.com';
 
@@ -1597,7 +1597,7 @@ function loadAssessmentScores() {
             <th class="p-3 text-center w-10">No</th>
             <th class="p-3">Nama Siswa</th>
             ${isGroup ? '<th class="p-3 w-36">Kelompok</th>' : ''}
-            <th class="p-3 text-center">File Drive Siswa</th>
+            <th class="p-3 text-center">File / Link Siswa</th>
             <th class="p-3 text-center">Status Kumpul</th>
             <th class="p-3 text-center w-28">Nilai (0-100)</th>
         </tr>
@@ -1618,11 +1618,16 @@ function loadAssessmentScores() {
         const parsedFiles = parseStudentSubmittedFiles(sc.link_tugas_siswa);
         const fileLinkHtml = parsedFiles.length > 0
             ? `<div class="flex flex-wrap items-center justify-center gap-1">
-                ${parsedFiles.map((f, fIdx) => `
-                    <a href="${f.url}" target="_blank" title="${f.name}" class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] font-extrabold">
-                        📂 File ${fIdx + 1} ↗
-                    </a>
-                `).join('')}
+                ${parsedFiles.map((f, fIdx) => {
+                    const isLink = f.type === 'link' || String(f.name || '').startsWith('Link:');
+                    return isLink
+                        ? `<a href="${f.url}" target="_blank" title="${f.name} (${f.url})" class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-extrabold">
+                            🔗 Link ${fIdx + 1} ↗
+                           </a>`
+                        : `<a href="${f.url}" target="_blank" title="${f.name}" class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] font-extrabold">
+                            📂 File ${fIdx + 1} ↗
+                           </a>`;
+                }).join('')}
                </div>`
             : `<span class="text-[11px] text-slate-400">-</span>`;
 
