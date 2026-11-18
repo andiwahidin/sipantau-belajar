@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#4338ca" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e0e7ff" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <circle cx="416" cy="96" r="140" fill="#ffffff" fill-opacity="0.08" />
+  <circle cx="88" cy="424" r="120" fill="#ffffff" fill-opacity="0.06" />
+  <!-- Graduation Cap Icon -->
+  <g transform="translate(256 248)">
+    <!-- Mortarboard top diamond -->
+    <polygon points="0,-108 164,-34 0,40 -164,-34" fill="url(#accentGrad)" />
+    <!-- Cap crown / base -->
+    <path d="M-98,14 L0,60 L98,14 L98,74 C98,98 54,118 0,118 C-54,118 -98,98 -98,74 Z" fill="#dbeafe" />
+    <!-- Tassel cord & knob -->
+    <path d="M132,-18 L132,68" stroke="#fbbf24" stroke-width="14" stroke-linecap="round" />
+    <circle cx="132" cy="76" r="16" fill="#fbbf24" />
+    <path d="M122,86 L142,86 L146,120 L118,120 Z" fill="#f59e0b" />
+  </g>
+</svg>

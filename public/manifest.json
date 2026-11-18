@@ -1,0 +1,47 @@
+{
+  "id": "/",
+  "name": "PantauBelajar — LMS & Sistem Monitoring Akademik",
+  "short_name": "PantauLMS",
+  "description": "LMS & Sistem Monitoring Akademik untuk Guru, Administrator, dan Siswa.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#2563eb",
+  "background_color": "#f8fafc",
+  "lang": "id",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Panel Guru & Admin",
+      "short_name": "Panel Guru",
+      "url": "/index.html",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Portal LMS Siswa",
+      "short_name": "LMS Siswa",
+      "url": "/siswa.html",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
+    }
+  ]
+}

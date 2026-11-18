@@ -1,0 +1,33 @@
+{
+  "id": "/siswa.html",
+  "name": "PantauBelajar — Portal LMS Siswa",
+  "short_name": "LMS Siswa",
+  "description": "Portal LMS Siswa PantauBelajar untuk materi, tugas, kuis online, presensi, dan nilai belajar.",
+  "start_url": "/siswa.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#2563eb",
+  "background_color": "#f8fafc",
+  "lang": "id",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

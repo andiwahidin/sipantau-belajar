@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#4338ca" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e0e7ff" />
+    </linearGradient>
+  </defs>
+  <!-- Full-bleed background for maskable safe-zone compliance -->
+  <rect x="0" y="0" width="512" height="512" rx="0" fill="url(#bgGrad)" />
+  <circle cx="430" cy="82" r="130" fill="#ffffff" fill-opacity="0.08" />
+  <circle cx="82" cy="430" r="120" fill="#ffffff" fill-opacity="0.06" />
+  <!-- Icon scaled inside central 72% safe zone (14% margin on all sides) -->
+  <g transform="translate(256 250) scale(0.74)">
+    <polygon points="0,-108 164,-34 0,40 -164,-34" fill="url(#accentGrad)" />
+    <path d="M-98,14 L0,60 L98,14 L98,74 C98,98 54,118 0,118 C-54,118 -98,98 -98,74 Z" fill="#dbeafe" />
+    <path d="M132,-18 L132,68" stroke="#fbbf24" stroke-width="14" stroke-linecap="round" />
+    <circle cx="132" cy="76" r="16" fill="#fbbf24" />
+    <path d="M122,86 L142,86 L146,120 L118,120 Z" fill="#f59e0b" />
+  </g>
+</svg>
