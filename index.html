@@ -4,6 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
     <title>PantauBelajar — LMS & Sistem Monitoring Akademik</title>
+    <meta name="description" content="LMS & Sistem Monitoring Akademik untuk Guru, Administrator, dan Siswa." />
+    <meta property="og:title" content="PantauBelajar — LMS & Sistem Monitoring Akademik" />
+    <meta property="og:description" content="LMS & Sistem Monitoring Akademik untuk Guru, Administrator, dan Siswa." />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="PantauLMS" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
     <script src="https://cdn.tailwindcss.com/3.4.16"></script>
     <script>
         tailwind.config = {
@@ -30,6 +42,7 @@
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css?v=9.0">
 </head>
@@ -69,11 +82,14 @@
                     <a href="privacy.html" class="text-slate-400 hover:underline">Privasi</a>
                 </div>
             </div>
+            <button type="button" onclick="window.triggerPWAInstall && window.triggerPWAInstall()" data-pwa-install-trigger class="hidden w-full py-2.5 px-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-extrabold flex items-center justify-center gap-2 transition">
+                <span data-pwa-label>📲 Pasang Aplikasi (PWA)</span>
+            </button>
         </div>
     </section>
 
     <!-- ==================== 2. PANEL ADMINISTRATOR ==================== -->
-    <section id="view-admin" class="hidden min-h-screen flex flex-col">
+    <section id="view-admin" class="hidden min-h-screen flex flex-col w-full max-w-full overflow-x-hidden">
         <header class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-8 py-3.5 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-30">
             <div class="flex items-center gap-3">
                 <div class="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold"><i class="fa-solid fa-shield-halved"></i></div>
@@ -126,10 +142,10 @@
     </section>
 
     <!-- ==================== 3. WORKSPACE GURU & PEMBIMBING ==================== -->
-    <section id="view-guru" class="hidden min-h-screen flex">
+    <section id="view-guru" class="hidden min-h-screen flex w-full max-w-full overflow-x-hidden">
 
         <!-- SIDEBAR -->
-        <aside id="main-sidebar" class="hidden lg:flex flex-col w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 fixed inset-y-0 left-0 z-40">
+        <aside id="main-sidebar" class="hidden lg:flex flex-col w-64 max-w-[85vw] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 fixed inset-y-0 left-0 z-40">
             <div class="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
                 <div class="flex items-center gap-2.5">
                     <div class="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm"><i class="fa-solid fa-graduation-cap"></i></div>
@@ -150,12 +166,14 @@
                 </button>
                 <button id="gtab-nilai" onclick="switchGuruTab('nilai'); toggleMobileSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
                     <i class="fa-solid fa-list-check w-4 text-center"></i> Tugas & Nilai
+                    <span id="badge-guru-nilai" class="ml-auto hidden px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-white">0</span>
                 </button>
                 <button id="gtab-absen" onclick="switchGuruTab('absen'); toggleMobileSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
                     <i class="fa-regular fa-calendar-check w-4 text-center"></i> Presensi
                 </button>
                 <button id="gtab-pengumuman" onclick="switchGuruTab('pengumuman'); toggleMobileSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
                     <i class="fa-solid fa-bullhorn w-4 text-center"></i> Pengumuman
+                    <span id="badge-guru-pengumuman" class="ml-auto hidden px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500 text-white">0</span>
                 </button>
                 <button id="gtab-rekap" onclick="switchGuruTab('rekap'); toggleMobileSidebar(true)" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
                     <i class="fa-solid fa-award w-4 text-center"></i> Nilai Akhir & Rapor
@@ -172,6 +190,9 @@
             </nav>
 
             <div class="p-3.5 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                <button type="button" onclick="window.triggerPWAInstall && window.triggerPWAInstall()" data-pwa-install-trigger class="hidden w-full py-2 px-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200/80 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-extrabold flex items-center justify-center gap-2 transition">
+                    <span data-pwa-label>📲 Pasang Aplikasi (PWA)</span>
+                </button>
                 <button type="button" onclick="copyStudentPortalLink()" class="w-full py-2 px-3 rounded-xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-blue-700 dark:text-blue-300 text-xs font-extrabold flex items-center justify-center gap-2 transition">
                     🔗 Salin Link LMS Siswa
                 </button>
@@ -180,11 +201,11 @@
         </aside>
 
         <!-- KONTEN UTAMA KANAN -->
-        <div class="flex-1 lg:ml-64 flex flex-col min-w-0">
+        <div class="flex-1 lg:ml-64 flex flex-col min-w-0 w-full max-w-full">
 
             <!-- TOPBAR -->
-            <header class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
-                <div class="flex items-center gap-3">
+            <header class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-1.5 sm:gap-3">
+                <div class="flex items-center gap-2 sm:gap-3 shrink-0">
                     <button type="button" onclick="toggleMobileSidebar()" class="lg:hidden p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200"><i class="fa-solid fa-bars"></i></button>
                     <div class="relative hidden sm:block w-64">
                         <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs absolute left-3.5 top-3"></i>
@@ -192,25 +213,29 @@
                     </div>
                 </div>
 
-                <div class="flex items-center gap-2.5">
+                <div class="flex items-center gap-1.5 sm:gap-2.5 justify-end min-w-0">
                     <!-- PEMILIH PERIODE AKADEMIK OTOMATIS -->
-                    <div class="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/80 px-2.5 py-1.5 rounded-xl">
+                    <div class="flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/80 px-2 sm:px-2.5 py-1.5 rounded-xl min-w-0 shrink">
                         <span class="text-[11px] font-bold text-indigo-700 dark:text-indigo-300 hidden md:inline">🗓️ Periode:</span>
-                        <select id="guru-active-period" onchange="onGuruPeriodChange()" class="bg-transparent text-xs font-extrabold text-indigo-900 dark:text-indigo-200 outline-none cursor-pointer border-0 p-0">
-                            <option value="Semester Ganjil 2026">Semester Ganjil 2026</option>
+                        <select id="guru-active-period" onchange="onGuruPeriodChange()" class="bg-transparent text-[11px] sm:text-xs font-extrabold text-indigo-900 dark:text-indigo-200 outline-none cursor-pointer border-0 p-0 max-w-[115px] sm:max-w-none truncate">
+                            <option value="Semester Ganjil 2026">Ganjil 2026</option>
                         </select>
                     </div>
 
-                    <button type="button" onclick="toggleAppTheme()" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold" title="Ubah Tema Terang/Gelap">🌗</button>
+                    <button type="button" onclick="window.triggerPWAInstall && window.triggerPWAInstall()" data-pwa-install-trigger data-pwa-compact="true" class="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-extrabold shadow-sm shrink-0 transition" title="Pasang PantauBelajar sebagai Aplikasi">
+                        <i class="fa-solid fa-download"></i>
+                        <span data-pwa-label>Install</span>
+                    </button>
+                    <button type="button" onclick="toggleAppTheme()" class="p-1.5 sm:p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold shrink-0" title="Ubah Tema Terang/Gelap">🌗</button>
 
-                    <div id="user-badge" class="hidden items-center gap-2.5">
-                        <div id="topbar-avatar" class="w-8 h-8 rounded-full bg-blue-600 text-white font-extrabold text-xs flex items-center justify-center">GR</div>
+                    <div id="user-badge" class="hidden items-center gap-1.5 sm:gap-2.5 shrink-0">
+                        <div id="topbar-avatar" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-blue-600 text-white font-extrabold text-[11px] sm:text-xs flex items-center justify-center shrink-0">GR</div>
                         <div class="hidden sm:block text-left">
                             <span id="user-display-name" class="block text-xs font-extrabold text-slate-900 dark:text-white leading-tight max-w-[140px] truncate">Guru</span>
                             <span id="user-role-subtitle" class="block text-[10px] text-slate-500 dark:text-slate-400">Guru & Pembimbing</span>
                         </div>
-                        <button onclick="openPasswordModal()" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 text-xs" title="Ubah Password">🔑</button>
-                        <button onclick="logout()" class="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 text-xs font-extrabold border border-rose-200 dark:border-rose-900">Keluar</button>
+                        <button onclick="openPasswordModal()" class="p-1.5 sm:p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 text-xs shrink-0" title="Ubah Password">🔑</button>
+                        <button onclick="logout()" class="px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 text-[11px] sm:text-xs font-extrabold border border-rose-200 dark:border-rose-900 shrink-0">Keluar</button>
                     </div>
                 </div>
             </header>
@@ -228,72 +253,80 @@
             </div>
 
             <!-- SELECTOR KELAS & MATA PELAJARAN AKTIF -->
-            <div class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-3 space-y-2.5">
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div class="flex flex-wrap items-center gap-2">
+            <div class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 py-3 space-y-2.5 min-w-0 max-w-full">
+                <div class="flex flex-wrap items-center justify-between gap-2 min-w-0">
+                    <div class="flex flex-wrap items-center gap-2 min-w-0 max-w-full">
                         <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Ruang Kerja:</span>
-                        <select id="guru-active-class" onchange="onGuruClassDropdownChange()" class="border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-extrabold text-slate-800 dark:text-slate-100 bg-slate-50 dark:bg-slate-800"></select>
-                        <select id="guru-active-mapel" onchange="onGuruMapelDropdownChange()" class="border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-extrabold text-blue-800 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60"></select>
+                        <select id="guru-active-class" onchange="onGuruClassDropdownChange()" class="border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-extrabold text-slate-800 dark:text-slate-100 bg-slate-50 dark:bg-slate-800 max-w-full"></select>
+                        <select id="guru-active-mapel" onchange="onGuruMapelDropdownChange()" class="border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-extrabold text-blue-800 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 max-w-full"></select>
                         <button type="button" onclick="openAddAmpuanModal()" class="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-sm">+ Tambah Kelas / Mapel</button>
                     </div>
-                    <div class="flex items-center gap-2 text-xs">
-                        <span id="workspace-label" class="font-extrabold text-slate-700 dark:text-slate-200">Belum Dipilih</span>
-                        <span id="workspace-kkm-label" class="px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 font-extrabold text-[11px]">KKM: 75</span>
+                    <div class="flex items-center gap-2 text-xs flex-wrap min-w-0">
+                        <span id="workspace-label" class="font-extrabold text-slate-700 dark:text-slate-200 truncate max-w-[220px] sm:max-w-none">Belum Dipilih</span>
+                        <span id="workspace-kkm-label" class="px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 font-extrabold text-[11px] shrink-0">KKM: 75</span>
                     </div>
                 </div>
-                <div id="teacher-ampuan-cards" class="flex items-center gap-2 overflow-x-auto pb-1"></div>
+                <div id="teacher-ampuan-cards" class="flex items-center gap-2 overflow-x-auto pb-1 w-full max-w-full min-w-0"></div>
             </div>
 
             <!-- ISI TAB-TAB UTAMA -->
-            <main class="max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-5 flex-1">
+            <main class="max-w-7xl w-full mx-auto p-3 sm:p-6 space-y-5 flex-1 min-w-0">
 
                 <!-- ==================== TAB 1: DASHBOARD ==================== -->
-                <div id="gcontent-dashboard" class="space-y-5">
-                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-                        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1.5">
+                <div id="gcontent-dashboard" class="space-y-5 min-w-0">
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
+                        <div class="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1.5 min-w-0">
                             <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Kehadiran Kelas</span>
-                            <div id="dash-stat-attendance" class="text-2xl font-extrabold text-slate-900 dark:text-white">100%</div>
-                            <div id="dash-stat-att-detail" class="flex gap-2 text-[10px] font-bold text-slate-400"><span>H:0</span><span>S:0</span><span>I:0</span><span>A:0</span></div>
+                            <div id="dash-stat-attendance" class="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white">100%</div>
+                            <div id="dash-stat-att-detail" class="flex flex-wrap gap-1.5 sm:gap-2 text-[10px] font-bold text-slate-400"><span>H:0</span><span>S:0</span><span>I:0</span><span>A:0</span></div>
                         </div>
-                        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1.5">
+                        <div class="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1.5 min-w-0">
                             <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Ketuntasan Tugas</span>
-                            <div id="dash-stat-tasks" class="text-2xl font-extrabold text-blue-600 dark:text-blue-400">0%</div>
+                            <div id="dash-stat-tasks" class="text-xl sm:text-2xl font-extrabold text-blue-600 dark:text-blue-400">0%</div>
                             <div class="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden"><div id="dash-bar-tasks" class="bg-blue-600 h-full" style="width:0%"></div></div>
                             <div id="dash-stat-tasks-detail" class="flex justify-between text-[10px] font-bold text-slate-400"><span>0 Penilaian</span><span>0 Siswa</span></div>
                         </div>
-                        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1.5">
+                        <div class="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1.5 min-w-0">
                             <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Rata-rata Nilai Akhir</span>
-                            <div id="dash-stat-avg" class="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">0.0</div>
+                            <div id="dash-stat-avg" class="text-xl sm:text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">0.0</div>
                             <span class="text-[10px] text-slate-400 block">Akumulasi berbobot</span>
                         </div>
-                        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1.5">
+                        <div class="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1.5 min-w-0">
                             <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Perlu Perhatian</span>
-                            <div id="dash-stat-attention" class="text-2xl font-extrabold text-amber-600 dark:text-amber-400">0 Siswa</div>
+                            <div id="dash-stat-attention" class="text-xl sm:text-2xl font-extrabold text-amber-600 dark:text-amber-400">0 Siswa</div>
                             <span class="text-[10px] text-slate-400 block">Di bawah KKM / tunggak tugas</span>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 min-w-0">
+                        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm min-w-0">
                             <h3 class="font-extrabold text-xs text-slate-800 dark:text-slate-200 mb-3">Proporsi Kehadiran (%)</h3>
-                            <div class="h-44 relative"><canvas id="chartDashDonutAtt"></canvas></div>
+                            <div class="h-44 relative min-w-0"><canvas id="chartDashDonutAtt"></canvas></div>
                         </div>
-                        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm min-w-0">
                             <h3 class="font-extrabold text-xs text-slate-800 dark:text-slate-200 mb-3">Tren Kehadiran Per Pertemuan (%)</h3>
-                            <div class="h-44 relative"><canvas id="chartDashWeeklyTrend"></canvas></div>
+                            <div class="h-44 relative min-w-0"><canvas id="chartDashWeeklyTrend"></canvas></div>
                         </div>
-                        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm min-w-0">
                             <h3 class="font-extrabold text-xs text-slate-800 dark:text-slate-200 mb-3">Ketuntasan Per Kategori (%)</h3>
-                            <div class="h-44 relative"><canvas id="chartDashTaskBar"></canvas></div>
+                            <div class="h-44 relative min-w-0"><canvas id="chartDashTaskBar"></canvas></div>
                         </div>
                     </div>
 
-                    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                        <div class="p-4 border-b dark:border-slate-800 flex justify-between items-center">
-                            <h3 class="font-extrabold text-sm">Ringkasan Capaian Siswa</h3>
-                            <button onclick="switchGuruTab('rekap')" class="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline">Lihat Rekap Lengkap →</button>
+                    <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3 min-w-0">
+                        <div class="flex items-center justify-between border-b dark:border-slate-800 pb-2.5 gap-2">
+                            <h3 class="font-extrabold text-sm text-slate-900 dark:text-white">📅 Agenda Tenggat Penilaian Kelas</h3>
+                            <button onclick="switchGuruTab('nilai')" class="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline shrink-0">Kelola Tugas →</button>
                         </div>
-                        <div class="overflow-x-auto">
+                        <div id="dash-deadline-agenda" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 min-w-0"></div>
+                    </div>
+
+                    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden min-w-0">
+                        <div class="p-4 border-b dark:border-slate-800 flex justify-between items-center gap-2">
+                            <h3 class="font-extrabold text-sm">Ringkasan Capaian Siswa</h3>
+                            <button onclick="switchGuruTab('rekap')" class="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline shrink-0">Lihat Rekap Lengkap →</button>
+                        </div>
+                        <div class="overflow-x-auto w-full">
                             <table class="w-full text-xs text-left">
                                 <thead class="bg-slate-50 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 border-b dark:border-slate-800">
                                     <tr>
@@ -436,8 +469,10 @@
                             </div>
                             <div id="edit-ass-teacher-files-list" class="flex flex-wrap gap-1.5"></div>
                             <div class="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-200 dark:border-slate-700">
-                                <div class="flex items-center gap-1.5">
+                                <div class="flex flex-wrap items-center gap-1.5">
                                     <button type="button" id="btn-toggle-public" onclick="toggleAssessmentPublicVisibility()" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-700">🌐 Publik</button>
+                                    <button type="button" onclick="openQuizBuilderModal()" class="px-2.5 py-1 rounded-lg text-xs font-extrabold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm">🧩 Kuis Online</button>
+                                    <span id="edit-ass-quiz-badge" class="hidden px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-100 text-indigo-800">0 Soal</span>
                                     <a id="btn-test-ass-link" href="#" target="_blank" class="hidden px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-700 text-xs font-bold">Buka Link ↗</a>
                                 </div>
                                 <div class="flex items-center gap-1.5">
@@ -479,6 +514,29 @@
                         <div class="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800"><span class="text-[11px] font-bold text-slate-500">Hadir (H)</span><div id="prs-stat-hadir" class="text-xl font-extrabold text-emerald-600 mt-0.5">0</div></div>
                         <div class="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800"><span class="text-[11px] font-bold text-slate-500">Sakit / Izin</span><div id="prs-stat-sakitizin" class="text-xl font-extrabold text-amber-600 mt-0.5">0</div></div>
                         <div class="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800"><span class="text-[11px] font-bold text-slate-500">Alpa (A)</span><div id="prs-stat-alpa" class="text-xl font-extrabold text-rose-600 mt-0.5">0</div></div>
+                    </div>
+
+                    <!-- PRESENSI CEPAT QR / TOKEN SESI -->
+                    <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3.5">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                                <h3 class="font-extrabold text-sm text-slate-900 dark:text-white">⚡ Presensi Cepat QR & Token Sesi</h3>
+                                <p class="text-[11px] text-slate-500 dark:text-slate-400">Buka sesi check-in berbatas waktu agar siswa dapat melakukan presensi mandiri dari LMS Siswa.</p>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <select id="qr-session-duration" class="border dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl px-2.5 py-1.5 text-xs font-bold">
+                                    <option value="5">5 Menit</option>
+                                    <option value="10" selected>10 Menit</option>
+                                    <option value="15">15 Menit</option>
+                                    <option value="30">30 Menit</option>
+                                    <option value="60">60 Menit</option>
+                                </select>
+                                <button type="button" onclick="startGuruQrSession()" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm">
+                                    ⚡ Buka Sesi QR / Token
+                                </button>
+                            </div>
+                        </div>
+                        <div id="guru-qr-session-panel" class="hidden"></div>
                     </div>
 
                     <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
@@ -559,6 +617,7 @@
                                 <button onclick="publishFinalGradesToLMS(false)" class="px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold">Tarik Publikasi</button>
                                 <button onclick="exportRekapExcel()" class="px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold">📥 Excel</button>
                                 <button onclick="printClassRekapPDF()" class="px-3 py-2 rounded-xl bg-rose-600 text-white font-bold">🖨️ PDF</button>
+                                <button onclick="printAllStudentsRaporPDF()" class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold">📚 Cetak Semua Rapor</button>
                             </div>
                         </div>
 
@@ -630,8 +689,9 @@
                                 <h3 class="font-extrabold text-sm">Daftar Siswa di Kelas</h3>
                                 <span id="stu-count-badge" class="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">0 Siswa</span>
                             </div>
-                            <div id="stu-bulk-actions-bar" class="flex items-center gap-2 text-xs">
+                            <div id="stu-bulk-actions-bar" class="flex flex-wrap items-center gap-2 text-xs">
                                 <span id="selected-students-badge" class="text-slate-500">0 dipilih</span>
+                                <button id="btn-bulk-promote" disabled onclick="openBulkPromoteModal()" class="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-bold disabled:opacity-40">🚀 Naik / Pindah Kelas</button>
                                 <button id="btn-bulk-delete-selected" disabled onclick="initiateBulkDeleteSelected()" class="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 font-bold disabled:opacity-40">Hapus Terpilih (<span id="btn-selected-count">0</span>)</button>
                                 <button id="btn-bulk-delete-all" disabled onclick="initiateDeleteAllInClass()" class="px-3 py-1.5 rounded-xl bg-rose-600 text-white font-bold disabled:opacity-40">Kosongkan Kelas</button>
                             </div>
@@ -851,6 +911,38 @@
                     <button id="btn-execute-delete" disabled onclick="executeConfirmedStudentDelete()" class="px-4 py-2 rounded-xl bg-rose-600 text-white font-extrabold disabled:opacity-40">Hapus Permanen</button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Modal Kenaikan Kelas / Pindah Siswa Massal -->
+    <div id="modal-bulk-promote" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl border dark:border-slate-800 text-xs">
+            <div class="flex items-center justify-between border-b dark:border-slate-800 pb-2.5">
+                <h3 class="font-extrabold text-sm text-slate-900 dark:text-white">🚀 Kenaikan Kelas / Pindah Siswa Massal</h3>
+                <button type="button" onclick="closeBulkPromoteModal()" class="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+            <p class="text-slate-500 dark:text-slate-400">Memindahkan siswa ke kelas tujuan tetap mempertahankan NISN, password, dan riwayat nilai semester sebelumnya.</p>
+            <form onsubmit="executeBulkPromote(event)" class="space-y-3">
+                <div>
+                    <label class="block font-bold mb-1">Siswa yang Dipindahkan</label>
+                    <select id="promote-scope" class="w-full border dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl p-2.5 font-bold">
+                        <option value="selected">Siswa Terpilih</option>
+                        <option value="all">Seluruh Siswa di Kelas Aktif</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-bold mb-1">Pilih Kelas Tujuan</label>
+                    <select id="promote-target-class" onchange="onPromoteTargetClassChange()" class="w-full border dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl p-2.5 font-bold"></select>
+                </div>
+                <div id="promote-new-class-wrap" class="hidden">
+                    <label class="block font-bold mb-1">Nama Kelas Baru</label>
+                    <input type="text" id="promote-new-class-name" placeholder="Contoh: XII IPA 1" class="w-full border dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl p-2.5">
+                </div>
+                <div class="flex justify-end gap-2 pt-2 border-t dark:border-slate-800">
+                    <button type="button" onclick="closeBulkPromoteModal()" class="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold">Batal</button>
+                    <button type="submit" id="btn-execute-promote" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold">Pindahkan Siswa →</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -1162,7 +1254,75 @@
         </div>
     </div>
 
+    <!-- ==================== MODAL PENYUSUN KUIS ONLINE GURU ==================== -->
+    <div id="modal-quiz-builder" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-3 sm:p-4">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[92vh] flex flex-col border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div class="p-4 sm:p-5 border-b dark:border-slate-800 flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <h3 class="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">🧩 Penyusun Kuis Online (PG & Isian Singkat)</h3>
+                    <p id="qb-subtitle" class="text-[11px] text-slate-500 dark:text-slate-400 truncate">-</p>
+                </div>
+                <button type="button" onclick="closeQuizBuilderModal()" class="text-slate-400 hover:text-slate-600 text-lg px-2">✕</button>
+            </div>
+
+            <div class="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1 text-xs">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 items-center">
+                    <div>
+                        <label class="block font-bold text-slate-700 dark:text-slate-200 mb-1">Durasi Kuis (Menit, 0 = Bebas)</label>
+                        <input type="number" id="qb-duration" min="0" max="300" value="20" class="w-full border dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg p-2 font-bold">
+                    </div>
+                    <label class="flex items-center gap-2 cursor-pointer font-bold text-slate-700 dark:text-slate-200 pt-3 sm:pt-4">
+                        <input type="checkbox" id="qb-shuffle" class="w-4 h-4 accent-indigo-600">
+                        🔀 Acak Urutan Soal
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer font-bold text-slate-700 dark:text-slate-200 pt-1 sm:pt-4">
+                        <input type="checkbox" id="qb-show-review" checked class="w-4 h-4 accent-indigo-600">
+                        👁️ Tampilkan Pembahasan Siswa
+                    </label>
+                </div>
+
+                <div id="qb-questions-list" class="space-y-3"></div>
+
+                <div class="flex flex-wrap items-center gap-2 pt-1">
+                    <button type="button" onclick="addQuizQuestion('pg')" class="px-3.5 py-2 rounded-xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 font-extrabold">
+                        ➕ Tambah Pilihan Ganda (PG)
+                    </button>
+                    <button type="button" onclick="addQuizQuestion('short')" class="px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-extrabold">
+                        ➕ Tambah Isian Singkat
+                    </button>
+                </div>
+            </div>
+
+            <div class="p-4 border-t dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-900">
+                <button type="button" onclick="disableQuizOnAssessment()" class="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 font-bold text-xs">
+                    🗑️ Kosongkan Kuis
+                </button>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="closeQuizBuilderModal()" class="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs">Batal</button>
+                    <button type="button" id="btn-save-quiz-builder" onclick="saveQuizBuilder()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-sm">
+                        💾 Simpan Soal Kuis
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== MODAL DETAIL JAWABAN KUIS SISWA (GURU) ==================== -->
+    <div id="modal-quiz-student-detail" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[88vh] flex flex-col border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div class="p-4 border-b dark:border-slate-800 flex items-center justify-between gap-2">
+                <div>
+                    <h3 class="font-extrabold text-sm text-slate-900 dark:text-white">📋 Rincian Jawaban Kuis Siswa</h3>
+                    <p id="qsd-subtitle" class="text-[11px] text-slate-500 dark:text-slate-400">-</p>
+                </div>
+                <button type="button" onclick="document.getElementById('modal-quiz-student-detail').classList.add('hidden')" class="text-slate-400 hover:text-slate-600 text-lg px-2">✕</button>
+            </div>
+            <div id="qsd-body" class="p-4 overflow-y-auto space-y-2.5 text-xs flex-1"></div>
+        </div>
+    </div>
+
     <script src="config.js?v=9.0"></script>
     <script src="app-guru.js?v=9.0"></script>
+    <script src="/pwa.js?v=1.0"></script>
 </body>
 </html>
