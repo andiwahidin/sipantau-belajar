@@ -6669,6 +6669,7 @@ let guruChatIsStreaming = false;
 let guruChatInitialized = false;
 let guruChatReplyStore = {};
 let guruChatReplySeq = 0;
+let guruChatUseSupabaseEdge = false;
 
 function hasTeacherPersonalGeminiKey() {
     return Boolean(currentUser?.id && currentUser?.gemini_api_key && String(currentUser.gemini_api_key).trim() !== '');
@@ -7125,108 +7126,117 @@ async function sendGuruAiChatMessage(e, overridePrompt = null) {
     };
 
     try {
-        const res = await fetch('/api/gemini/teacher-chat', {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'text/event-stream, application/json'
-            },
-            signal: guruChatAbortController.signal,
-            body: JSON.stringify({
-                teacherId: currentUser.id,
-                message: prompt,
-                history: recentHistory,
-                context: chatContext
-            })
-        });
+        let handledByExpress = false;
 
-        const contentType = (res.headers.get('content-type') || '').toLowerCase();
-        const finalUrl = res.url || '';
-
-        if (res.redirected && /__cookie_check|accounts\.google/i.test(finalUrl)) {
-            const authErr = new Error('Sesi koneksi server perlu diperbarui. Klik "Muat Ulang Halaman" lalu kirim ulang pertanyaan Anda.');
-            authErr.code = 'SESSION_RELOAD_REQUIRED';
-            throw authErr;
-        }
-
-        if (!res.ok) {
-            let errMsg = `Gagal terhubung ke Asisten AI (HTTP ${res.status}).`;
-            let errCode = null;
-            const rawErrText = await res.text().catch(() => '');
-            if (rawErrText) {
-                try {
-                    const errJson = JSON.parse(rawErrText);
-                    if (errJson?.error) errMsg = errJson.error;
-                    if (errJson?.code) errCode = errJson.code;
-                } catch {
-                    if (res.status === 405 || res.status === 404) {
-                        errMsg = `Layanan server Asisten AI tidak tersedia di alamat ini (HTTP ${res.status}). Pastikan aplikasi dibuka dari server backend yang aktif.`;
-                    }
-                }
-            }
-            const customErr = new Error(errMsg);
-            customErr.code = errCode;
-            throw customErr;
-        }
-
-        if (contentType.includes('text/event-stream') && res.body) {
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder('utf-8');
-            let buffer = '';
-
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-                buffer += decoder.decode(value, { stream: true });
-
-                const events = buffer.split('\n\n');
-                buffer = events.pop() || '';
-
-                for (const evt of events) {
-                    const line = evt.trim();
-                    if (!line.startsWith('data:')) continue;
-                    const jsonStr = line.slice(5).trim();
-                    if (!jsonStr) continue;
-                    let payload;
-                    try {
-                        payload = JSON.parse(jsonStr);
-                    } catch {
-                        continue;
-                    }
-                    if (payload.error) {
-                        const sseErr = new Error(payload.error);
-                        sseErr.code = payload.code || null;
-                        throw sseErr;
-                    }
-                    if (payload.text) appendReplyChunk(payload.text);
-                }
-            }
-        } else {
-            const rawText = await res.text();
-            const looksLikeHtml = contentType.includes('text/html') || /^\s*<!doctype|^\s*<html/i.test(rawText);
-            if (looksLikeHtml) {
-                const isCookieGate = /__cookie_check|_aistudio-iframe|accounts\.google/i.test(finalUrl + ' ' + rawText.slice(0, 1000));
-                const htmlErr = new Error(
-                    isCookieGate
-                        ? 'Sesi koneksi server perlu diperbarui. Klik "Muat Ulang Halaman" lalu coba kirim pertanyaan lagi.'
-                        : 'Server mengembalikan halaman HTML bukan respons AI. Muat ulang halaman atau pastikan aplikasi dijalankan melalui server backend.'
-                );
-                htmlErr.code = 'SESSION_RELOAD_REQUIRED';
-                throw htmlErr;
-            }
-            let data;
+        if (!guruChatUseSupabaseEdge) {
             try {
-                data = JSON.parse(rawText);
-            } catch {
-                throw new Error('Respons server AI tidak berformat JSON yang valid. Coba muat ulang halaman.');
+                const res = await fetch('/api/gemini/teacher-chat', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream, application/json'
+                    },
+                    signal: guruChatAbortController.signal,
+                    body: JSON.stringify({
+                        teacherId: currentUser.id,
+                        message: prompt,
+                        history: recentHistory,
+                        context: chatContext
+                    })
+                });
+
+                const contentType = (res.headers.get('content-type') || '').toLowerCase();
+                const finalUrl = res.url || '';
+                const isCookieRedirect = res.redirected && /__cookie_check|accounts\.google/i.test(finalUrl);
+                const isStaticHostUnavailable = res.status === 404 || res.status === 405 || res.status === 501 || isCookieRedirect || contentType.includes('text/html');
+
+                if (isStaticHostUnavailable) {
+                    guruChatUseSupabaseEdge = true;
+                } else if (!res.ok) {
+                    handledByExpress = true;
+                    let errMsg = `Gagal terhubung ke Asisten AI (HTTP ${res.status}).`;
+                    let errCode = null;
+                    const rawErrText = await res.text().catch(() => '');
+                    if (rawErrText) {
+                        try {
+                            const errJson = JSON.parse(rawErrText);
+                            if (errJson?.error) errMsg = errJson.error;
+                            if (errJson?.code) errCode = errJson.code;
+                        } catch { /* ignore */ }
+                    }
+                    const customErr = new Error(errMsg);
+                    customErr.code = errCode;
+                    throw customErr;
+                } else if (contentType.includes('text/event-stream') && res.body) {
+                    handledByExpress = true;
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder('utf-8');
+                    let buffer = '';
+
+                    while (true) {
+                        const { value, done } = await reader.read();
+                        if (done) break;
+                        buffer += decoder.decode(value, { stream: true });
+
+                        const events = buffer.split('\n\n');
+                        buffer = events.pop() || '';
+
+                        for (const evt of events) {
+                            const line = evt.trim();
+                            if (!line.startsWith('data:')) continue;
+                            const jsonStr = line.slice(5).trim();
+                            if (!jsonStr) continue;
+                            let payload;
+                            try {
+                                payload = JSON.parse(jsonStr);
+                            } catch {
+                                continue;
+                            }
+                            if (payload.error) {
+                                const sseErr = new Error(payload.error);
+                                sseErr.code = payload.code || null;
+                                throw sseErr;
+                            }
+                            if (payload.text) appendReplyChunk(payload.text);
+                        }
+                    }
+                } else {
+                    const rawText = await res.text();
+                    if (/^\s*<!doctype|^\s*<html/i.test(rawText)) {
+                        guruChatUseSupabaseEdge = true;
+                    } else {
+                        handledByExpress = true;
+                        let data;
+                        try {
+                            data = JSON.parse(rawText);
+                        } catch {
+                            throw new Error('Respons server AI tidak berformat JSON yang valid.');
+                        }
+                        if (data?.error) {
+                            const jsonErr = new Error(data.error);
+                            jsonErr.code = data.code || null;
+                            throw jsonErr;
+                        }
+                        appendReplyChunk(data?.text || '');
+                    }
+                }
+            } catch (expressErr) {
+                if (expressErr.name === 'AbortError' || handledByExpress) {
+                    throw expressErr;
+                }
+                guruChatUseSupabaseEdge = true;
             }
-            if (data?.error) {
-                const jsonErr = new Error(data.error);
-                jsonErr.code = data.code || null;
-                throw jsonErr;
-            }
-            appendReplyChunk(data?.text || '');
+        }
+
+        if (!handledByExpress) {
+            const replyText = await invokeGuruChatViaSupabaseEdge({
+                prompt,
+                history: recentHistory,
+                context: chatContext,
+                signal: guruChatAbortController.signal
+            });
+            appendReplyChunk(replyText);
         }
 
         if (!fullReply.trim()) {
@@ -7267,5 +7277,55 @@ async function sendGuruAiChatMessage(e, overridePrompt = null) {
         }
     }
 }
+
+async function invokeGuruChatViaSupabaseEdge({ prompt, history, context, signal }) {
+    if (signal?.aborted) {
+        const abortErr = new Error('Permintaan dibatalkan.');
+        abortErr.name = 'AbortError';
+        throw abortErr;
+    }
+
+    const payload = {
+        mode_permintaan: 'CHATBOT_ASISTEN_DASHBOARD_GURU',
+        instruksi_khusus: 'Jawab langsung pertanyaan guru secara interaktif dalam Bahasa Indonesia yang ringkas, terstruktur, dan akurat HANYA berdasarkan data kelas aktual di bawah ini. Jangan mengarang nama siswa atau angka.',
+        pertanyaan_guru: prompt,
+        riwayat_percakapan_terakhir: (history || []).slice(-6).map(h => ({
+            peran: h.role === 'model' ? 'Asisten' : 'Guru',
+            isi: String(h.text || '').slice(0, 600)
+        })),
+        data_kelas_aktual: context
+    };
+
+    const { data, error } = await db.functions.invoke('ai-advisor', {
+        body: {
+            teacher_id: currentUser.id,
+            student_summary: payload
+        }
+    });
+
+    if (signal?.aborted) {
+        const abortErr = new Error('Permintaan dibatalkan.');
+        abortErr.name = 'AbortError';
+        throw abortErr;
+    }
+
+    if (error || !data?.success) {
+        let errMsg = data?.error || error?.message || 'Gagal terhubung ke server AI.';
+        if (error?.context && typeof error.context.json === 'function') {
+            try {
+                const ctxJson = await error.context.clone().json();
+                if (ctxJson?.error) errMsg = ctxJson.error;
+            } catch { /* ignore */ }
+        }
+        const edgeErr = new Error(errMsg);
+        if (/api key|pengaturan|tidak valid|ditolak|belum diatur/i.test(errMsg)) {
+            edgeErr.code = 'INVALID_TEACHER_KEY';
+        }
+        throw edgeErr;
+    }
+
+    return data.analysis || data.text || '';
+}
+
 
 
