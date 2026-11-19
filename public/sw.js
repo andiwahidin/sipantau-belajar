@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v6';
+const CACHE_VERSION = 'v7';
 const SHELL_CACHE = `pantaubelajar-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `pantaubelajar-runtime-${CACHE_VERSION}`;
 
@@ -8,11 +8,15 @@ const APP_SHELL_ASSETS = [
   '/siswa.html',
   '/privacy.html',
   '/style.css',
-  '/style.css?v=9.0',
+  '/style.css?v=9.3',
   '/config.js',
+  '/config.js?v=9.0',
   '/app-guru.js',
+  '/app-guru.js?v=9.3',
   '/app-siswa.js',
+  '/app-siswa.js?v=9.3',
   '/pwa.js',
+  '/pwa.js?v=1.0',
   '/manifest.json',
   '/manifest-siswa.json',
   '/icon.svg',

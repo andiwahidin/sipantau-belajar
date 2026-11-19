@@ -55,6 +55,147 @@ function escapeHtmlSafe(str) {
         .replace(/'/g, '&#39;');
 }
 
+// ==================== LAZY LOADER LIBRARY BERAT & MODAL KONFIRMASI ====================
+const _externalScriptPromises = {};
+function ensureExternalScript(url) {
+    if (_externalScriptPromises[url]) return _externalScriptPromises[url];
+    const existing = document.querySelector(`script[src="${url}"]`);
+    if (existing && existing.dataset.loaded === 'true') {
+        return Promise.resolve();
+    }
+    _externalScriptPromises[url] = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = url;
+        s.async = true;
+        s.onload = () => {
+            s.dataset.loaded = 'true';
+            resolve();
+        };
+        s.onerror = () => {
+            delete _externalScriptPromises[url];
+            reject(new Error(`Gagal memuat modul eksternal: ${url}`));
+        };
+        document.head.appendChild(s);
+    });
+    return _externalScriptPromises[url];
+}
+
+async function ensureXlsxLoaded() {
+    if (typeof window.XLSX !== 'undefined') return true;
+    showToast('⏳ Memuat modul Excel...', 'info');
+    try {
+        await ensureExternalScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+        return typeof window.XLSX !== 'undefined';
+    } catch (err) {
+        console.error(err);
+        showToast('Gagal memuat modul Excel. Periksa koneksi internet Anda.', 'error');
+        return false;
+    }
+}
+
+async function ensureJsPdfLoaded() {
+    if (window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API && typeof window.jspdf.jsPDF.API.autoTable === 'function') {
+        return true;
+    }
+    showToast('⏳ Memuat modul cetak PDF...', 'info');
+    try {
+        if (!window.jspdf || !window.jspdf.jsPDF) {
+            await ensureExternalScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+        }
+        if (!(window.jspdf?.jsPDF?.API && typeof window.jspdf.jsPDF.API.autoTable === 'function')) {
+            await ensureExternalScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js');
+        }
+        return Boolean(window.jspdf && window.jspdf.jsPDF);
+    } catch (err) {
+        console.error(err);
+        showToast('Gagal memuat modul PDF. Periksa koneksi internet Anda.', 'error');
+        return false;
+    }
+}
+
+async function ensureQrCodeLoaded() {
+    if (typeof window.QRCode !== 'undefined') return true;
+    try {
+        await ensureExternalScript('https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js');
+        return typeof window.QRCode !== 'undefined';
+    } catch (err) {
+        console.error(err);
+        return false;
+    }
+}
+
+function showAppConfirm(message, options = {}) {
+    const modal = document.getElementById('modal-app-confirm');
+    const titleEl = document.getElementById('app-confirm-title');
+    const msgEl = document.getElementById('app-confirm-message');
+    const iconEl = document.getElementById('app-confirm-icon');
+    const btnOk = document.getElementById('btn-app-confirm-ok');
+    const btnCancel = document.getElementById('btn-app-confirm-cancel');
+
+    if (!modal || !btnOk || !btnCancel) {
+        return Promise.resolve(false);
+    }
+
+    const tone = options.tone || 'danger';
+    if (titleEl) titleEl.innerText = options.title || 'Konfirmasi Tindakan';
+    if (msgEl) msgEl.innerText = message || 'Apakah Anda yakin ingin melanjutkan?';
+    btnOk.innerText = options.confirmText || 'Ya, Lanjutkan';
+    btnCancel.innerText = options.cancelText || 'Batal';
+
+    if (iconEl) {
+        if (tone === 'primary') {
+            iconEl.className = 'w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 text-base';
+            iconEl.innerHTML = '<i class="fa-solid fa-circle-question"></i>';
+        } else {
+            iconEl.className = 'w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/70 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 text-base';
+            iconEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
+        }
+    }
+
+    btnOk.className = tone === 'primary'
+        ? 'px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-sm transition'
+        : 'px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-sm transition';
+
+    modal.classList.remove('hidden');
+
+    return new Promise((resolve) => {
+        const cleanup = (result) => {
+            modal.classList.add('hidden');
+            btnOk.removeEventListener('click', onOk);
+            btnCancel.removeEventListener('click', onCancel);
+            modal.removeEventListener('click', onBackdrop);
+            document.removeEventListener('keydown', onKeydown);
+            resolve(result);
+        };
+        const onOk = () => cleanup(true);
+        const onCancel = () => cleanup(false);
+        const onBackdrop = (ev) => {
+            if (ev.target === modal) cleanup(false);
+        };
+        const onKeydown = (ev) => {
+            if (ev.key === 'Escape') cleanup(false);
+        };
+
+        btnOk.addEventListener('click', onOk);
+        btnCancel.addEventListener('click', onCancel);
+        modal.addEventListener('click', onBackdrop);
+        document.addEventListener('keydown', onKeydown);
+    });
+}
+
+function toggleMobileWorkspacePanel(forceClose = false) {
+    const panel = document.getElementById('guru-workspace-controls');
+    const chevron = document.getElementById('mobile-ws-chevron');
+    if (!panel) return;
+    if (forceClose) {
+        panel.classList.add('hidden');
+        if (chevron) chevron.classList.remove('rotate-180');
+        return;
+    }
+    const isNowHidden = panel.classList.toggle('hidden');
+    if (chevron) chevron.classList.toggle('rotate-180', !isNowHidden);
+}
+
 // Cache Global & State Modal 360° Guru Wali
 let waliMetricsCache = {};
 let waliGlobalSettings = [];
@@ -377,20 +518,35 @@ async function handleUpdateTeacher(e) {
 }
 
 async function resetTeacherPassword(id) {
-    if (!confirm('Reset password guru ini menjadi 123?')) return;
+    const ok = await showAppConfirm('Password guru akan direset kembali menjadi "123". Lanjutkan?', {
+        title: 'Reset Password Guru',
+        confirmText: 'Ya, Reset',
+        tone: 'primary'
+    });
+    if (!ok) return;
     await db.from('app_users').update({ password: '123' }).eq('id', id);
     showToast('✅ Password direset ke: 123');
 }
 
 async function deleteTeacher(id) {
-    if (!confirm('Hapus akun guru ini secara permanen?')) return;
+    const ok = await showAppConfirm('Hapus akun guru ini secara permanen? Data yang terhubung mungkin terpengaruh.', {
+        title: 'Hapus Akun Guru',
+        confirmText: 'Hapus Permanen',
+        tone: 'danger'
+    });
+    if (!ok) return;
     await db.from('app_users').delete().eq('id', id);
     showToast('Akun guru dihapus.');
     await loadAdminUsers();
 }
 
 async function resetStudentPasswordToNISN(studentId, nisn, nama) {
-    if (!confirm(`Reset password LMS siswa "${nama}" kembali ke NISN (${nisn})?`)) return;
+    const ok = await showAppConfirm(`Reset password LMS siswa "${nama}" kembali ke NISN (${nisn})?`, {
+        title: 'Reset Password Siswa',
+        confirmText: 'Ya, Reset ke NISN',
+        tone: 'primary'
+    });
+    if (!ok) return;
     const { error } = await db.from('students').update({ password: String(nisn) }).eq('id', studentId);
     if (error) return showToast('Gagal mereset password siswa: ' + error.message, 'error');
     showToast(`✅ Password "${nama}" berhasil direset ke NISN: ${nisn}`);
@@ -459,6 +615,7 @@ async function selectAmpuanShortcut(classId, ampuanId) {
     activeClassId = Number(classId);
     activeAmpuanId = Number(ampuanId);
     document.getElementById('guru-active-class').value = activeClassId;
+    toggleMobileWorkspacePanel(true);
     await onGuruClassDropdownChange(true);
 }
 
@@ -544,10 +701,19 @@ async function onGuruMapelDropdownChange() {
 
     const activeAmp = getActiveAmpuan();
     const clsObj = classesCache.find(c => Number(c.id) === Number(activeClassId));
-    document.getElementById('workspace-label').innerText = activeAmp
+    const wsText = activeAmp
         ? `${clsObj?.nama_kelas || ''} — ${activeAmp.mapel}`
         : (clsObj?.nama_kelas || 'Belum Dipilih');
-    document.getElementById('workspace-kkm-label').innerText = `KKM: ${activeAmp?.kkm || 75}`;
+    const kkmText = `KKM: ${activeAmp?.kkm || 75}`;
+
+    const wsLabel = document.getElementById('workspace-label');
+    if (wsLabel) wsLabel.innerText = wsText;
+    const wsKkm = document.getElementById('workspace-kkm-label');
+    if (wsKkm) wsKkm.innerText = kkmText;
+    const wsLabelMob = document.getElementById('workspace-label-mobile');
+    if (wsLabelMob) wsLabelMob.innerText = wsText;
+    const wsKkmMob = document.getElementById('workspace-kkm-mobile');
+    if (wsKkmMob) wsKkmMob.innerText = kkmText;
 
     populateSettingsForm();
     await loadWorkspaceData();
@@ -598,7 +764,12 @@ async function handleAddAmpuan(e) {
 async function deleteCurrentAmpuan() {
     const amp = getActiveAmpuan();
     if (!amp) return;
-    if (!confirm(`Hapus mata pelajaran "${amp.mapel}" dari kelas ini?`)) return;
+    const ok = await showAppConfirm(`Hapus mata pelajaran "${amp.mapel}" dari daftar ampuan kelas ini?`, {
+        title: 'Hapus Mata Pelajaran Ampuan',
+        confirmText: 'Hapus Mapel',
+        tone: 'danger'
+    });
+    if (!ok) return;
     await db.from('teacher_settings').delete().eq('id', amp.id);
     activeAmpuanId = null;
     showToast('Mata pelajaran dihapus dari daftar ampuan.');
@@ -625,6 +796,30 @@ function switchGuruTab(tab) {
                 : 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
         }
     });
+
+    // Sinkronisasi highlight Bottom Navigation Bar Mobile
+    const primaryMobileTabs = ['dashboard', 'nilai', 'absen', 'materi'];
+    primaryMobileTabs.forEach(t => {
+        const mBtn = document.getElementById(`gmnav-${t}`);
+        if (!mBtn) return;
+        const isActive = tab === t;
+        mBtn.classList.toggle('text-blue-600', isActive);
+        mBtn.classList.toggle('dark:text-blue-400', isActive);
+        mBtn.classList.toggle('font-extrabold', isActive);
+        mBtn.classList.toggle('text-slate-500', !isActive);
+        mBtn.classList.toggle('dark:text-slate-400', !isActive);
+        mBtn.classList.toggle('font-bold', !isActive);
+    });
+    const moreBtn = document.getElementById('gmnav-more');
+    if (moreBtn) {
+        const isMoreActive = !primaryMobileTabs.includes(tab);
+        moreBtn.classList.toggle('text-blue-600', isMoreActive);
+        moreBtn.classList.toggle('dark:text-blue-400', isMoreActive);
+        moreBtn.classList.toggle('font-extrabold', isMoreActive);
+        moreBtn.classList.toggle('text-slate-500', !isMoreActive);
+        moreBtn.classList.toggle('dark:text-slate-400', !isMoreActive);
+        moreBtn.classList.toggle('font-bold', !isMoreActive);
+    }
 
     if (tab === 'pengumuman' && currentUser?.id && activeClassId) {
         localStorage.setItem(`sipantau_guru_last_seen_ann_${currentUser.id}_${activeClassId}`, new Date().toISOString());
@@ -782,29 +977,40 @@ async function loadWorkspaceData() {
 }
 
 function updateGuruSidebarBadges() {
+    const assIdsSet = new Set(assessmentsCache.map(a => Number(a.id)));
+    const needReviewCount = scoresCache.filter(sc =>
+        assIdsSet.has(Number(sc.assessment_id)) &&
+        (sc.status_pengajuan === 'pending' || ((sc.status_kumpul === true || sc.status_pengajuan === 'approved') && (sc.nilai === null || sc.nilai === undefined || sc.nilai === '')))
+    ).length;
+
     const nilaiBadge = document.getElementById('badge-guru-nilai');
     if (nilaiBadge) {
-        const assIdsSet = new Set(assessmentsCache.map(a => Number(a.id)));
-        const needReviewCount = scoresCache.filter(sc =>
-            assIdsSet.has(Number(sc.assessment_id)) &&
-            (sc.status_pengajuan === 'pending' || ((sc.status_kumpul === true || sc.status_pengajuan === 'approved') && (sc.nilai === null || sc.nilai === undefined || sc.nilai === '')))
-        ).length;
         nilaiBadge.innerText = needReviewCount > 99 ? '99+' : String(needReviewCount);
         nilaiBadge.classList.toggle('hidden', needReviewCount === 0);
     }
+    const mobileNilaiBadge = document.getElementById('mbadge-guru-nilai');
+    if (mobileNilaiBadge) {
+        mobileNilaiBadge.innerText = needReviewCount > 99 ? '99+' : String(needReviewCount);
+        mobileNilaiBadge.classList.toggle('hidden', needReviewCount === 0);
+    }
+
+    if (activeGuruTab === 'pengumuman' && currentUser?.id && activeClassId) {
+        localStorage.setItem(`sipantau_guru_last_seen_ann_${currentUser.id}_${activeClassId}`, new Date().toISOString());
+    }
+    const key = `sipantau_guru_last_seen_ann_${currentUser?.id}_${activeClassId}`;
+    const lastSeenIso = localStorage.getItem(key) || '1970-01-01T00:00:00.000Z';
+    const unreadComments = announcementCommentsCache.filter(c =>
+        c.author_role === 'siswa' && new Date(c.created_at).toISOString() > lastSeenIso
+    ).length;
 
     const annBadge = document.getElementById('badge-guru-pengumuman');
     if (annBadge) {
-        if (activeGuruTab === 'pengumuman' && currentUser?.id && activeClassId) {
-            localStorage.setItem(`sipantau_guru_last_seen_ann_${currentUser.id}_${activeClassId}`, new Date().toISOString());
-        }
-        const key = `sipantau_guru_last_seen_ann_${currentUser?.id}_${activeClassId}`;
-        const lastSeenIso = localStorage.getItem(key) || '1970-01-01T00:00:00.000Z';
-        const unreadComments = announcementCommentsCache.filter(c =>
-            c.author_role === 'siswa' && new Date(c.created_at).toISOString() > lastSeenIso
-        ).length;
         annBadge.innerText = unreadComments > 99 ? '99+' : String(unreadComments);
         annBadge.classList.toggle('hidden', unreadComments === 0);
+    }
+    const mobileMoreDot = document.getElementById('mbadge-guru-more');
+    if (mobileMoreDot) {
+        mobileMoreDot.classList.toggle('hidden', unreadComments === 0);
     }
 }
 
@@ -1080,7 +1286,12 @@ async function toggleMaterialVisibility(id, nextState) {
 }
 
 async function deleteMaterial(id) {
-    if (!confirm('Hapus materi pembelajaran ini?')) return;
+    const ok = await showAppConfirm('Hapus materi pembelajaran ini secara permanen?', {
+        title: 'Hapus Materi',
+        confirmText: 'Hapus Materi',
+        tone: 'danger'
+    });
+    if (!ok) return;
     await db.from('materials').delete().eq('id', id);
     showToast('Materi dihapus.');
     await loadWorkspaceData();
@@ -1172,7 +1383,12 @@ async function postTeacherComment(e, announcementId) {
 }
 
 async function deleteAnnouncement(id) {
-    if (!confirm('Hapus pengumuman beserta seluruh diskusinya?')) return;
+    const ok = await showAppConfirm('Hapus pengumuman ini beserta seluruh balasan diskusinya?', {
+        title: 'Hapus Pengumuman',
+        confirmText: 'Hapus',
+        tone: 'danger'
+    });
+    if (!ok) return;
     await db.from('announcements').delete().eq('id', id);
     showToast('Pengumuman dihapus.');
     await loadWorkspaceData();
@@ -1567,12 +1783,10 @@ function pdfSanitizeText(str) {
 }
 
 async function exportDashboardSummaryPDF() {
-    if (!window.jspdf || !window.jspdf.jsPDF) {
-        return showToast('Library jsPDF belum termuat. Periksa koneksi internet Anda.', 'error');
-    }
     if (!activeClassId) {
         return showToast('Pilih kelas dan mata pelajaran terlebih dahulu.', 'error');
     }
+    if (!(await ensureJsPdfLoaded())) return;
 
     const btn = document.getElementById('btn-export-dashboard-pdf');
     const prevBtnHtml = btn ? btn.innerHTML : '';
@@ -2311,7 +2525,8 @@ async function addStudentManual(e) {
     await loadWorkspaceData();
 }
 
-function downloadTemplateSiswa() {
+async function downloadTemplateSiswa() {
+    if (!(await ensureXlsxLoaded())) return;
     const ws = XLSX.utils.aoa_to_sheet([['NISN', 'Nama Lengkap'], ['0081234561', 'Andi Pratama'], ['0081234562', 'Siti Rahmawati']]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Template_Siswa');
@@ -2324,6 +2539,7 @@ async function importStudentsExcel() {
     const fileInput = document.getElementById('excel-students');
     const file = fileInput?.files?.[0];
     if (!file) return showToast('Pilih file Excel (.xlsx) terlebih dahulu!', 'error');
+    if (!(await ensureXlsxLoaded())) return;
 
     const reader = new FileReader();
     reader.onload = async (ev) => {
@@ -2719,9 +2935,11 @@ function renderGuruQrSessionPanel() {
 
     const qrBox = document.getElementById('guru-qr-code-box');
     if (qrBox) {
-        if (typeof QRCode !== 'undefined') {
-            qrBox.innerHTML = '';
-            new QRCode(qrBox, {
+        const renderQrIntoBox = () => {
+            const currentBox = document.getElementById('guru-qr-code-box');
+            if (!currentBox) return;
+            currentBox.innerHTML = '';
+            new QRCode(currentBox, {
                 text: checkinUrl,
                 width: 124,
                 height: 124,
@@ -2729,8 +2947,18 @@ function renderGuruQrSessionPanel() {
                 colorLight: '#ffffff',
                 correctLevel: QRCode.CorrectLevel.M
             });
+        };
+        if (typeof QRCode !== 'undefined') {
+            renderQrIntoBox();
         } else {
-            qrBox.innerHTML = `<div class="text-center p-2"><span class="text-[10px] font-bold text-slate-400 block">TOKEN</span><span class="font-mono font-black text-lg text-indigo-700">${escapeHtmlSafe(sess.token)}</span></div>`;
+            qrBox.innerHTML = `<div class="text-center p-2"><span class="text-[10px] font-bold text-slate-400 block">MEMUAT QR...</span><span class="font-mono font-black text-base text-indigo-700">${escapeHtmlSafe(sess.token)}</span></div>`;
+            ensureQrCodeLoaded().then((loaded) => {
+                if (loaded) renderQrIntoBox();
+                else {
+                    const currentBox = document.getElementById('guru-qr-code-box');
+                    if (currentBox) currentBox.innerHTML = `<div class="text-center p-2"><span class="text-[10px] font-bold text-slate-400 block">TOKEN</span><span class="font-mono font-black text-lg text-indigo-700">${escapeHtmlSafe(sess.token)}</span></div>`;
+                }
+            });
         }
     }
 
@@ -2862,13 +3090,20 @@ async function saveDailyAttendance() {
 async function deleteDailyAttendanceDate() {
     const dateVal = document.getElementById('abs-date-picker').value;
     const amp = getActiveAmpuan();
-    if (!dateVal || !amp || !confirm(`Hapus catatan absensi tanggal ${dateVal}?`)) return;
+    if (!dateVal || !amp) return;
+    const ok = await showAppConfirm(`Hapus catatan absensi untuk tanggal ${dateVal}?`, {
+        title: 'Hapus Catatan Absensi',
+        confirmText: 'Hapus Tanggal',
+        tone: 'danger'
+    });
+    if (!ok) return;
     await db.from('attendance_logs').delete().eq('class_id', activeClassId).eq('tanggal', dateVal).eq('mapel', amp.mapel);
     showToast('Catatan tanggal dihapus.');
     await loadWorkspaceData();
 }
 
-function exportDailyAttendanceExcel() {
+async function exportDailyAttendanceExcel() {
+    if (!(await ensureXlsxLoaded())) return;
     const dates = [...new Set(attLogsCache.map(l => l.tanggal))].sort();
     const header = ['No', 'NISN', 'Nama Siswa', ...dates, 'Hadir', 'Sakit', 'Izin', 'Alpa'];
     const rows = studentsCache.map((s, idx) => {
@@ -2924,7 +3159,8 @@ async function saveAttendanceManual() {
     await loadWorkspaceData();
 }
 
-function downloadTemplateAbsen() {
+async function downloadTemplateAbsen() {
+    if (!(await ensureXlsxLoaded())) return;
     const ws = XLSX.utils.aoa_to_sheet([['NISN', 'Nama', 'Hadir', 'Sakit', 'Izin', 'Alpa']]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Rekap_Absen');
@@ -2934,6 +3170,7 @@ function downloadTemplateAbsen() {
 async function importAbsenExcel() {
     const file = document.getElementById('excel-absen')?.files?.[0];
     if (!file) return showToast('Pilih file Excel terlebih dahulu!', 'error');
+    if (!(await ensureXlsxLoaded())) return;
     const reader = new FileReader();
     reader.onload = async (ev) => {
         const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
@@ -3359,7 +3596,12 @@ async function updateAssessmentLink() {
 async function removeTeacherAssessmentFile(assId, fileIndex) {
     const ass = assessmentsCache.find(a => Number(a.id) === Number(assId));
     if (!ass) return;
-    if (!confirm('Hapus lampiran file soal ini dari tugas?')) return;
+    const ok = await showAppConfirm('Hapus lampiran file soal ini dari tugas?', {
+        title: 'Hapus Lampiran Soal',
+        confirmText: 'Hapus File',
+        tone: 'danger'
+    });
+    if (!ok) return;
 
     const files = parseStudentSubmittedFiles(ass.lampiran_guru);
     files.splice(fileIndex, 1);
@@ -3389,7 +3631,13 @@ async function toggleAssessmentPublicVisibility() {
 
 async function deleteCurrentAssessment() {
     const assId = Number(document.getElementById('active-assessment')?.value);
-    if (!assId || !confirm('Hapus penilaian ini beserta seluruh nilainya?')) return;
+    if (!assId) return;
+    const ok = await showAppConfirm('Hapus penilaian ini beserta seluruh nilai dan kiriman siswa di dalamnya?', {
+        title: 'Hapus Penilaian',
+        confirmText: 'Hapus Permanen',
+        tone: 'danger'
+    });
+    if (!ok) return;
     await db.from('assessments').delete().eq('id', assId);
     showToast('Penilaian dihapus.');
     await loadWorkspaceData();
@@ -3689,7 +3937,13 @@ function loadPresetIntoModal() {
 async function deleteCurrentGroupPreset() {
     const idx = document.getElementById('gm-preset-select').value;
     const amp = getActiveAmpuan();
-    if (idx === '' || !amp || !confirm('Hapus preset kelompok ini?')) return;
+    if (idx === '' || !amp) return;
+    const ok = await showAppConfirm('Hapus preset kelompok ini dari daftar tersimpan?', {
+        title: 'Hapus Preset Kelompok',
+        confirmText: 'Hapus Preset',
+        tone: 'danger'
+    });
+    if (!ok) return;
     const updatedList = groupPresetsCache.filter((_, i) => i !== Number(idx));
     await db.from('teacher_settings').update({ kelompok_template: updatedList }).eq('id', amp.id);
     amp.kelompok_template = updatedList;
@@ -3859,7 +4113,8 @@ async function publishFinalGradesToLMS(publishState) {
     await loadWorkspaceData();
 }
 
-function exportRekapExcel() {
+async function exportRekapExcel() {
+    if (!(await ensureXlsxLoaded())) return;
     const rows = studentsCache.map((s, idx) => {
         const m = computeStudentMetrics(s.id);
         return {
@@ -3876,7 +4131,8 @@ function exportRekapExcel() {
     XLSX.writeFile(wb, `Rekap_Nilai_${activePeriodName}.xlsx`);
 }
 
-function printClassRekapPDF() {
+async function printClassRekapPDF() {
+    if (!(await ensureJsPdfLoaded())) return;
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
     const amp = getActiveAmpuan();
@@ -3928,9 +4184,10 @@ function appendStudentRaporPage(doc, s, cls, amp) {
     doc.text(`${currentUser?.nama_lengkap || '____________________'}`, 145, finalY + 18);
 }
 
-function printStudentRaporPDF(studentId) {
+async function printStudentRaporPDF(studentId) {
     const s = studentsCache.find(x => Number(x.id) === Number(studentId));
     if (!s) return;
+    if (!(await ensureJsPdfLoaded())) return;
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
     const cls = classesCache.find(c => Number(c.id) === Number(activeClassId));
@@ -3939,8 +4196,9 @@ function printStudentRaporPDF(studentId) {
     doc.save(`Rapor_${s.nama.replace(/\s+/g, '_')}.pdf`);
 }
 
-function printAllStudentsRaporPDF() {
+async function printAllStudentsRaporPDF() {
     if (!studentsCache.length) return showToast('Belum ada data siswa di kelas ini.', 'error');
+    if (!(await ensureJsPdfLoaded())) return;
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
     const cls = classesCache.find(c => Number(c.id) === Number(activeClassId));
@@ -4296,7 +4554,12 @@ async function addWaliHistoricalGrade(e) {
 }
 
 async function deleteWaliHistoricalGrade(id) {
-    if (!confirm('Hapus catatan nilai riwayat ini?')) return;
+    const ok = await showAppConfirm('Hapus catatan nilai riwayat semester lampau ini?', {
+        title: 'Hapus Nilai Riwayat',
+        confirmText: 'Hapus',
+        tone: 'danger'
+    });
+    if (!ok) return;
     await db.from('wali_historical_grades').delete().eq('id', id);
     showToast('Catatan riwayat dihapus.');
     await loadWaliHistoricalGrades(activeWaliStudentId);
@@ -4878,9 +5141,7 @@ async function addWaliCounselingLog(e) {
 
 async function printWali360PDF() {
     if (!activeWaliStudentId) return;
-    if (!window.jspdf || !window.jspdf.jsPDF) {
-        return showToast('Library jsPDF belum termuat. Periksa koneksi internet Anda.', 'error');
-    }
+    if (!(await ensureJsPdfLoaded())) return;
 
     const btn = document.getElementById('btn-print-wali-360-pdf');
     const prevBtnHtml = btn ? btn.innerHTML : '';
@@ -5644,9 +5905,7 @@ async function printWali360PDF() {
 }
 
 async function exportWaliOverviewPDF() {
-    if (!window.jspdf || !window.jspdf.jsPDF) {
-        return showToast('Library jsPDF belum termuat. Periksa koneksi internet Anda.', 'error');
-    }
+    if (!(await ensureJsPdfLoaded())) return;
 
     const q = (document.getElementById('wali-search-input')?.value || '').toLowerCase().trim();
     const filterEws = document.getElementById('wali-filter-ews')?.value || 'all';
@@ -6147,7 +6406,8 @@ async function exportWaliOverviewPDF() {
     }
 }
 
-function exportWaliBinaanExcel() {
+async function exportWaliBinaanExcel() {
+    if (!(await ensureXlsxLoaded())) return;
     const list = allStudentsGlobal.filter(s => binaanIdsCache.has(Number(s.id)));
     const rows = list.map((s, i) => {
         const m = waliMetricsCache[Number(s.id)] || { attRate: 100, pendingTasks: [], avgFinalAllSubjects: 0, ews: 'aman' };
@@ -6247,7 +6507,12 @@ async function saveAndTestTeacherGeminiKey() {
 }
 
 async function removeTeacherGeminiKey() {
-    if (!confirm('Hapus API Key Gemini pribadi dari akun Anda?')) return;
+    const ok = await showAppConfirm('Hapus API Key Gemini pribadi dari akun Anda?', {
+        title: 'Hapus API Key Gemini',
+        confirmText: 'Hapus Kunci',
+        tone: 'danger'
+    });
+    if (!ok) return;
     await db.functions.invoke('ai-advisor', {
         body: { action: 'remove_key', teacher_id: currentUser.id }
     });
@@ -6299,7 +6564,13 @@ async function handleGoogleOAuthCallback() {
 }
 
 async function disconnectGoogleDrive() {
-    if (!currentUser || !confirm('Putuskan koneksi Google Drive?')) return;
+    if (!currentUser) return;
+    const ok = await showAppConfirm('Putuskan koneksi Google Drive dari akun guru Anda? Pengunggahan file siswa tidak akan masuk ke Drive sampai dihubungkan kembali.', {
+        title: 'Putuskan Google Drive',
+        confirmText: 'Putuskan Koneksi',
+        tone: 'danger'
+    });
+    if (!ok) return;
     const { data, error } = await db.functions.invoke('gdrive-bridge', { body: { action: 'disconnect', teacher_id: currentUser.id } });
     if (error || !data?.success) return showToast('Gagal memutuskan koneksi: ' + (data?.error || error?.message), 'error');
     currentUser.gdrive_email = null;
@@ -6326,7 +6597,7 @@ function showToast(msg, type = 'success') {
     const t = document.getElementById('toast');
     if (!t) return;
     t.innerText = msg;
-    t.className = `fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg text-white transition-all duration-300 ${type === 'error' ? 'bg-rose-600' : 'bg-slate-900 dark:bg-blue-600'}`;
+    t.className = `fixed bottom-20 lg:bottom-5 right-4 lg:right-5 z-50 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg text-white transition-all duration-300 ${type === 'error' ? 'bg-rose-600' : 'bg-slate-900 dark:bg-blue-600'}`;
     t.classList.remove('hidden');
     setTimeout(() => t.classList.add('hidden'), 3500);
 }

@@ -38,13 +38,9 @@
         })();
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=9.0">
+    <link rel="stylesheet" href="style.css?v=9.3">
 </head>
 <body class="min-h-screen flex flex-col bg-[#f8fafc] dark:bg-slate-950 text-slate-800 dark:text-slate-100 antialiased transition-colors duration-200">
 
@@ -252,25 +248,41 @@
                 <button type="button" onclick="resetToCurrentDatePeriod()" class="px-2.5 py-1 rounded-lg bg-amber-600 text-white font-extrabold text-[11px]">Kembali ke Periode Saat Ini</button>
             </div>
 
-            <!-- SELECTOR KELAS & MATA PELAJARAN AKTIF -->
-            <div class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 py-3 space-y-2.5 min-w-0 max-w-full">
-                <div class="flex flex-wrap items-center justify-between gap-2 min-w-0">
-                    <div class="flex flex-wrap items-center gap-2 min-w-0 max-w-full">
-                        <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Ruang Kerja:</span>
-                        <select id="guru-active-class" onchange="onGuruClassDropdownChange()" class="border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-extrabold text-slate-800 dark:text-slate-100 bg-slate-50 dark:bg-slate-800 max-w-full"></select>
-                        <select id="guru-active-mapel" onchange="onGuruMapelDropdownChange()" class="border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-extrabold text-blue-800 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 max-w-full"></select>
-                        <button type="button" onclick="openAddAmpuanModal()" class="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-sm">+ Tambah Kelas / Mapel</button>
+            <!-- SELECTOR KELAS & MATA PELAJARAN AKTIF (RINGKAS & COLLAPSIBLE DI MOBILE) -->
+            <div class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 py-2 sm:py-3 space-y-2 min-w-0 max-w-full">
+                <!-- Ringkasan 1 baris khusus layar mobile (< sm) -->
+                <div class="flex sm:hidden items-center justify-between gap-2 min-w-0">
+                    <div class="flex items-center gap-1.5 min-w-0">
+                        <span id="workspace-label-mobile" class="text-xs font-extrabold text-slate-800 dark:text-slate-100 truncate">Belum Dipilih</span>
+                        <span id="workspace-kkm-mobile" class="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 font-extrabold text-[10px] shrink-0">KKM: 75</span>
                     </div>
-                    <div class="flex items-center gap-2 text-xs flex-wrap min-w-0">
-                        <span id="workspace-label" class="font-extrabold text-slate-700 dark:text-slate-200 truncate max-w-[220px] sm:max-w-none">Belum Dipilih</span>
-                        <span id="workspace-kkm-label" class="px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 font-extrabold text-[11px] shrink-0">KKM: 75</span>
-                    </div>
+                    <button type="button" id="btn-toggle-mobile-workspace" onclick="toggleMobileWorkspacePanel()" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-extrabold shrink-0">
+                        <i class="fa-solid fa-sliders text-[10px]"></i>
+                        <span>Ganti</span>
+                        <i id="mobile-ws-chevron" class="fa-solid fa-chevron-down text-[9px] transition-transform"></i>
+                    </button>
                 </div>
-                <div id="teacher-ampuan-cards" class="flex items-center gap-2 overflow-x-auto pb-1 w-full max-w-full min-w-0"></div>
+
+                <!-- Panel Kontrol Ruang Kerja Lengkap (Selalu tampil di >= sm, toggle di mobile) -->
+                <div id="guru-workspace-controls" class="hidden sm:block space-y-2.5 min-w-0">
+                    <div class="flex flex-wrap items-center justify-between gap-2 min-w-0">
+                        <div class="flex flex-wrap items-center gap-2 min-w-0 max-w-full">
+                            <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Ruang Kerja:</span>
+                            <select id="guru-active-class" onchange="onGuruClassDropdownChange()" class="border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-extrabold text-slate-800 dark:text-slate-100 bg-slate-50 dark:bg-slate-800 max-w-full"></select>
+                            <select id="guru-active-mapel" onchange="onGuruMapelDropdownChange()" class="border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-extrabold text-blue-800 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 max-w-full"></select>
+                            <button type="button" onclick="openAddAmpuanModal()" class="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-sm">+ Tambah Kelas / Mapel</button>
+                        </div>
+                        <div class="hidden sm:flex items-center gap-2 text-xs flex-wrap min-w-0">
+                            <span id="workspace-label" class="font-extrabold text-slate-700 dark:text-slate-200 truncate max-w-[220px] sm:max-w-none">Belum Dipilih</span>
+                            <span id="workspace-kkm-label" class="px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 font-extrabold text-[11px] shrink-0">KKM: 75</span>
+                        </div>
+                    </div>
+                    <div id="teacher-ampuan-cards" class="flex items-center gap-2 overflow-x-auto pb-1 w-full max-w-full min-w-0"></div>
+                </div>
             </div>
 
             <!-- ISI TAB-TAB UTAMA -->
-            <main class="max-w-7xl w-full mx-auto p-3 sm:p-6 space-y-5 flex-1 min-w-0">
+            <main class="max-w-7xl w-full mx-auto p-3 sm:p-6 mobile-nav-safe-bottom space-y-5 flex-1 min-w-0">
 
                 <!-- ==================== TAB 1: DASHBOARD ==================== -->
                 <div id="gcontent-dashboard" class="space-y-5 min-w-0">
@@ -341,7 +353,7 @@
                             <button onclick="switchGuruTab('rekap')" class="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline shrink-0">Lihat Rekap Lengkap →</button>
                         </div>
                         <div class="overflow-x-auto w-full">
-                            <table class="w-full text-xs text-left">
+                            <table class="w-full text-xs text-left table-sticky-col-1">
                                 <thead class="bg-slate-50 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 border-b dark:border-slate-800">
                                     <tr>
                                         <th class="p-3">Siswa</th>
@@ -513,7 +525,7 @@
                         </datalist>
 
                         <div class="overflow-x-auto">
-                            <table class="w-full text-xs text-left">
+                            <table class="w-full text-xs text-left table-sticky-col-2">
                                 <thead class="bg-slate-50 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 border-b dark:border-slate-800"></thead>
                                 <tbody id="scores-tbody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
                             </table>
@@ -570,7 +582,7 @@
                         <div id="abs-date-chips" class="flex flex-wrap gap-1.5"></div>
 
                         <div class="overflow-x-auto">
-                            <table class="w-full text-xs text-left">
+                            <table class="w-full text-xs text-left table-sticky-col-3">
                                 <thead class="bg-slate-50 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 border-b dark:border-slate-800">
                                     <tr><th class="p-2.5 text-center w-10">No</th><th class="p-2.5">NISN</th><th class="p-2.5">Nama Siswa</th><th class="p-2.5 text-center">Status Kehadiran</th></tr>
                                 </thead>
@@ -589,7 +601,7 @@
                                 <button type="button" onclick="saveAttendanceManual()" class="px-4 py-1.5 rounded-xl bg-emerald-600 text-white font-extrabold ml-auto">Simpan Rekap Manual</button>
                             </div>
                             <div class="overflow-x-auto">
-                                <table class="w-full text-xs text-left">
+                                <table class="w-full text-xs text-left table-sticky-col-2">
                                     <thead class="bg-slate-50 dark:bg-slate-800/70 border-b dark:border-slate-800"><tr><th class="p-2">NISN</th><th class="p-2">Nama</th><th class="p-2 text-center">Hadir</th><th class="p-2 text-center">Sakit</th><th class="p-2 text-center">Izin</th><th class="p-2 text-center">Alpa</th><th class="p-2 text-center">Skor</th></tr></thead>
                                     <tbody id="absen-tbody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
                                 </table>
@@ -636,7 +648,7 @@
                         </div>
 
                         <div class="overflow-x-auto">
-                            <table class="w-full text-xs text-left">
+                            <table class="w-full text-xs text-left table-sticky-col-3">
                                 <thead class="bg-slate-50 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 border-b dark:border-slate-800">
                                     <tr>
                                         <th class="p-2.5 text-center w-10">No</th>
@@ -758,7 +770,7 @@
                         </div>
 
                         <div class="overflow-x-auto">
-                            <table class="w-full text-xs text-left">
+                            <table class="w-full text-xs text-left table-sticky-col-2">
                                 <thead class="bg-slate-50 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 border-b dark:border-slate-800">
                                     <tr>
                                         <th class="p-3 text-center w-10">No</th>
@@ -855,6 +867,34 @@
 
             </main>
         </div>
+
+        <!-- BOTTOM NAVIGATION BAR KHUSUS MOBILE (PANEL GURU) -->
+        <nav id="guru-mobile-bottom-nav" class="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 mobile-bottom-nav">
+            <div class="grid grid-cols-5 h-14 max-w-lg mx-auto">
+                <button type="button" id="gmnav-dashboard" onclick="switchGuruTab('dashboard')" class="flex flex-col items-center justify-center gap-0.5 text-[10px] font-extrabold text-blue-600 dark:text-blue-400">
+                    <i class="fa-solid fa-chart-pie text-sm"></i>
+                    <span>Dashboard</span>
+                </button>
+                <button type="button" id="gmnav-nilai" onclick="switchGuruTab('nilai')" class="relative flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                    <i class="fa-solid fa-list-check text-sm"></i>
+                    <span>Tugas</span>
+                    <span id="mbadge-guru-nilai" class="hidden absolute top-1 right-3 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[9px] font-extrabold flex items-center justify-center">0</span>
+                </button>
+                <button type="button" id="gmnav-absen" onclick="switchGuruTab('absen')" class="flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                    <i class="fa-regular fa-calendar-check text-sm"></i>
+                    <span>Presensi</span>
+                </button>
+                <button type="button" id="gmnav-materi" onclick="switchGuruTab('materi')" class="flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                    <i class="fa-solid fa-book-open text-sm"></i>
+                    <span>Materi</span>
+                </button>
+                <button type="button" id="gmnav-more" onclick="toggleMobileSidebar()" class="relative flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                    <i class="fa-solid fa-bars text-sm"></i>
+                    <span>Lainnya</span>
+                    <span id="mbadge-guru-more" class="hidden absolute top-1 right-3 w-2 h-2 rounded-full bg-rose-500"></span>
+                </button>
+            </div>
+        </nav>
     </section>
 
     <!-- ==================== MODAL-MODAL ==================== -->
@@ -1338,8 +1378,29 @@
         </div>
     </div>
 
+    <!-- ==================== MODAL KONFIRMASI KUSTOM (PENGGANTI WINDOW.CONFIRM) ==================== -->
+    <div id="modal-app-confirm" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[115] p-4">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-sm w-full border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div class="p-5 space-y-3">
+                <div class="flex items-start gap-3">
+                    <div id="app-confirm-icon" class="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/70 text-rose-600 dark:text-rose-400 flex items-center justify-center text-base shrink-0">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                    </div>
+                    <div class="min-w-0 space-y-1">
+                        <h3 id="app-confirm-title" class="font-extrabold text-sm text-slate-900 dark:text-white">Konfirmasi Tindakan</h3>
+                        <p id="app-confirm-message" class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed"></p>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" id="btn-app-confirm-cancel" class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold">Batal</button>
+                    <button type="button" id="btn-app-confirm-ok" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-sm">Ya, Lanjutkan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="config.js?v=9.0"></script>
-    <script src="app-guru.js?v=9.2"></script>
+    <script src="app-guru.js?v=9.3"></script>
     <script src="/pwa.js?v=1.0"></script>
 </body>
 </html>

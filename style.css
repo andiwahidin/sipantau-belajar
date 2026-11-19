@@ -140,13 +140,59 @@ html.dark #w360-ai-output b {
 #modal-wali-360 > div,
 #modal-add-ampuan > div,
 #modal-group-manager > div,
-#modal-wali-manage > div {
+#modal-wali-manage > div,
+#modal-app-confirm > div {
     animation: modalFadeIn 0.18s ease-out;
+}
+
+/* Kolom Nama Siswa menempel (sticky) saat tabel lebar digeser horizontal */
+.table-sticky-col-1 th:nth-child(1):not([colspan]),
+.table-sticky-col-1 td:nth-child(1):not([colspan]),
+.table-sticky-col-2 th:nth-child(2):not([colspan]),
+.table-sticky-col-2 td:nth-child(2):not([colspan]),
+.table-sticky-col-3 th:nth-child(3):not([colspan]),
+.table-sticky-col-3 td:nth-child(3):not([colspan]) {
+    position: sticky;
+    left: 0;
+    z-index: 4;
+    background-color: var(--bg-surface);
+    box-shadow: 4px 0 8px -5px rgba(15, 23, 42, 0.16);
+}
+
+.table-sticky-col-1 thead th:nth-child(1):not([colspan]),
+.table-sticky-col-2 thead th:nth-child(2):not([colspan]),
+.table-sticky-col-3 thead th:nth-child(3):not([colspan]) {
+    z-index: 6;
+    background-color: #f8fafc;
+}
+
+html.dark .table-sticky-col-1 thead th:nth-child(1):not([colspan]),
+html.dark .table-sticky-col-2 thead th:nth-child(2):not([colspan]),
+html.dark .table-sticky-col-3 thead th:nth-child(3):not([colspan]) {
+    background-color: #162032;
+}
+
+/* Ruang aman bawah di mobile agar konten tidak tertutup Bottom Navigation Bar */
+.mobile-nav-safe-bottom {
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 1024px) {
+    .mobile-nav-safe-bottom {
+        padding-bottom: 1.5rem;
+    }
+}
+
+.mobile-bottom-nav {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Pengaturan cetak browser */
 @media print {
     #main-sidebar,
+    #stu-sidebar,
+    #guru-mobile-bottom-nav,
+    #stu-mobile-bottom-nav,
     header,
     button {
         display: none !important;
