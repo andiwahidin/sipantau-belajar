@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v11';
+const CACHE_VERSION = 'v12';
 const SHELL_CACHE = `pantaubelajar-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `pantaubelajar-runtime-${CACHE_VERSION}`;
 
@@ -12,7 +12,7 @@ const APP_SHELL_ASSETS = [
   '/config.js',
   '/config.js?v=9.0',
   '/app-guru.js',
-  '/app-guru.js?v=9.6',
+  '/app-guru.js?v=9.7',
   '/app-siswa.js',
   '/app-siswa.js?v=9.3',
   '/pwa.js',

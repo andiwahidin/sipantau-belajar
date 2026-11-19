@@ -112,21 +112,29 @@ async function generateStreamWithRetry(ai, params, maxAttempts = 3) {
   throw lastErr;
 }
 
-app.use(express.static(path.join(__dirname, 'public'), {
-  setHeaders(res, filePath) {
-    if (filePath.endsWith('sw.js')) {
-      res.setHeader('Service-Worker-Allowed', '/');
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    } else if (filePath.endsWith('.json')) {
-      res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
-      res.setHeader('Cache-Control', 'no-cache');
-    }
+async function discoverAvailableGeminiModel(apiKey) {
+  try {
+    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+      headers: { 'x-goog-api-key': String(apiKey).trim() }
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const models = Array.isArray(data?.models) ? data.models : [];
+    const usable = models
+      .filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+      .map((m) => String(m.name || '').replace(/^models\//, ''))
+      .filter((name) => name.startsWith('gemini-') && !/(1\.0|1\.5|2\.0|embedding|tts|imagen|veo|aqa|vision|image|audio|live)/i.test(name));
+    if (!usable.length) return null;
+    const preferred =
+      usable.find((n) => /flash-lite/i.test(n) && !/preview|exp/i.test(n)) ||
+      usable.find((n) => /flash/i.test(n) && !/preview|exp/i.test(n)) ||
+      usable.find((n) => /flash/i.test(n)) ||
+      usable[0];
+    return preferred || null;
+  } catch {
+    return null;
   }
-}));
-
-app.use(express.static(path.join(__dirname), {
-  extensions: ['html']
-}));
+}
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
@@ -178,24 +186,38 @@ app.post('/api/gemini/teacher-chat', async (req, res) => {
   const systemInstruction = buildTeacherSystemInstruction(context);
 
   try {
-    let stream;
-    try {
-      stream = await generateStreamWithRetry(ai, {
-        model: GEMINI_CHAT_MODEL,
-        contents,
-        config: { systemInstruction }
-      });
-    } catch (primaryErr) {
-      const status = Number(primaryErr?.status || primaryErr?.statusCode || 0);
-      const raw = String(primaryErr?.message || '');
-      if (status === 404 || /NOT_FOUND|not found/i.test(raw)) {
+    const candidateModels = [GEMINI_CHAT_MODEL, GEMINI_FALLBACK_MODEL];
+    let stream = null;
+    let lastErr = null;
+
+    for (const modelName of candidateModels) {
+      try {
         stream = await generateStreamWithRetry(ai, {
-          model: GEMINI_FALLBACK_MODEL,
+          model: modelName,
+          contents,
+          config: { systemInstruction }
+        });
+        break;
+      } catch (err) {
+        lastErr = err;
+        const status = Number(err?.status || err?.statusCode || 0);
+        const raw = String(err?.message || '');
+        if (!(status === 404 || /NOT_FOUND|not found/i.test(raw))) {
+          throw err;
+        }
+      }
+    }
+
+    if (!stream) {
+      const discovered = await discoverAvailableGeminiModel(teacherApiKey);
+      if (discovered && !candidateModels.includes(discovered)) {
+        stream = await generateStreamWithRetry(ai, {
+          model: discovered,
           contents,
           config: { systemInstruction }
         });
       } else {
-        throw primaryErr;
+        throw lastErr || new Error('Model Gemini belum tersedia untuk kunci API pribadi Anda.');
       }
     }
 
@@ -223,6 +245,22 @@ app.post('/api/gemini/teacher-chat', async (req, res) => {
     res.end();
   }
 });
+
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('sw.js')) {
+      res.setHeader('Service-Worker-Allowed', '/');
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    } else if (filePath.endsWith('.json')) {
+      res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  }
+}));
+
+app.use(express.static(path.join(__dirname), {
+  extensions: ['html']
+}));
 
 app.listen(PORT, HOST, () => {
   console.log(`PantauBelajar server listening at http://${HOST}:${PORT}`);

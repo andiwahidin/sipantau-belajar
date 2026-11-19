@@ -6669,6 +6669,9 @@ let guruChatIsStreaming = false;
 let guruChatInitialized = false;
 let guruChatReplyStore = {};
 let guruChatReplySeq = 0;
+let guruChatPreferDirectMode = false;
+let guruChatResolvedDirectModel = null;
+let guruChatLastKeyFingerprint = '';
 
 function hasTeacherPersonalGeminiKey() {
     return Boolean(currentUser?.id && currentUser?.gemini_api_key && String(currentUser.gemini_api_key).trim() !== '');
@@ -6706,6 +6709,11 @@ function updateGuruChatContextBadge() {
 }
 
 function refreshGuruChatConnectionState() {
+    const keyNow = String(currentUser?.gemini_api_key || '').trim();
+    if (keyNow !== guruChatLastKeyFingerprint) {
+        guruChatLastKeyFingerprint = keyNow;
+        guruChatResolvedDirectModel = null;
+    }
     updateGuruChatContextBadge();
     const connected = hasTeacherPersonalGeminiKey();
     const input = document.getElementById('guru-chat-input');
@@ -7114,78 +7122,111 @@ async function sendGuruAiChatMessage(e, overridePrompt = null) {
     guruChatAbortController = new AbortController();
 
     let fullReply = '';
+    const chatContext = buildGuruDashboardChatContext();
+    const recentHistory = guruChatHistory.slice(-12);
+
+    const appendReplyChunk = (piece) => {
+        if (!piece) return;
+        fullReply += piece;
+        contentBox.innerHTML = renderChatMarkdownSafe(fullReply);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    };
+
     try {
-        const res = await fetch('/api/gemini/teacher-chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: guruChatAbortController.signal,
-            body: JSON.stringify({
-                teacherId: currentUser.id,
-                message: prompt,
-                history: guruChatHistory.slice(-12),
-                context: buildGuruDashboardChatContext()
-            })
-        });
+        let handledByBackend = false;
 
-        const contentType = res.headers.get('content-type') || '';
-        if (!res.ok) {
-            let errMsg = `Gagal terhubung ke Asisten AI (HTTP ${res.status}).`;
-            let errCode = null;
+        if (!guruChatPreferDirectMode) {
             try {
-                const errJson = await res.json();
-                if (errJson?.error) errMsg = errJson.error;
-                if (errJson?.code) errCode = errJson.code;
-            } catch { /* ignore */ }
-            const customErr = new Error(errMsg);
-            customErr.code = errCode;
-            throw customErr;
-        }
+                const res = await fetch('/api/gemini/teacher-chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: guruChatAbortController.signal,
+                    body: JSON.stringify({
+                        teacherId: currentUser.id,
+                        message: prompt,
+                        history: recentHistory,
+                        context: chatContext
+                    })
+                });
 
-        if (contentType.includes('text/event-stream') && res.body) {
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder('utf-8');
-            let buffer = '';
+                const contentType = res.headers.get('content-type') || '';
+                const isStaticHostRejection = res.status === 404 || res.status === 405 || res.status === 501 || (res.ok && contentType.includes('text/html'));
 
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-                buffer += decoder.decode(value, { stream: true });
-
-                const events = buffer.split('\n\n');
-                buffer = events.pop() || '';
-
-                for (const evt of events) {
-                    const line = evt.trim();
-                    if (!line.startsWith('data:')) continue;
-                    const jsonStr = line.slice(5).trim();
-                    if (!jsonStr) continue;
-                    let payload;
-                    try {
-                        payload = JSON.parse(jsonStr);
-                    } catch {
-                        continue;
+                if (isStaticHostRejection) {
+                    guruChatPreferDirectMode = true;
+                } else {
+                    handledByBackend = true;
+                    if (!res.ok) {
+                        let errMsg = `Gagal terhubung ke Asisten AI (HTTP ${res.status}).`;
+                        let errCode = null;
+                        try {
+                            const errJson = await res.json();
+                            if (errJson?.error) errMsg = errJson.error;
+                            if (errJson?.code) errCode = errJson.code;
+                        } catch { /* ignore */ }
+                        const customErr = new Error(errMsg);
+                        customErr.code = errCode;
+                        throw customErr;
                     }
-                    if (payload.error) {
-                        const sseErr = new Error(payload.error);
-                        sseErr.code = payload.code || null;
-                        throw sseErr;
-                    }
-                    if (payload.text) {
-                        fullReply += payload.text;
-                        contentBox.innerHTML = renderChatMarkdownSafe(fullReply);
-                        messagesEl.scrollTop = messagesEl.scrollHeight;
+
+                    if (contentType.includes('text/event-stream') && res.body) {
+                        const reader = res.body.getReader();
+                        const decoder = new TextDecoder('utf-8');
+                        let buffer = '';
+
+                        while (true) {
+                            const { value, done } = await reader.read();
+                            if (done) break;
+                            buffer += decoder.decode(value, { stream: true });
+
+                            const events = buffer.split('\n\n');
+                            buffer = events.pop() || '';
+
+                            for (const evt of events) {
+                                const line = evt.trim();
+                                if (!line.startsWith('data:')) continue;
+                                const jsonStr = line.slice(5).trim();
+                                if (!jsonStr) continue;
+                                let payload;
+                                try {
+                                    payload = JSON.parse(jsonStr);
+                                } catch {
+                                    continue;
+                                }
+                                if (payload.error) {
+                                    const sseErr = new Error(payload.error);
+                                    sseErr.code = payload.code || null;
+                                    throw sseErr;
+                                }
+                                if (payload.text) appendReplyChunk(payload.text);
+                            }
+                        }
+                    } else {
+                        const data = await res.json();
+                        if (data?.error) {
+                            const jsonErr = new Error(data.error);
+                            jsonErr.code = data.code || null;
+                            throw jsonErr;
+                        }
+                        appendReplyChunk(data?.text || '');
                     }
                 }
+            } catch (backendErr) {
+                if (backendErr.name === 'AbortError' || handledByBackend) {
+                    throw backendErr;
+                }
+                guruChatPreferDirectMode = true;
             }
-        } else {
-            const data = await res.json();
-            if (data?.error) {
-                const jsonErr = new Error(data.error);
-                jsonErr.code = data.code || null;
-                throw jsonErr;
-            }
-            fullReply = data?.text || '';
-            contentBox.innerHTML = renderChatMarkdownSafe(fullReply);
+        }
+
+        if (!handledByBackend) {
+            await streamGuruChatDirectWithPersonalKey({
+                prompt,
+                history: recentHistory,
+                context: chatContext,
+                signal: guruChatAbortController.signal,
+                onChunk: appendReplyChunk
+            });
         }
 
         if (!fullReply.trim()) {
@@ -7224,3 +7265,220 @@ async function sendGuruAiChatMessage(e, overridePrompt = null) {
         }
     }
 }
+
+function buildGuruDirectSystemInstruction(context) {
+    const safeCtx = context && typeof context === 'object' ? context : {};
+    const ctxJson = JSON.stringify(safeCtx, null, 2).slice(0, 18000);
+    return [
+        'Anda adalah Asisten AI Analitik & Pembimbingan Akademik pada Dashboard Guru PantauBelajar.',
+        'Jawab selalu dalam Bahasa Indonesia yang jelas, ramah, terstruktur, dan langsung dapat ditindaklanjuti guru.',
+        'Gunakan HANYA data aktual kelas/mata pelajaran pada snapshot JSON di bawah ini saat menyebutkan angka, nama siswa, kehadiran, nilai, atau status tugas. Jangan pernah mengarang nama siswa atau angka yang tidak ada di data.',
+        'Jika data kelas belum dipilih atau masih kosong, sampaikan dengan sopan bahwa data kelas pada workspace belum tersedia dan sarankan guru memilih kelas/mapel terlebih dahulu.',
+        'Gunakan format ringkas dengan poin-poin terstruktur, sorot siswa prioritas jika relevan, dan akhiri dengan saran tindak lanjut praktis (maksimal 250-350 kata kecuali guru meminta rincian lengkap).',
+        '',
+        'SNAPSHOT DATA KELAS AKTIF (REAL-TIME):',
+        ctxJson
+    ].join('\n');
+}
+
+function mapDirectGeminiHttpError(status, rawBodyText) {
+    let rawMsg = rawBodyText || `Gagal terhubung ke Gemini (HTTP ${status}).`;
+    try {
+        const parsed = JSON.parse(rawBodyText);
+        if (parsed?.error?.message) rawMsg = parsed.error.message;
+    } catch { /* keep raw */ }
+
+    if (status === 400 && /API_KEY_INVALID|API key not valid/i.test(rawMsg)) {
+        return { code: 'INVALID_TEACHER_KEY', message: 'API Key Gemini pribadi Anda tidak valid. Silakan perbarui di menu Pengaturan.' };
+    }
+    if (status === 403 || /PERMISSION_DENIED/i.test(rawMsg)) {
+        return { code: 'INVALID_TEACHER_KEY', message: 'Akses API Key Gemini pribadi Anda ditolak. Silakan periksa atau buat ulang kunci di menu Pengaturan.' };
+    }
+    if (status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(rawMsg)) {
+        return { code: null, message: 'Kuota akun Gemini pribadi Anda sedang mencapai batas sementara. Coba lagi beberapa saat lagi.' };
+    }
+    if (status === 503 || /UNAVAILABLE|high demand|overloaded/i.test(rawMsg)) {
+        return { code: null, message: 'Server Gemini sedang mengalami lonjakan trafik sementara. Silakan kirim ulang dalam beberapa detik.' };
+    }
+    if (status === 404 || /NOT_FOUND/i.test(rawMsg)) {
+        return { code: null, message: 'Model Gemini belum tersedia untuk API Key pribadi Anda.' };
+    }
+    return { code: null, message: rawMsg };
+}
+
+async function discoverTeacherDirectGeminiModel(apiKey, signal) {
+    try {
+        const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+            headers: { 'x-goog-api-key': apiKey },
+            signal
+        });
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        const models = Array.isArray(data?.models) ? data.models : [];
+        const usable = models
+            .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+            .map(m => String(m.name || '').replace(/^models\//, ''))
+            .filter(name => name.startsWith('gemini-') && !/(1\.0|1\.5|2\.0|embedding|tts|imagen|veo|aqa|vision|image|audio|live)/i.test(name));
+        if (!usable.length) return null;
+        return (
+            usable.find(n => /flash-lite/i.test(n) && !/preview|exp/i.test(n)) ||
+            usable.find(n => /flash/i.test(n) && !/preview|exp/i.test(n)) ||
+            usable.find(n => /flash/i.test(n)) ||
+            usable[0]
+        );
+    } catch {
+        return null;
+    }
+}
+
+async function streamGuruChatDirectWithPersonalKey({ prompt, history, context, signal, onChunk }) {
+    const apiKey = String(currentUser?.gemini_api_key || '').trim();
+    if (!apiKey) {
+        const err = new Error('Akun Gemini pribadi Anda belum terhubung. Silakan hubungkan terlebih dahulu di menu Pengaturan.');
+        err.code = 'MISSING_TEACHER_KEY';
+        throw err;
+    }
+
+    const contents = [];
+    for (const turn of (history || [])) {
+        if (!turn || typeof turn.text !== 'string' || !turn.text.trim()) continue;
+        contents.push({
+            role: turn.role === 'model' ? 'model' : 'user',
+            parts: [{ text: turn.text.trim().slice(0, 4000) }]
+        });
+    }
+    contents.push({ role: 'user', parts: [{ text: prompt.slice(0, 4000) }] });
+
+    const requestBody = JSON.stringify({
+        systemInstruction: {
+            parts: [{ text: buildGuruDirectSystemInstruction(context) }]
+        },
+        contents
+    });
+
+    const candidateModels = guruChatResolvedDirectModel
+        ? [guruChatResolvedDirectModel, 'gemini-4-hydrogen', 'gemini-3.1-flash-lite']
+        : ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
+    const tried = new Set();
+
+    const tryModelRequest = async (modelName) => {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:streamGenerateContent?alt=sse`;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            const resp = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': apiKey
+                },
+                signal,
+                body: requestBody
+            });
+            if (resp.ok) return resp;
+            if ((resp.status === 503 || resp.status >= 500) && attempt < 3) {
+                await new Promise(r => setTimeout(r, 700 * attempt));
+                continue;
+            }
+            return resp;
+        }
+        return null;
+    };
+
+    let activeResp = null;
+    let activeModel = null;
+    let lastErrorStatus = 0;
+    let lastErrorBody = '';
+
+    for (const modelName of candidateModels) {
+        if (!modelName || tried.has(modelName)) continue;
+        tried.add(modelName);
+        const resp = await tryModelRequest(modelName);
+        if (resp && resp.ok) {
+            activeResp = resp;
+            activeModel = modelName;
+            break;
+        }
+        lastErrorStatus = resp ? resp.status : 0;
+        lastErrorBody = resp ? await resp.text().catch(() => '') : '';
+        if (lastErrorStatus !== 404) break;
+    }
+
+    if (!activeResp && lastErrorStatus === 404) {
+        const discovered = await discoverTeacherDirectGeminiModel(apiKey, signal);
+        if (discovered && !tried.has(discovered)) {
+            const resp = await tryModelRequest(discovered);
+            if (resp && resp.ok) {
+                activeResp = resp;
+                activeModel = discovered;
+            } else {
+                lastErrorStatus = resp ? resp.status : 0;
+                lastErrorBody = resp ? await resp.text().catch(() => '') : '';
+            }
+        }
+    }
+
+    if (!activeResp) {
+        const mapped = mapDirectGeminiHttpError(lastErrorStatus || 500, lastErrorBody);
+        const err = new Error(mapped.message);
+        err.code = mapped.code;
+        throw err;
+    }
+
+    guruChatResolvedDirectModel = activeModel;
+
+    if (!activeResp.body) {
+        const data = await activeResp.json();
+        const parts = data?.candidates?.[0]?.content?.parts || [];
+        const text = parts.filter(p => !p.thought && typeof p.text === 'string').map(p => p.text).join('');
+        onChunk(text);
+        return;
+    }
+
+    const reader = activeResp.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+
+    const processEventBlock = (block) => {
+        const dataLines = block
+            .split(/\r?\n/)
+            .map(l => l.trim())
+            .filter(l => l.startsWith('data:'))
+            .map(l => l.slice(5).trim())
+            .filter(Boolean);
+        if (!dataLines.length) return;
+        const jsonStr = dataLines.join('');
+        if (!jsonStr || jsonStr === '[DONE]') return;
+        let payload;
+        try {
+            payload = JSON.parse(jsonStr);
+        } catch {
+            return;
+        }
+        if (payload?.error?.message) {
+            const mapped = mapDirectGeminiHttpError(Number(payload.error.code || 500), JSON.stringify(payload));
+            const err = new Error(mapped.message);
+            err.code = mapped.code;
+            throw err;
+        }
+        const parts = payload?.candidates?.[0]?.content?.parts || [];
+        const text = parts
+            .filter(p => !p.thought && typeof p.text === 'string')
+            .map(p => p.text)
+            .join('');
+        if (text) onChunk(text);
+    };
+
+    while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split(/\r?\n\r?\n/);
+        buffer = events.pop() || '';
+        for (const evt of events) {
+            processEventBlock(evt);
+        }
+    }
+    if (buffer.trim()) {
+        processEventBlock(buffer);
+    }
+}
+
