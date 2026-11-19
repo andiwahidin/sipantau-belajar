@@ -67,6 +67,7 @@ let waliActiveHistoricalGrades = [];
 let waliCurrentAIAnalysisText = '';
 let waliCurrentTimelineData = null;
 let waliCurrentSWData = null;
+let waliActiveLogsCache = [];
 
 // ==================== 1. INISIALISASI, TEMA & AUTENTIKASI ====================
 window.addEventListener('DOMContentLoaded', async () => {
@@ -1521,6 +1522,768 @@ function renderDashboardCharts(h, s, i, a) {
 
 function destroyChart(key) {
     if (chartInstances[key]) { chartInstances[key].destroy(); delete chartInstances[key]; }
+}
+
+function renderOffscreenChartDataUrl(width, height, configBuilder) {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    const ctx = canvas.getContext('2d');
+    const whiteBgPlugin = {
+        id: 'pdfWhiteBackground',
+        beforeDraw(chart) {
+            const c = chart.ctx;
+            c.save();
+            c.fillStyle = '#ffffff';
+            c.fillRect(0, 0, chart.width, chart.height);
+            c.restore();
+        }
+    };
+
+    const chartConfig = configBuilder();
+    chartConfig.options = Object.assign({}, chartConfig.options, {
+        responsive: false,
+        maintainAspectRatio: false,
+        animation: false,
+        devicePixelRatio: 2
+    });
+    chartConfig.plugins = [whiteBgPlugin, ...(chartConfig.plugins || [])];
+
+    const tempChart = new Chart(ctx, chartConfig);
+    tempChart.update('none');
+    const dataUrl = canvas.toDataURL('image/png', 1.0);
+    tempChart.destroy();
+    return dataUrl;
+}
+
+function pdfSanitizeText(str) {
+    return String(str ?? '')
+        .replace(/[^\x20-\x7E\xA0-\xFF]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+async function exportDashboardSummaryPDF() {
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+        return showToast('Library jsPDF belum termuat. Periksa koneksi internet Anda.', 'error');
+    }
+    if (!activeClassId) {
+        return showToast('Pilih kelas dan mata pelajaran terlebih dahulu.', 'error');
+    }
+
+    const btn = document.getElementById('btn-export-dashboard-pdf');
+    const prevBtnHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i><span>Menyusun PDF...</span>`;
+    }
+
+    try {
+        await new Promise(resolve => setTimeout(resolve, 40));
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
+        const marginX = 14;
+        const contentW = pageW - marginX * 2;
+
+        const amp = getActiveAmpuan();
+        const cls = classesCache.find(c => Number(c.id) === Number(activeClassId));
+        const kelasName = pdfSanitizeText(cls?.nama_kelas || 'Kelas');
+        const mapelName = pdfSanitizeText(amp?.mapel || 'Mata Pelajaran');
+        const guruName = pdfSanitizeText(currentUser?.nama_lengkap || 'Guru Pengampu');
+        const periodLabel = pdfSanitizeText(activePeriodName || currentDatePeriodName || '-');
+        const kkmVal = Number(amp?.kkm || 75);
+        const printedAt = new Date().toLocaleString('id-ID', {
+            day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+
+        // 1. Hitung seluruh metrik dashboard (mengikuti filter pencarian bila aktif)
+        const activeStudents = studentsCache.filter(s =>
+            !globalSearchQuery || s.nama.toLowerCase().includes(globalSearchQuery) || String(s.nisn).includes(globalSearchQuery)
+        );
+        const totalStudents = activeStudents.length;
+
+        let sumAtt = 0, sumTaskPct = 0, sumFinal = 0, gradedStudentCount = 0, attentionCount = 0;
+        let totH = 0, totS = 0, totI = 0, totA = 0;
+        let countTuntas = 0, countBimbingan = 0, countBelumDinilai = 0;
+
+        const studentRowsData = activeStudents.map((s, idx) => {
+            const m = computeStudentMetrics(s.id);
+            sumAtt += m.attRate;
+            const tPct = m.totalTasks > 0 ? (m.doneTasks / m.totalTasks) * 100 : 100;
+            sumTaskPct += tPct;
+            if (m.hasAnyGrade) {
+                sumFinal += m.finalScore;
+                gradedStudentCount++;
+                if (m.finalScore >= m.kkm) countTuntas++;
+                else countBimbingan++;
+            } else {
+                countBelumDinilai++;
+            }
+            totH += m.h; totS += m.s; totI += m.i; totA += m.a;
+
+            const isAttention = (m.hasAnyGrade && m.finalScore < m.kkm) || (m.totalTasks > 0 && m.doneTasks < m.totalTasks);
+            if (isAttention) attentionCount++;
+
+            const statusLabel = !m.hasAnyGrade ? 'Belum Dinilai' : (m.finalScore >= m.kkm ? 'Tuntas' : 'Perlu Bimbingan');
+            return {
+                no: idx + 1,
+                nisn: pdfSanitizeText(s.nisn || '-'),
+                nama: pdfSanitizeText(s.nama || '-'),
+                h: m.h, s: m.s, i: m.i, a: m.a,
+                attRate: m.attRate,
+                doneTasks: m.doneTasks,
+                totalTasks: m.totalTasks,
+                hasAnyGrade: m.hasAnyGrade,
+                finalScore: m.finalScore,
+                status: statusLabel
+            };
+        });
+
+        const denom = totalStudents || 1;
+        const avgAttPct = totalStudents ? (sumAtt / denom) : 100;
+        const avgTaskPct = totalStudents ? (sumTaskPct / denom) : 0;
+        const avgFinalScore = gradedStudentCount > 0 ? (sumFinal / gradedStudentCount) : 0;
+        const attentionPct = totalStudents > 0 ? Math.round((attentionCount / totalStudents) * 100) : 0;
+
+        // 2. Render 3 Chart.js offscreen beresolusi tinggi (mode terang agar tajam di kertas)
+        const totAttLogs = totH + totS + totI + totA;
+        const hasAttData = totAttLogs > 0;
+        const attPcts = hasAttData
+            ? [
+                Number(((totH / totAttLogs) * 100).toFixed(1)),
+                Number(((totS / totAttLogs) * 100).toFixed(1)),
+                Number(((totI / totAttLogs) * 100).toFixed(1)),
+                Number(((totA / totAttLogs) * 100).toFixed(1))
+            ]
+            : [100];
+
+        const donutImg = renderOffscreenChartDataUrl(520, 290, () => ({
+            type: 'doughnut',
+            data: {
+                labels: hasAttData
+                    ? [
+                        `Hadir (${attPcts[0]}%)`,
+                        `Sakit (${attPcts[1]}%)`,
+                        `Izin (${attPcts[2]}%)`,
+                        `Alpa (${attPcts[3]}%)`
+                    ]
+                    : ['Belum Ada Data'],
+                datasets: [{
+                    data: attPcts,
+                    backgroundColor: hasAttData ? ['#10b981', '#f59e0b', '#3b82f6', '#f43f5e'] : ['#e2e8f0'],
+                    borderColor: '#ffffff',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                cutout: '64%',
+                layout: { padding: { top: 8, bottom: 8, left: 8, right: 12 } },
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            color: '#1e293b',
+                            boxWidth: 14,
+                            padding: 14,
+                            font: { family: 'Helvetica, Arial, sans-serif', size: 13, weight: 'bold' }
+                        }
+                    }
+                }
+            },
+            plugins: [{
+                id: 'donutCenterText',
+                afterDraw(chart) {
+                    const meta = chart.getDatasetMeta(0);
+                    if (!meta || !meta.data || !meta.data[0]) return;
+                    const { x, y } = meta.data[0];
+                    const c = chart.ctx;
+                    c.save();
+                    c.textAlign = 'center';
+                    c.textBaseline = 'middle';
+                    c.fillStyle = '#0f172a';
+                    c.font = 'bold 22px Helvetica, Arial, sans-serif';
+                    c.fillText(hasAttData ? `${attPcts[0]}%` : '-', x, y - 7);
+                    c.fillStyle = '#64748b';
+                    c.font = 'bold 11px Helvetica, Arial, sans-serif';
+                    c.fillText(hasAttData ? 'Hadir' : 'Kosong', x, y + 14);
+                    c.restore();
+                }
+            }]
+        }));
+
+        const categories = [
+            { key: 'tugas', label: 'Tugas' },
+            { key: 'ujian_bab', label: 'Ujian Bab' },
+            { key: 'ujian_semester', label: 'Ujian Smt' }
+        ];
+        const catRates = categories.map(cat => {
+            const listAss = assessmentsCache.filter(as => normalizeKategori(as.kategori) === cat.key);
+            if (!listAss.length || !studentsCache.length) return 0;
+            const totalExpected = listAss.length * studentsCache.length;
+            let totalDone = 0;
+            listAss.forEach(as => {
+                totalDone += scoresCache.filter(sc =>
+                    Number(sc.assessment_id) === Number(as.id) && (sc.status_kumpul === true || sc.status_pengajuan === 'approved')
+                ).length;
+            });
+            return Number(((totalDone / totalExpected) * 100).toFixed(1));
+        });
+
+        const taskBarImg = renderOffscreenChartDataUrl(520, 290, () => ({
+            type: 'bar',
+            data: {
+                labels: categories.map(c => c.label),
+                datasets: [{
+                    label: 'Ketuntasan (%)',
+                    data: catRates,
+                    backgroundColor: ['#2563eb', '#7c3aed', '#10b981'],
+                    borderRadius: 8,
+                    maxBarThickness: 56
+                }]
+            },
+            options: {
+                layout: { padding: { top: 24, bottom: 6, left: 6, right: 12 } },
+                scales: {
+                    x: {
+                        ticks: { color: '#334155', font: { size: 12, weight: 'bold' } },
+                        grid: { display: false }
+                    },
+                    y: {
+                        min: 0,
+                        max: 100,
+                        ticks: { color: '#475569', stepSize: 25, font: { size: 11 }, callback: v => `${v}%` },
+                        grid: { color: '#e2e8f0' }
+                    }
+                },
+                plugins: { legend: { display: false } }
+            },
+            plugins: [{
+                id: 'barValueLabels',
+                afterDatasetsDraw(chart) {
+                    const c = chart.ctx;
+                    const meta = chart.getDatasetMeta(0);
+                    c.save();
+                    c.fillStyle = '#0f172a';
+                    c.font = 'bold 12px Helvetica, Arial, sans-serif';
+                    c.textAlign = 'center';
+                    c.textBaseline = 'bottom';
+                    meta.data.forEach((bar, index) => {
+                        const val = chart.data.datasets[0].data[index];
+                        c.fillText(`${val}%`, bar.x, bar.y - 5);
+                    });
+                    c.restore();
+                }
+            }]
+        }));
+
+        const dates = [...new Set(attLogsCache.map(l => l.tanggal))].sort();
+        const trendRates = dates.map(d => {
+            const dayLogs = attLogsCache.filter(l => l.tanggal === d);
+            const hadir = dayLogs.filter(l => l.status === 'H').length;
+            return dayLogs.length ? Number(((hadir / dayLogs.length) * 100).toFixed(1)) : 0;
+        });
+
+        const trendImg = renderOffscreenChartDataUrl(960, 260, () => ({
+            type: 'line',
+            data: {
+                labels: dates.length ? dates.map(d => d.slice(5)) : ['Belum Ada Data'],
+                datasets: [{
+                    label: 'Kehadiran (%)',
+                    data: dates.length ? trendRates : [0],
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37, 99, 235, 0.14)',
+                    borderWidth: 3,
+                    pointBackgroundColor: '#1d4ed8',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    pointRadius: dates.length > 20 ? 3 : 5,
+                    fill: true,
+                    tension: 0.32
+                }]
+            },
+            options: {
+                layout: { padding: { top: 24, bottom: 8, left: 10, right: 16 } },
+                scales: {
+                    x: {
+                        ticks: { color: '#334155', font: { size: 12, weight: 'bold' }, maxRotation: 0, autoSkip: true, maxTicksLimit: 14 },
+                        grid: { color: '#f1f5f9' }
+                    },
+                    y: {
+                        min: 0,
+                        max: 100,
+                        ticks: { color: '#475569', stepSize: 25, font: { size: 12 }, callback: v => `${v}%` },
+                        grid: { color: '#e2e8f0' }
+                    }
+                },
+                plugins: { legend: { display: false } }
+            },
+            plugins: [{
+                id: 'lineValueLabels',
+                afterDatasetsDraw(chart) {
+                    if (!dates.length || dates.length > 14) return;
+                    const c = chart.ctx;
+                    const meta = chart.getDatasetMeta(0);
+                    c.save();
+                    c.fillStyle = '#1e3a8a';
+                    c.font = 'bold 11px Helvetica, Arial, sans-serif';
+                    c.textAlign = 'center';
+                    c.textBaseline = 'bottom';
+                    meta.data.forEach((pt, index) => {
+                        const val = chart.data.datasets[0].data[index];
+                        c.fillText(`${val}%`, pt.x, pt.y - 7);
+                    });
+                    c.restore();
+                }
+            }]
+        }));
+
+        // ==================== HALAMAN 1: HEADER, KPI CARDS & VISUALISASI GRAFIK ====================
+        // Header Banner
+        doc.setFillColor(30, 64, 175); // blue-800
+        doc.rect(0, 0, pageW, 34, 'F');
+        doc.setFillColor(59, 130, 246); // blue-500 accent strip
+        doc.rect(0, 34, pageW, 1.8, 'F');
+
+        doc.setTextColor(191, 219, 254);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.text('PANTAUBELAJAR  |  LMS & SISTEM MONITORING AKADEMIK', marginX, 11);
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(15);
+        doc.text('LAPORAN RINGKASAN DASHBOARD GURU', marginX, 19);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9.5);
+        doc.setTextColor(219, 234, 254);
+        doc.text(`Kelas: ${kelasName}   |   Mapel: ${mapelName}   |   KKM: ${kkmVal}`, marginX, 27);
+
+        // Right metadata block in header
+        doc.setFontSize(8.5);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Periode: ${periodLabel}`, pageW - marginX, 12, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(219, 234, 254);
+        doc.text(`Guru: ${guruName}`, pageW - marginX, 18.5, { align: 'right' });
+        doc.text(`Dicetak: ${printedAt}`, pageW - marginX, 25, { align: 'right' });
+
+        let curY = 42;
+
+        if (globalSearchQuery) {
+            doc.setFillColor(254, 243, 199);
+            doc.setDrawColor(245, 158, 11);
+            doc.roundedRect(marginX, curY, contentW, 7.5, 2, 2, 'FD');
+            doc.setTextColor(146, 64, 14);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.text(`Catatan Filter Aktif: Menampilkan ${totalStudents} siswa sesuai kata kunci "${pdfSanitizeText(globalSearchQuery)}".`, marginX + 3, curY + 4.9);
+            curY += 10.5;
+        }
+
+        // ---- 4 KPI SUMMARY CARDS ----
+        const cardGap = 3.5;
+        const cardW = (contentW - cardGap * 3) / 4;
+        const cardH = 26;
+
+        const drawKpiCard = (index, accentRgb, title, bigVal, valRgb, renderFooterFn) => {
+            const x = marginX + index * (cardW + cardGap);
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.35);
+            doc.roundedRect(x, curY, cardW, cardH, 2.5, 2.5, 'FD');
+
+            // Top accent stripe
+            doc.setFillColor(...accentRgb);
+            doc.roundedRect(x, curY, cardW, 2.2, 1.5, 1.5, 'F');
+            doc.rect(x, curY + 1.1, cardW, 1.1, 'F');
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.5);
+            doc.setTextColor(100, 116, 139);
+            doc.text(title, x + 3.2, curY + 7.2);
+
+            doc.setFontSize(14.5);
+            doc.setTextColor(...valRgb);
+            doc.text(bigVal, x + 3.2, curY + 14.8);
+
+            renderFooterFn(x + 3.2, curY + 17.5, cardW - 6.4);
+        };
+
+        // Card 1: Kehadiran Kelas
+        drawKpiCard(0, [16, 185, 129], 'KEHADIRAN KELAS', `${avgAttPct.toFixed(1)}%`, [15, 23, 42], (fx, fy, fw) => {
+            // Mini stacked attendance bar
+            doc.setFillColor(226, 232, 240);
+            doc.roundedRect(fx, fy, fw, 2, 1, 1, 'F');
+            if (totAttLogs > 0) {
+                const segs = [
+                    { v: totH, c: [16, 185, 129] },
+                    { v: totS, c: [245, 158, 11] },
+                    { v: totI, c: [59, 130, 246] },
+                    { v: totA, c: [244, 63, 94] }
+                ];
+                let sx = fx;
+                segs.forEach(sg => {
+                    const sw = (sg.v / totAttLogs) * fw;
+                    if (sw > 0.2) {
+                        doc.setFillColor(...sg.c);
+                        doc.rect(sx, fy, sw, 2, 'F');
+                        sx += sw;
+                    }
+                });
+            }
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.8);
+            doc.setTextColor(100, 116, 139);
+            doc.text(`H:${totH}  S:${totS}  I:${totI}  A:${totA}`, fx, fy + 5.6);
+        });
+
+        // Card 2: Ketuntasan Tugas
+        drawKpiCard(1, [37, 99, 235], 'KETUNTASAN TUGAS', `${avgTaskPct.toFixed(1)}%`, [37, 99, 235], (fx, fy, fw) => {
+            doc.setFillColor(226, 232, 240);
+            doc.roundedRect(fx, fy, fw, 2, 1, 1, 'F');
+            const fillW = Math.max(0, Math.min(fw, (avgTaskPct / 100) * fw));
+            if (fillW > 0.3) {
+                doc.setFillColor(37, 99, 235);
+                doc.roundedRect(fx, fy, fillW, 2, 1, 1, 'F');
+            }
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.8);
+            doc.setTextColor(100, 116, 139);
+            doc.text(`${assessmentsCache.length} Penilaian  |  ${totalStudents} Siswa`, fx, fy + 5.6);
+        });
+
+        // Card 3: Rata-rata Nilai Akhir
+        const avgColor = gradedStudentCount > 0 && avgFinalScore >= kkmVal ? [5, 150, 105] : [217, 119, 6];
+        drawKpiCard(2, [5, 150, 105], 'RATA-RATA NILAI AKHIR', gradedStudentCount > 0 ? avgFinalScore.toFixed(1) : '0.0', avgColor, (fx, fy) => {
+            const kkmBadge = gradedStudentCount === 0 ? 'Belum ada nilai' : (avgFinalScore >= kkmVal ? `Di atas KKM (${kkmVal})` : `Di bawah KKM (${kkmVal})`);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.8);
+            doc.setTextColor(...avgColor);
+            doc.text(kkmBadge, fx, fy + 1.8);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(100, 116, 139);
+            doc.text(`${gradedStudentCount}/${totalStudents} siswa dinilai`, fx, fy + 5.6);
+        });
+
+        // Card 4: Perlu Perhatian
+        drawKpiCard(3, [245, 158, 11], 'PERLU PERHATIAN', `${attentionCount} Siswa`, [217, 119, 6], (fx, fy) => {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.8);
+            doc.setTextColor(180, 83, 9);
+            doc.text(`${attentionPct}% dari total siswa`, fx, fy + 1.8);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(100, 116, 139);
+            doc.text('Di bawah KKM / tunggak tugas', fx, fy + 5.6);
+        });
+
+        curY += cardH + 6;
+
+        // ---- VISUALISASI GRAFIK (2 KARTU ATAS + 1 KARTU TREN PENUH) ----
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(15, 23, 42);
+        doc.text('VISUALISASI STATISTIK KEHADIRAN & KETUNTASAN TUGAS', marginX, curY);
+        curY += 3.5;
+
+        const halfW = (contentW - 4) / 2;
+        const chartBoxH = 56;
+
+        // Chart Box 1: Proporsi Kehadiran (Doughnut)
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(marginX, curY, halfW, chartBoxH, 2.5, 2.5, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Proporsi Kehadiran Kelas (%)', marginX + 3.5, curY + 5.8);
+        doc.addImage(donutImg, 'PNG', marginX + 2, curY + 7.5, halfW - 4, chartBoxH - 9.5, undefined, 'FAST');
+
+        // Chart Box 2: Ketuntasan Per Kategori (Bar)
+        const rightBoxX = marginX + halfW + 4;
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(rightBoxX, curY, halfW, chartBoxH, 2.5, 2.5, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Ketuntasan Tugas Per Kategori (%)', rightBoxX + 3.5, curY + 5.8);
+        doc.addImage(taskBarImg, 'PNG', rightBoxX + 2, curY + 7.5, halfW - 4, chartBoxH - 9.5, undefined, 'FAST');
+
+        curY += chartBoxH + 4.5;
+
+        // Chart Box 3: Tren Kehadiran Per Pertemuan (Full Width Line Chart)
+        const trendBoxH = 52;
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(marginX, curY, contentW, trendBoxH, 2.5, 2.5, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(30, 41, 59);
+        doc.text(`Tren Kehadiran Per Pertemuan (${dates.length} Pertemuan Tercatat)`, marginX + 3.5, curY + 5.8);
+        doc.addImage(trendImg, 'PNG', marginX + 2.5, curY + 7.5, contentW - 5, trendBoxH - 9.5, undefined, 'FAST');
+
+        curY += trendBoxH + 5;
+
+        // ---- VISUAL BAR DISTRIBUSI STATUS CAPAIAN SISWA ----
+        const distBoxH = 22;
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(marginX, curY, contentW, distBoxH, 2.5, 2.5, 'FD');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Distribusi Status Ketuntasan Siswa', marginX + 3.5, curY + 5.8);
+
+        const barX = marginX + 3.5;
+        const barY = curY + 8.5;
+        const barW = contentW - 7;
+        const barH = 4.5;
+        doc.setFillColor(226, 232, 240);
+        doc.roundedRect(barX, barY, barW, barH, 1.5, 1.5, 'F');
+
+        if (totalStudents > 0) {
+            const distSegs = [
+                { count: countTuntas, color: [16, 185, 129] },
+                { count: countBimbingan, color: [245, 158, 11] },
+                { count: countBelumDinilai, color: [148, 163, 184] }
+            ];
+            let dx = barX;
+            distSegs.forEach(seg => {
+                const segW = (seg.count / totalStudents) * barW;
+                if (segW > 0.3) {
+                    doc.setFillColor(...seg.color);
+                    doc.rect(dx, barY, segW, barH, 'F');
+                    dx += segW;
+                }
+            });
+        }
+
+        const legendY = curY + 18;
+        const drawDistLegend = (lx, rgb, label) => {
+            doc.setFillColor(...rgb);
+            doc.circle(lx + 1.5, legendY - 1, 1.3, 'F');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.5);
+            doc.setTextColor(51, 65, 85);
+            doc.text(label, lx + 4.2, legendY);
+        };
+        const pctTuntas = totalStudents ? Math.round((countTuntas / totalStudents) * 100) : 0;
+        const pctBimb = totalStudents ? Math.round((countBimbingan / totalStudents) * 100) : 0;
+        const pctBelum = totalStudents ? Math.round((countBelumDinilai / totalStudents) * 100) : 0;
+
+        drawDistLegend(marginX + 3.5, [16, 185, 129], `Tuntas (>= KKM ${kkmVal}): ${countTuntas} siswa (${pctTuntas}%)`);
+        drawDistLegend(marginX + 68, [245, 158, 11], `Perlu Bimbingan: ${countBimbingan} siswa (${pctBimb}%)`);
+        drawDistLegend(marginX + 132, [148, 163, 184], `Belum Dinilai: ${countBelumDinilai} (${pctBelum}%)`);
+
+        curY += distBoxH + 6;
+
+        // ---- RINGKASAN PENILAIAN & AGENDA TENGGAT ----
+        if (curY > pageH - 55) {
+            doc.addPage();
+            curY = 16;
+        }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(15, 23, 42);
+        doc.text(`RINGKASAN KETUNTASAN PENILAIAN & TENGGAT (${assessmentsCache.length} Penilaian)`, marginX, curY);
+        curY += 3;
+
+        if (assessmentsCache.length > 0) {
+            const totalClassStu = studentsCache.length;
+            const assRows = assessmentsCache.map((a, idx) => {
+                const doneCount = scoresCache.filter(sc =>
+                    Number(sc.assessment_id) === Number(a.id) && (sc.status_kumpul === true || sc.status_pengajuan === 'approved')
+                ).length;
+                const pct = totalClassStu > 0 ? Math.round((doneCount / totalClassStu) * 100) : 0;
+                const gradedScores = scoresCache
+                    .filter(sc => Number(sc.assessment_id) === Number(a.id) && hasFilledScore(sc))
+                    .map(sc => Number(sc.nilai));
+                const avgAss = gradedScores.length
+                    ? (gradedScores.reduce((acc, v) => acc + v, 0) / gradedScores.length).toFixed(1)
+                    : '-';
+                const dlText = a.deadline
+                    ? new Date(a.deadline).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+                    : 'Tanpa tenggat';
+
+                return {
+                    pct,
+                    row: [
+                        idx + 1,
+                        pdfSanitizeText(a.judul || '-'),
+                        pdfSanitizeText(getKategoriLabel(a.kategori)),
+                        dlText,
+                        `${doneCount}/${totalClassStu}`,
+                        `${pct}%`,
+                        avgAss
+                    ]
+                };
+            });
+
+            doc.autoTable({
+                startY: curY,
+                margin: { left: marginX, right: marginX, bottom: 18 },
+                head: [['No', 'Judul Penilaian', 'Kategori', 'Tenggat', 'Kumpul', 'Progres', 'Rata2']],
+                body: assRows.map(r => r.row),
+                theme: 'grid',
+                headStyles: { fillColor: [30, 64, 175], textColor: 255, fontSize: 8, fontStyle: 'bold' },
+                styles: { fontSize: 7.8, cellPadding: 2.3, textColor: [30, 41, 59], lineColor: [226, 232, 240] },
+                alternateRowStyles: { fillColor: [248, 250, 252] },
+                columnStyles: {
+                    0: { halign: 'center', cellWidth: 9 },
+                    1: { cellWidth: 55 },
+                    2: { cellWidth: 28 },
+                    3: { cellWidth: 26, halign: 'center' },
+                    4: { cellWidth: 18, halign: 'center' },
+                    5: { cellWidth: 30, halign: 'right' },
+                    6: { cellWidth: 16, halign: 'center', fontStyle: 'bold' }
+                },
+                didDrawCell(data) {
+                    if (data.section === 'body' && data.column.index === 5) {
+                        const pct = assRows[data.row.index]?.pct || 0;
+                        const cell = data.cell;
+                        const barX2 = cell.x + 2;
+                        const barY2 = cell.y + cell.height / 2 - 1.3;
+                        const barW2 = Math.max(8, cell.width - 13.5);
+                        doc.setFillColor(226, 232, 240);
+                        doc.roundedRect(barX2, barY2, barW2, 2.6, 1, 1, 'F');
+                        if (pct > 0) {
+                            const rgb = pct >= 80 ? [16, 185, 129] : pct >= 50 ? [37, 99, 235] : [245, 158, 11];
+                            doc.setFillColor(...rgb);
+                            doc.roundedRect(barX2, barY2, (pct / 100) * barW2, 2.6, 1, 1, 'F');
+                        }
+                    }
+                }
+            });
+            curY = (doc.lastAutoTable?.finalY || curY + 20) + 7;
+        } else {
+            doc.setFont('helvetica', 'italic');
+            doc.setFontSize(8.5);
+            doc.setTextColor(100, 116, 139);
+            doc.text('Belum ada tugas atau ujian yang tercatat pada kelas & mata pelajaran ini.', marginX, curY + 4);
+            curY += 11;
+        }
+
+        // ==================== TABEL RINGKASAN CAPAIAN SISWA ====================
+        if (curY > pageH - 55) {
+            doc.addPage();
+            curY = 16;
+        }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(15, 23, 42);
+        doc.text(`RINGKASAN CAPAIAN SISWA (${totalStudents} Siswa)`, marginX, curY);
+        curY += 3;
+
+        if (studentRowsData.length > 0) {
+            doc.autoTable({
+                startY: curY,
+                margin: { left: marginX, right: marginX, bottom: 18 },
+                head: [['No', 'NISN', 'Nama Siswa', 'H/S/I/A', 'Hadir', 'Tugas', 'Nilai', 'Status']],
+                body: studentRowsData.map(r => [
+                    r.no,
+                    r.nisn,
+                    r.nama,
+                    `${r.h}/${r.s}/${r.i}/${r.a}`,
+                    `${r.attRate.toFixed(0)}%`,
+                    `${r.doneTasks}/${r.totalTasks}`,
+                    r.hasAnyGrade ? r.finalScore.toFixed(1) : '-',
+                    r.status
+                ]),
+                theme: 'grid',
+                headStyles: { fillColor: [15, 23, 42], textColor: 255, fontSize: 8, fontStyle: 'bold' },
+                styles: { fontSize: 7.8, cellPadding: 2.3, textColor: [30, 41, 59], lineColor: [226, 232, 240] },
+                alternateRowStyles: { fillColor: [248, 250, 252] },
+                columnStyles: {
+                    0: { halign: 'center', cellWidth: 9 },
+                    1: { cellWidth: 25, fontStyle: 'normal' },
+                    2: { cellWidth: 50, fontStyle: 'bold' },
+                    3: { halign: 'center', cellWidth: 20 },
+                    4: { halign: 'center', cellWidth: 15, fontStyle: 'bold' },
+                    5: { halign: 'center', cellWidth: 16 },
+                    6: { halign: 'center', cellWidth: 16, fontStyle: 'bold', textColor: [29, 78, 216] },
+                    7: { halign: 'center', cellWidth: 31, fontStyle: 'bold' }
+                },
+                didParseCell(data) {
+                    if (data.section === 'body' && data.column.index === 7) {
+                        const val = data.cell.raw;
+                        if (val === 'Tuntas') {
+                            data.cell.styles.fillColor = [209, 250, 229];
+                            data.cell.styles.textColor = [6, 95, 70];
+                        } else if (val === 'Perlu Bimbingan') {
+                            data.cell.styles.fillColor = [254, 243, 199];
+                            data.cell.styles.textColor = [146, 64, 14];
+                        } else {
+                            data.cell.styles.fillColor = [241, 245, 249];
+                            data.cell.styles.textColor = [100, 116, 139];
+                        }
+                    }
+                }
+            });
+            curY = (doc.lastAutoTable?.finalY || curY + 20) + 10;
+        } else {
+            doc.setFont('helvetica', 'italic');
+            doc.setFontSize(8.5);
+            doc.setTextColor(100, 116, 139);
+            doc.text('Belum ada data siswa pada kelas ini.', marginX, curY + 4);
+            curY += 12;
+        }
+
+        // ---- BLOK PENGESAHAN GURU ----
+        if (curY > pageH - 36) {
+            doc.addPage();
+            curY = 22;
+        }
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`Dicetak melalui PantauBelajar pada ${printedAt}`, marginX, curY + 4);
+        doc.text('Mengetahui,', pageW - marginX - 55, curY + 2);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(15, 23, 42);
+        doc.text('Guru Pengampu,', pageW - marginX - 55, curY + 7);
+        doc.setDrawColor(148, 163, 184);
+        doc.line(pageW - marginX - 55, curY + 23, pageW - marginX, curY + 23);
+        doc.text(guruName, pageW - marginX - 55, curY + 27.5);
+
+        // ---- FOOTER NOMOR HALAMAN DI SETIAP HALAMAN ----
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let p = 1; p <= totalPages; p++) {
+            doc.setPage(p);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.3);
+            doc.line(marginX, pageH - 12, pageW - marginX, pageH - 12);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7.5);
+            doc.setTextColor(100, 116, 139);
+            doc.text(`PantauBelajar  |  Ringkasan Dashboard ${kelasName} - ${mapelName} (${periodLabel})`, marginX, pageH - 7.5);
+            doc.text(`Halaman ${p} dari ${totalPages}`, pageW - marginX, pageH - 7.5, { align: 'right' });
+        }
+
+        const safeCls = kelasName.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'Kelas';
+        const safeMapel = mapelName.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'Mapel';
+        const safePeriod = periodLabel.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'Periode';
+        doc.save(`Ringkasan_Dashboard_${safeCls}_${safeMapel}_${safePeriod}.pdf`);
+
+        showToast('📄 Ringkasan Dashboard PDF lengkap dengan grafik berhasil diunduh!');
+    } catch (err) {
+        console.error('Export Dashboard PDF Error:', err);
+        showToast('Gagal mengekspor PDF dashboard: ' + (err?.message || err), 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = prevBtnHtml;
+        }
+    }
 }
 
 // ==================== 6. MANAJEMEN KELAS & SISWA ====================
@@ -4087,9 +4850,10 @@ function openWaliGeminiWebFallback() {
 
 async function loadWaliLogsList(studentId) {
     const { data: logs } = await db.from('wali_logs').select('*').eq('student_id', studentId).order('tanggal', { ascending: false });
+    waliActiveLogsCache = logs || [];
     const box = document.getElementById('w360-logs-list');
     if (!box) return;
-    box.innerHTML = (logs || []).map(l => `
+    box.innerHTML = waliActiveLogsCache.map(l => `
         <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70 border dark:border-slate-700 text-xs">
             <div class="font-extrabold text-slate-900 dark:text-white">${l.tanggal} — ${l.topik}</div>
             <p class="text-slate-600 dark:text-slate-300 mt-1 whitespace-pre-line">${l.catatan}</p>
@@ -4112,44 +4876,1275 @@ async function addWaliCounselingLog(e) {
     await loadWaliLogsList(activeWaliStudentId);
 }
 
-function printWali360PDF() {
+async function printWali360PDF() {
     if (!activeWaliStudentId) return;
-    const s = allStudentsGlobal.find(x => Number(x.id) === activeWaliStudentId);
-    const m = waliMetricsCache[activeWaliStudentId] || { h: 0, s: 0, i: 0, a: 0, attRate: 100 };
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+        return showToast('Library jsPDF belum termuat. Periksa koneksi internet Anda.', 'error');
+    }
 
-    doc.setFontSize(14);
-    doc.text(`LAPORAN PERKEMBANGAN AKADEMIK SISWA 360°`, 14, 16);
-    doc.setFontSize(10);
-    doc.text(`Nama: ${s?.nama || '-'} (${s?.nisn || '-'}) | Kelas: ${s?.classes?.nama_kelas || '-'}`, 14, 23);
-    doc.text(`Periode: ${activePeriodName} | Kehadiran: ${m.attRate.toFixed(0)}% (H:${m.h} S:${m.s} I:${m.i} A:${m.a})`, 14, 29);
+    const btn = document.getElementById('btn-print-wali-360-pdf');
+    const prevBtnHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i><span>Menyusun PDF...</span>`;
+    }
 
-    if (waliCurrentTimelineData?.cumulativeSummary?.length) {
-        doc.autoTable({
-            startY: 35,
-            head: [['Mata Pelajaran', 'Rata-rata Kumulatif', 'Tertinggi', 'Terendah', 'Semester Aktif', 'Status']],
-            body: waliCurrentTimelineData.cumulativeSummary.map(sb => [
-                sb.mapel,
-                sb.avg > 0 ? sb.avg.toFixed(1) : '-',
-                sb.maxVal > 0 ? sb.maxVal.toFixed(1) : '-',
-                sb.minVal > 0 ? sb.minVal.toFixed(1) : '-',
-                sb.currentVal !== null ? sb.currentVal.toFixed(1) : '-',
-                sb.currentVal === null ? 'Belum Ada' : sb.tuntas ? 'Tuntas' : 'Remedial'
-            ])
+    try {
+        await new Promise(resolve => setTimeout(resolve, 40));
+
+        const s = allStudentsGlobal.find(x => Number(x.id) === Number(activeWaliStudentId));
+        const built = buildWaliTimelineAndSW(activeWaliStudentId);
+        const m = built.m;
+        const timeline = built.timeline;
+        const sw = built.sw;
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
+        const marginX = 14;
+        const contentW = pageW - marginX * 2;
+
+        const studentName = pdfSanitizeText(s?.nama || 'Siswa Binaan');
+        const studentNisn = pdfSanitizeText(s?.nisn || '-');
+        const studentClass = pdfSanitizeText(s?.classes?.nama_kelas || '-');
+        const guruWaliName = pdfSanitizeText(currentUser?.nama_lengkap || 'Guru Wali');
+        const periodLabel = pdfSanitizeText(activePeriodName || currentDatePeriodName || '-');
+        const printedAt = new Date().toLocaleString('id-ID', {
+            day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
         });
+
+        const ewsMeta = m.ews === 'kritis'
+            ? { label: 'PRIORITAS KRITIS', bg: [225, 29, 72], lightBg: [254, 226, 226], text: [159, 18, 57] }
+            : m.ews === 'waspada'
+                ? { label: 'PERLU PANTAUAN', bg: [217, 119, 6], lightBg: [254, 243, 199], text: [146, 64, 14] }
+                : { label: 'STATUS AMAN', bg: [5, 150, 105], lightBg: [209, 250, 229], text: [6, 95, 70] };
+
+        const curSubjects = (m.subjectDetails || []).filter(sb => sb.hasData);
+        const tuntasSubjectsCount = curSubjects.filter(sb => sb.finalVal >= sb.kkm).length;
+        const totAttLogs = (m.h || 0) + (m.s || 0) + (m.i || 0) + (m.a || 0);
+        const hasAttData = totAttLogs > 0;
+        const attPcts = hasAttData
+            ? [
+                Number(((m.h / totAttLogs) * 100).toFixed(1)),
+                Number(((m.s / totAttLogs) * 100).toFixed(1)),
+                Number(((m.i / totAttLogs) * 100).toFixed(1)),
+                Number(((m.a / totAttLogs) * 100).toFixed(1))
+            ]
+            : [100];
+
+        // ---- RENDER 4 GRAFIK OFFSCREEN RESOLUSI TINGGI (PRINT-READY LIGHT MODE) ----
+        // Chart 1: Tren Nilai Lintas Semester
+        const validTrendPairs = timeline.allPeriods
+            .map((p, idx) => ({ p: pdfSanitizeText(p), v: timeline.periodAverages[idx] }))
+            .filter(x => x.v !== null && !isNaN(x.v));
+        const trendLabels = validTrendPairs.length ? validTrendPairs.map(x => x.p.replace(/^Semester\s+/i, 'Smt ')) : [periodLabel.replace(/^Semester\s+/i, 'Smt ')];
+        const trendValues = validTrendPairs.length ? validTrendPairs.map(x => x.v) : [0];
+        let trendDeltaLabel = 'Stabil';
+        if (trendValues.length >= 2) {
+            const diff = trendValues[trendValues.length - 1] - trendValues[0];
+            trendDeltaLabel = diff > 1 ? `Naik +${diff.toFixed(1)}` : diff < -1 ? `Turun ${diff.toFixed(1)}` : 'Stabil';
+        }
+
+        const trendChartImg = renderOffscreenChartDataUrl(520, 290, () => ({
+            type: 'line',
+            data: {
+                labels: trendLabels,
+                datasets: [
+                    {
+                        label: 'Rata-rata Nilai',
+                        data: trendValues,
+                        borderColor: '#4f46e5',
+                        backgroundColor: 'rgba(79, 70, 229, 0.16)',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#4338ca',
+                        pointBorderColor: '#ffffff',
+                        pointBorderWidth: 2,
+                        pointRadius: 5,
+                        fill: true,
+                        tension: 0.32
+                    },
+                    {
+                        label: 'Batas KKM (75)',
+                        data: trendLabels.map(() => 75),
+                        borderColor: '#f59e0b',
+                        borderDash: [6, 5],
+                        borderWidth: 1.8,
+                        pointRadius: 0,
+                        fill: false
+                    }
+                ]
+            },
+            options: {
+                layout: { padding: { top: 24, bottom: 8, left: 6, right: 14 } },
+                scales: {
+                    x: { ticks: { color: '#334155', font: { size: 11, weight: 'bold' } }, grid: { color: '#f1f5f9' } },
+                    y: { min: 40, max: 100, ticks: { color: '#475569', stepSize: 15, font: { size: 11 } }, grid: { color: '#e2e8f0' } }
+                },
+                plugins: { legend: { display: false } }
+            },
+            plugins: [{
+                id: 'waliTrendLabels',
+                afterDatasetsDraw(chart) {
+                    if (!validTrendPairs.length) return;
+                    const c = chart.ctx;
+                    const meta = chart.getDatasetMeta(0);
+                    c.save();
+                    c.fillStyle = '#312e81';
+                    c.font = 'bold 12px Helvetica, Arial, sans-serif';
+                    c.textAlign = 'center';
+                    c.textBaseline = 'bottom';
+                    meta.data.forEach((pt, idx) => {
+                        c.fillText(`${trendValues[idx].toFixed(1)}`, pt.x, pt.y - 7);
+                    });
+                    c.restore();
+                }
+            }]
+        }));
+
+        // Chart 2: Capaian Semester Berjalan Per Mata Pelajaran + Garis KKM
+        const curSubLabels = curSubjects.length
+            ? curSubjects.map(sb => {
+                const clean = pdfSanitizeText(sb.mapel);
+                return clean.length > 13 ? clean.slice(0, 12) + '.' : clean;
+            })
+            : ['Belum Ada Nilai'];
+        const curSubVals = curSubjects.length ? curSubjects.map(sb => Number(sb.finalVal.toFixed(1))) : [0];
+        const curSubColors = curSubjects.length
+            ? curSubjects.map(sb => sb.finalVal >= 85 ? '#4f46e5' : sb.finalVal >= sb.kkm ? '#10b981' : '#f43f5e')
+            : ['#cbd5e1'];
+
+        const currentBarImg = renderOffscreenChartDataUrl(520, 290, () => ({
+            type: 'bar',
+            data: {
+                labels: curSubLabels,
+                datasets: [
+                    {
+                        label: 'Nilai Akhir',
+                        data: curSubVals,
+                        backgroundColor: curSubColors,
+                        borderRadius: 7,
+                        maxBarThickness: 44
+                    },
+                    {
+                        type: 'line',
+                        label: 'KKM (75)',
+                        data: curSubLabels.map(() => 75),
+                        borderColor: '#f59e0b',
+                        borderDash: [6, 5],
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: false
+                    }
+                ]
+            },
+            options: {
+                layout: { padding: { top: 24, bottom: 6, left: 6, right: 12 } },
+                scales: {
+                    x: { ticks: { color: '#334155', font: { size: 10, weight: 'bold' }, maxRotation: 25, minRotation: 0 }, grid: { display: false } },
+                    y: { min: 0, max: 100, ticks: { color: '#475569', stepSize: 25, font: { size: 11 } }, grid: { color: '#e2e8f0' } }
+                },
+                plugins: { legend: { display: false } }
+            },
+            plugins: [{
+                id: 'waliBarLabels',
+                afterDatasetsDraw(chart) {
+                    if (!curSubjects.length) return;
+                    const c = chart.ctx;
+                    const meta = chart.getDatasetMeta(0);
+                    c.save();
+                    c.fillStyle = '#0f172a';
+                    c.font = 'bold 11px Helvetica, Arial, sans-serif';
+                    c.textAlign = 'center';
+                    c.textBaseline = 'bottom';
+                    meta.data.forEach((bar, idx) => {
+                        c.fillText(`${curSubVals[idx]}`, bar.x, bar.y - 4);
+                    });
+                    c.restore();
+                }
+            }]
+        }));
+
+        // Chart 3: Radar Kompetensi 5 Dimensi
+        const radarShortLabels = ['Sains & Mat', 'Teknologi', 'Bahasa', 'Sosial Hum.', 'Karakter'];
+        const radarImg = renderOffscreenChartDataUrl(500, 320, () => ({
+            type: 'radar',
+            data: {
+                labels: radarShortLabels,
+                datasets: [
+                    {
+                        label: 'Kompetensi Siswa',
+                        data: sw.radarScores,
+                        backgroundColor: 'rgba(79, 70, 229, 0.22)',
+                        borderColor: '#4f46e5',
+                        pointBackgroundColor: '#4338ca',
+                        pointBorderColor: '#ffffff',
+                        pointRadius: 4,
+                        borderWidth: 2.5
+                    },
+                    {
+                        label: 'Standar KKM (75)',
+                        data: [75, 75, 75, 75, 75],
+                        backgroundColor: 'rgba(245, 158, 11, 0.05)',
+                        borderColor: '#f59e0b',
+                        borderDash: [5, 5],
+                        pointRadius: 0,
+                        borderWidth: 1.8
+                    }
+                ]
+            },
+            options: {
+                layout: { padding: { top: 8, bottom: 4, left: 10, right: 10 } },
+                scales: {
+                    r: {
+                        min: 40,
+                        max: 100,
+                        ticks: { stepSize: 20, color: '#64748b', backdropColor: 'transparent', font: { size: 10 } },
+                        pointLabels: { color: '#1e293b', font: { size: 12, weight: 'bold' } },
+                        grid: { color: '#cbd5e1' },
+                        angleLines: { color: '#cbd5e1' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { color: '#334155', boxWidth: 12, padding: 10, font: { size: 11, weight: 'bold' } }
+                    }
+                }
+            }
+        }));
+
+        // Chart 4: Doughnut Kehadiran Lintas Mapel
+        const attDonutImg = renderOffscreenChartDataUrl(460, 240, () => ({
+            type: 'doughnut',
+            data: {
+                labels: hasAttData
+                    ? [`Hadir (${m.h})`, `Sakit (${m.s})`, `Izin (${m.i})`, `Alpa (${m.a})`]
+                    : ['Belum Ada Data'],
+                datasets: [{
+                    data: attPcts,
+                    backgroundColor: hasAttData ? ['#10b981', '#f59e0b', '#3b82f6', '#f43f5e'] : ['#e2e8f0'],
+                    borderColor: '#ffffff',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                cutout: '64%',
+                layout: { padding: { top: 6, bottom: 6, left: 6, right: 10 } },
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: { color: '#1e293b', boxWidth: 12, padding: 10, font: { size: 12, weight: 'bold' } }
+                    }
+                }
+            },
+            plugins: [{
+                id: 'waliAttCenter',
+                afterDraw(chart) {
+                    const meta = chart.getDatasetMeta(0);
+                    if (!meta?.data?.[0]) return;
+                    const { x, y } = meta.data[0];
+                    const c = chart.ctx;
+                    c.save();
+                    c.textAlign = 'center';
+                    c.textBaseline = 'middle';
+                    c.fillStyle = '#0f172a';
+                    c.font = 'bold 20px Helvetica, Arial, sans-serif';
+                    c.fillText(hasAttData ? `${attPcts[0]}%` : '-', x, y - 6);
+                    c.fillStyle = '#64748b';
+                    c.font = 'bold 10px Helvetica, Arial, sans-serif';
+                    c.fillText('Hadir', x, y + 12);
+                    c.restore();
+                }
+            }]
+        }));
+
+        // ==================== HALAMAN 1: HEADER, KPI CARDS & VISUALISASI 360 ====================
+        doc.setFillColor(49, 46, 129); // indigo-900
+        doc.rect(0, 0, pageW, 38, 'F');
+        doc.setFillColor(99, 102, 241); // indigo-500 strip
+        doc.rect(0, 38, pageW, 1.8, 'F');
+
+        doc.setTextColor(199, 210, 254);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.2);
+        doc.text('PANTAUBELAJAR  |  PEMBIMBINGAN AKADEMIK (GURU WALI 360)', marginX, 10.5);
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(14.5);
+        doc.text('LAPORAN PERKEMBANGAN AKADEMIK SISWA 360', marginX, 18.2);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(224, 231, 255);
+        doc.text(`${studentName}`, marginX, 25.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.8);
+        doc.text(`NISN: ${studentNisn}   |   Kelas: ${studentClass}   |   Periode: ${periodLabel}`, marginX, 31.5);
+
+        // Right metadata & EWS badge
+        doc.setFillColor(...ewsMeta.bg);
+        doc.roundedRect(pageW - marginX - 44, 7.5, 44, 7.2, 2, 2, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.8);
+        doc.text(ewsMeta.label, pageW - marginX - 22, 12.2, { align: 'center' });
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.2);
+        doc.setTextColor(224, 231, 255);
+        doc.text(`Guru Wali: ${guruWaliName}`, pageW - marginX, 22, { align: 'right' });
+        doc.text(`Dicetak: ${printedAt}`, pageW - marginX, 28.2, { align: 'right' });
+
+        let curY = 45;
+
+        // ---- 4 KARTU KPI VISUAL ----
+        const cardGap = 3.5;
+        const cardW = (contentW - cardGap * 3) / 4;
+        const cardH = 26;
+
+        const drawWaliKpi = (idx, accentRgb, title, bigVal, valRgb, footerFn) => {
+            const x = marginX + idx * (cardW + cardGap);
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.35);
+            doc.roundedRect(x, curY, cardW, cardH, 2.5, 2.5, 'FD');
+            doc.setFillColor(...accentRgb);
+            doc.roundedRect(x, curY, cardW, 2.2, 1.5, 1.5, 'F');
+            doc.rect(x, curY + 1.1, cardW, 1.1, 'F');
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.2);
+            doc.setTextColor(100, 116, 139);
+            doc.text(title, x + 3, curY + 7);
+
+            doc.setFontSize(14);
+            doc.setTextColor(...valRgb);
+            doc.text(bigVal, x + 3, curY + 14.5);
+
+            footerFn(x + 3, curY + 17.3, cardW - 6);
+        };
+
+        // KPI 1: Kehadiran
+        drawWaliKpi(0, [16, 185, 129], 'KEHADIRAN LINTAS MAPEL', `${(m.attRate || 0).toFixed(1)}%`, [15, 23, 42], (fx, fy, fw) => {
+            doc.setFillColor(226, 232, 240);
+            doc.roundedRect(fx, fy, fw, 2, 1, 1, 'F');
+            if (hasAttData) {
+                const segs = [
+                    { v: m.h, c: [16, 185, 129] },
+                    { v: m.s, c: [245, 158, 11] },
+                    { v: m.i, c: [59, 130, 246] },
+                    { v: m.a, c: [244, 63, 94] }
+                ];
+                let sx = fx;
+                segs.forEach(sg => {
+                    const w2 = (sg.v / totAttLogs) * fw;
+                    if (w2 > 0.2) { doc.setFillColor(...sg.c); doc.rect(sx, fy, w2, 2, 'F'); sx += w2; }
+                });
+            }
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.8);
+            doc.setTextColor(100, 116, 139);
+            doc.text(`H:${m.h}  S:${m.s}  I:${m.i}  A:${m.a}`, fx, fy + 5.5);
+        });
+
+        // KPI 2: Ketuntasan Tugas
+        const taskRate = Number(m.taskCompletionRate ?? 100);
+        drawWaliKpi(1, [37, 99, 235], 'KETUNTASAN TUGAS', `${taskRate.toFixed(1)}%`, [37, 99, 235], (fx, fy, fw) => {
+            doc.setFillColor(226, 232, 240);
+            doc.roundedRect(fx, fy, fw, 2, 1, 1, 'F');
+            const fillW = Math.max(0, Math.min(fw, (taskRate / 100) * fw));
+            if (fillW > 0.3) { doc.setFillColor(37, 99, 235); doc.roundedRect(fx, fy, fillW, 2, 1, 1, 'F'); }
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.8);
+            doc.setTextColor(m.pendingTasks.length > 0 ? 190 : 5, m.pendingTasks.length > 0 ? 18 : 150, m.pendingTasks.length > 0 ? 60 : 105);
+            doc.text(m.pendingTasks.length > 0 ? `${m.pendingTasks.length} tugas tertunggak` : '0 tunggakan tugas', fx, fy + 5.5);
+        });
+
+        // KPI 3: Rata-rata Nilai Lintas Mapel
+        const avgAll = m.hasAnySubjectData ? m.avgFinalAllSubjects : 0;
+        const avgRgb = m.hasAnySubjectData && avgAll >= 75 ? [5, 150, 105] : [217, 119, 6];
+        drawWaliKpi(2, [79, 70, 229], 'RATA-RATA LINTAS MAPEL', m.hasAnySubjectData ? avgAll.toFixed(1) : '-', avgRgb, (fx, fy) => {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.8);
+            doc.setTextColor(79, 70, 229);
+            doc.text(`${tuntasSubjectsCount}/${curSubjects.length} mapel tuntas KKM`, fx, fy + 1.8);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(100, 116, 139);
+            doc.text(`Tren: ${trendDeltaLabel}`, fx, fy + 5.5);
+        });
+
+        // KPI 4: Karakter & Disiplin
+        const karScore = Number(sw.karakterScore || 0);
+        const karTier = karScore >= 85 ? 'Teladan' : karScore >= 75 ? 'Baik / Stabil' : 'Perlu Penguatan';
+        drawWaliKpi(3, ewsMeta.bg, 'KARAKTER & DISIPLIN', karScore.toFixed(1), ewsMeta.text, (fx, fy, fw) => {
+            doc.setFillColor(226, 232, 240);
+            doc.roundedRect(fx, fy, fw, 2, 1, 1, 'F');
+            const fw2 = Math.max(0, Math.min(fw, (karScore / 100) * fw));
+            if (fw2 > 0.3) { doc.setFillColor(...ewsMeta.bg); doc.roundedRect(fx, fy, fw2, 2, 1, 1, 'F'); }
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.8);
+            doc.setTextColor(71, 85, 105);
+            doc.text(`Kategori: ${karTier}`, fx, fy + 5.5);
+        });
+
+        curY += cardH + 6;
+
+        // ---- VISUALISASI GRAFIK BARIS 1: TREN SEMESTER & CAPAIAN MAPEL ----
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.8);
+        doc.setTextColor(15, 23, 42);
+        doc.text('ANALISIS GRAFIK PERKEMBANGAN & CAPAIAN AKADEMIK', marginX, curY);
+        curY += 3.5;
+
+        const halfW = (contentW - 4) / 2;
+        const topChartH = 56;
+
+        // Box Kiri: Tren Nilai Lintas Semester
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(marginX, curY, halfW, topChartH, 2.5, 2.5, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.3);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Riwayat Nilai Lintas Semester', marginX + 3.5, curY + 5.6);
+        doc.setFontSize(7.2);
+        doc.setTextColor(79, 70, 229);
+        doc.text(trendDeltaLabel, marginX + halfW - 3.5, curY + 5.6, { align: 'right' });
+        doc.addImage(trendChartImg, 'PNG', marginX + 2, curY + 7.2, halfW - 4, topChartH - 9, undefined, 'FAST');
+
+        // Box Kanan: Capaian Semester Berjalan
+        const rightX = marginX + halfW + 4;
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(rightX, curY, halfW, topChartH, 2.5, 2.5, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.3);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Capaian Semester Berjalan vs KKM', rightX + 3.5, curY + 5.6);
+        doc.addImage(currentBarImg, 'PNG', rightX + 2, curY + 7.2, halfW - 4, topChartH - 9, undefined, 'FAST');
+
+        curY += topChartH + 4.5;
+
+        // ---- VISUALISASI GRAFIK BARIS 2: RADAR KOMPETENSI & PROFIL RUMPUN ----
+        const midBoxH = 62;
+
+        // Box Kiri: Radar Chart
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(marginX, curY, halfW, midBoxH, 2.5, 2.5, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.3);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Radar Profil Kompetensi 5 Dimensi', marginX + 3.5, curY + 5.6);
+        doc.addImage(radarImg, 'PNG', marginX + 3, curY + 7, halfW - 6, midBoxH - 9, undefined, 'FAST');
+
+        // Box Kanan: Visual Progress Bars Rumpun (Strength & Weakness)
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(rightX, curY, halfW, midBoxH, 2.5, 2.5, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.3);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Kekuatan & Tantangan Rumpun (Strength / Weakness)', rightX + 3.5, curY + 5.6);
+
+        let ry = curY + 12;
+        sw.radarLabels.forEach((lbl, idx) => {
+            const scVal = Number(sw.radarScores[idx] || 0);
+            const tier = scVal >= 82
+                ? { tag: 'Tinggi', rgb: [16, 185, 129] }
+                : scVal >= 75
+                    ? { tag: 'Stabil', rgb: [37, 99, 235] }
+                    : { tag: 'Penguatan', rgb: [244, 63, 94] };
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.4);
+            doc.setTextColor(51, 65, 85);
+            doc.text(pdfSanitizeText(lbl), rightX + 3.5, ry);
+
+            doc.setTextColor(...tier.rgb);
+            doc.text(`${scVal.toFixed(1)} (${tier.tag})`, rightX + halfW - 3.5, ry, { align: 'right' });
+
+            const bX = rightX + 3.5;
+            const bW = halfW - 7;
+            doc.setFillColor(226, 232, 240);
+            doc.roundedRect(bX, ry + 1.4, bW, 2.8, 1.2, 1.2, 'F');
+            const fillW = Math.max(0.5, Math.min(bW, (scVal / 100) * bW));
+            doc.setFillColor(...tier.rgb);
+            doc.roundedRect(bX, ry + 1.4, fillW, 2.8, 1.2, 1.2, 'F');
+            ry += 9.5;
+        });
+
+        curY += midBoxH + 4.5;
+
+        // ---- PANEL KEHADIRAN (DONUT) + TUNGGAKAN TUGAS ----
+        const attBoxH = 48;
+        if (curY + attBoxH > pageH - 18) {
+            doc.addPage();
+            curY = 16;
+        }
+
+        // Kiri: Proporsi Kehadiran & Tanggal Absen
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(marginX, curY, halfW, attBoxH, 2.5, 2.5, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.3);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Proporsi Kehadiran Lintas Mapel', marginX + 3.5, curY + 5.6);
+        doc.addImage(attDonutImg, 'PNG', marginX + 2, curY + 7.2, halfW - 4, 31, undefined, 'FAST');
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.8);
+        doc.setTextColor(71, 85, 105);
+        const absSummary = m.absenceDates.length
+            ? `Catatan S/I/A: ${pdfSanitizeText(m.absenceDates.slice(0, 3).join('; '))}${m.absenceDates.length > 3 ? ` (+${m.absenceDates.length - 3} lainnya)` : ''}`
+            : 'Tidak ada catatan ketidakhadiran (Sakit / Izin / Alpa).';
+        const absLines = doc.splitTextToSize(absSummary, halfW - 7);
+        doc.text(absLines.slice(0, 2), marginX + 3.5, curY + 41.5);
+
+        // Kanan: Daftar Tunggakan Tugas Lintas Mapel
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(rightX, curY, halfW, attBoxH, 2.5, 2.5, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.3);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Tunggakan Tugas Lintas Mapel', rightX + 3.5, curY + 5.6);
+
+        const pendRgb = m.pendingTasks.length > 0 ? [225, 29, 72] : [5, 150, 105];
+        doc.setFontSize(7.2);
+        doc.setTextColor(...pendRgb);
+        doc.text(`${m.pendingTasks.length} Tunggakan`, rightX + halfW - 3.5, curY + 5.6, { align: 'right' });
+
+        if (m.pendingTasks.length > 0) {
+            let py = curY + 11.5;
+            m.pendingTasks.slice(0, 5).forEach((t, tIdx) => {
+                doc.setFillColor(254, 242, 242);
+                doc.roundedRect(rightX + 3, py - 3.3, halfW - 6, 5.8, 1.2, 1.2, 'F');
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(7);
+                doc.setTextColor(159, 18, 57);
+                const itemText = pdfSanitizeText(`${tIdx + 1}. [${t.mapel}] ${t.judul}`);
+                doc.text(itemText.length > 52 ? itemText.slice(0, 51) + '...' : itemText, rightX + 5, py + 0.5);
+                py += 6.8;
+            });
+            if (m.pendingTasks.length > 5) {
+                doc.setFont('helvetica', 'italic');
+                doc.setFontSize(6.8);
+                doc.setTextColor(100, 116, 139);
+                doc.text(`+ ${m.pendingTasks.length - 5} tugas lainnya belum terkumpul.`, rightX + 3.5, curY + attBoxH - 2.5);
+            }
+        } else {
+            doc.setFillColor(236, 253, 245);
+            doc.setDrawColor(167, 243, 208);
+            doc.roundedRect(rightX + 4, curY + 14, halfW - 8, 18, 2, 2, 'FD');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8.5);
+            doc.setTextColor(6, 95, 70);
+            doc.text('Seluruh Tugas Terkumpul!', rightX + halfW / 2, curY + 21.5, { align: 'center' });
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7.2);
+            doc.text('Siswa tidak memiliki tunggakan tugas lintas mapel.', rightX + halfW / 2, curY + 27, { align: 'center' });
+        }
+
+        curY += attBoxH + 7;
+
+        // ==================== TABEL REKAP NILAI KUMULATIF LINTAS MATA PELAJARAN ====================
+        if (curY > pageH - 55) {
+            doc.addPage();
+            curY = 16;
+        }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.8);
+        doc.setTextColor(15, 23, 42);
+        doc.text(`REKAP CAPAIAN LINTAS MATA PELAJARAN (${timeline.cumulativeSummary.length} Mapel)`, marginX, curY);
+        curY += 3;
+
+        if (timeline.cumulativeSummary.length > 0) {
+            doc.autoTable({
+                startY: curY,
+                margin: { left: marginX, right: marginX, bottom: 18 },
+                head: [['No', 'Mata Pelajaran', 'Guru Pengampu', 'Rata2', 'Max', 'Min', 'Aktif', 'Status']],
+                body: timeline.cumulativeSummary.map((sb, idx) => [
+                    idx + 1,
+                    pdfSanitizeText(sb.mapel),
+                    pdfSanitizeText(sb.guru || '-'),
+                    sb.avg > 0 ? sb.avg.toFixed(1) : '-',
+                    sb.maxVal > 0 ? sb.maxVal.toFixed(1) : '-',
+                    sb.minVal > 0 ? sb.minVal.toFixed(1) : '-',
+                    sb.currentVal !== null ? sb.currentVal.toFixed(1) : '-',
+                    sb.currentVal === null ? 'Belum Ada' : sb.tuntas ? 'Tuntas' : 'Remedial'
+                ]),
+                theme: 'grid',
+                headStyles: { fillColor: [49, 46, 129], textColor: 255, fontSize: 7.8, fontStyle: 'bold' },
+                styles: { fontSize: 7.6, cellPadding: 2.3, textColor: [30, 41, 59], lineColor: [226, 232, 240] },
+                alternateRowStyles: { fillColor: [248, 250, 252] },
+                columnStyles: {
+                    0: { halign: 'center', cellWidth: 9 },
+                    1: { cellWidth: 44, fontStyle: 'bold' },
+                    2: { cellWidth: 37 },
+                    3: { halign: 'center', cellWidth: 16, fontStyle: 'bold' },
+                    4: { halign: 'center', cellWidth: 15, textColor: [5, 150, 105] },
+                    5: { halign: 'center', cellWidth: 15, textColor: [217, 119, 6] },
+                    6: { halign: 'center', cellWidth: 18, fontStyle: 'bold', textColor: [29, 78, 216] },
+                    7: { halign: 'center', cellWidth: 28, fontStyle: 'bold' }
+                },
+                didParseCell(data) {
+                    if (data.section === 'body' && data.column.index === 7) {
+                        const v = data.cell.raw;
+                        if (v === 'Tuntas') {
+                            data.cell.styles.fillColor = [209, 250, 229];
+                            data.cell.styles.textColor = [6, 95, 70];
+                        } else if (v === 'Remedial') {
+                            data.cell.styles.fillColor = [254, 226, 226];
+                            data.cell.styles.textColor = [159, 18, 57];
+                        } else {
+                            data.cell.styles.fillColor = [241, 245, 249];
+                            data.cell.styles.textColor = [100, 116, 139];
+                        }
+                    }
+                }
+            });
+            curY = (doc.lastAutoTable?.finalY || curY + 20) + 7;
+        } else {
+            doc.setFont('helvetica', 'italic');
+            doc.setFontSize(8.5);
+            doc.setTextColor(100, 116, 139);
+            doc.text('Belum ada data mata pelajaran lintas kelas untuk siswa ini.', marginX, curY + 4);
+            curY += 11;
+        }
+
+        // ==================== RINGKASAN ANALISIS AI (BILA TERSEDIA) ====================
+        if (waliCurrentAIAnalysisText) {
+            const cleanAi = pdfSanitizeText(waliCurrentAIAnalysisText.replace(/\*\*/g, '').replace(/\n+/g, '  |  '));
+            const aiLines = doc.splitTextToSize(cleanAi, contentW - 10);
+            const lineH = 4.1;
+            const maxLinesFirstChunk = Math.max(4, Math.floor((pageH - 26 - curY - 12) / lineH));
+
+            if (curY > pageH - 45) {
+                doc.addPage();
+                curY = 16;
+            }
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9.5);
+            doc.setTextColor(49, 46, 129);
+            doc.text('RINGKASAN ANALISIS PERKEMBANGAN BELAJAR (AI ADVISOR)', marginX, curY);
+            curY += 3;
+
+            let idxLine = 0;
+            while (idxLine < aiLines.length) {
+                const availH = pageH - 22 - curY;
+                const fitCount = Math.max(1, Math.floor((availH - 8) / lineH));
+                const chunk = aiLines.slice(idxLine, idxLine + fitCount);
+                const boxH = chunk.length * lineH + 7;
+
+                doc.setFillColor(238, 242, 255);
+                doc.setDrawColor(199, 210, 254);
+                doc.roundedRect(marginX, curY, contentW, boxH, 2.2, 2.2, 'FD');
+                doc.setFillColor(79, 70, 229);
+                doc.rect(marginX, curY + 1, 1.8, boxH - 2, 'F');
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8.2);
+                doc.setTextColor(30, 41, 59);
+                doc.text(chunk, marginX + 5, curY + 5.2, { lineHeightFactor: 1.35 });
+
+                idxLine += chunk.length;
+                curY += boxH + 5;
+                if (idxLine < aiLines.length) {
+                    doc.addPage();
+                    curY = 16;
+                }
+            }
+            void maxLinesFirstChunk;
+        }
+
+        // ==================== RIWAYAT JURNAL BIMBINGAN GURU WALI ====================
+        if (waliActiveLogsCache.length > 0) {
+            if (curY > pageH - 52) {
+                doc.addPage();
+                curY = 16;
+            }
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9.8);
+            doc.setTextColor(15, 23, 42);
+            doc.text(`RIWAYAT JURNAL BIMBINGAN GURU WALI (${waliActiveLogsCache.length} Catatan)`, marginX, curY);
+            curY += 3;
+
+            doc.autoTable({
+                startY: curY,
+                margin: { left: marginX, right: marginX, bottom: 18 },
+                head: [['Tanggal', 'Topik Bimbingan', 'Catatan Konseling', 'Tindak Lanjut']],
+                body: waliActiveLogsCache.slice(0, 10).map(l => [
+                    pdfSanitizeText(l.tanggal || '-'),
+                    pdfSanitizeText(l.topik || '-'),
+                    pdfSanitizeText(l.catatan || '-'),
+                    pdfSanitizeText(l.tindak_lanjut || '-')
+                ]),
+                theme: 'grid',
+                headStyles: { fillColor: [15, 23, 42], textColor: 255, fontSize: 7.8, fontStyle: 'bold' },
+                styles: { fontSize: 7.5, cellPadding: 2.3, textColor: [30, 41, 59], lineColor: [226, 232, 240] },
+                alternateRowStyles: { fillColor: [248, 250, 252] },
+                columnStyles: {
+                    0: { cellWidth: 24, halign: 'center', fontStyle: 'bold' },
+                    1: { cellWidth: 40, fontStyle: 'bold' },
+                    2: { cellWidth: 72 },
+                    3: { cellWidth: 46 }
+                }
+            });
+            curY = (doc.lastAutoTable?.finalY || curY + 20) + 9;
+        }
+
+        // ---- BLOK PENGESAHAN GURU WALI ----
+        if (curY > pageH - 36) {
+            doc.addPage();
+            curY = 22;
+        }
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`Dicetak melalui PantauBelajar pada ${printedAt}`, marginX, curY + 4);
+        doc.text('Mengetahui,', pageW - marginX - 55, curY + 2);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(15, 23, 42);
+        doc.text('Guru Wali (PA),', pageW - marginX - 55, curY + 7);
+        doc.setDrawColor(148, 163, 184);
+        doc.line(pageW - marginX - 55, curY + 23, pageW - marginX, curY + 23);
+        doc.text(guruWaliName, pageW - marginX - 55, curY + 27.5);
+
+        // ---- FOOTER NOMOR HALAMAN ----
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let p = 1; p <= totalPages; p++) {
+            doc.setPage(p);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.3);
+            doc.line(marginX, pageH - 12, pageW - marginX, pageH - 12);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7.5);
+            doc.setTextColor(100, 116, 139);
+            doc.text(`PantauBelajar  |  Laporan Guru Wali 360: ${studentName} (${studentClass}) - ${periodLabel}`, marginX, pageH - 7.5);
+            doc.text(`Halaman ${p} dari ${totalPages}`, pageW - marginX, pageH - 7.5, { align: 'right' });
+        }
+
+        const safeName = studentName.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'Siswa';
+        const safePeriod = periodLabel.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'Periode';
+        doc.save(`Laporan_Wali_360_${safeName}_${safePeriod}.pdf`);
+        showToast('📄 Laporan PDF 360° Guru Wali lengkap dengan grafik berhasil diunduh!');
+    } catch (err) {
+        console.error('Print Wali 360 PDF Error:', err);
+        showToast('Gagal mencetak PDF 360°: ' + (err?.message || err), 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = prevBtnHtml;
+        }
+    }
+}
+
+async function exportWaliOverviewPDF() {
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+        return showToast('Library jsPDF belum termuat. Periksa koneksi internet Anda.', 'error');
     }
 
-    const afterTableY = (doc.lastAutoTable?.finalY || 40) + 10;
-    if (waliCurrentAIAnalysisText) {
-        doc.setFontSize(11);
-        doc.text('Ringkasan Analisis Perkembangan Belajar (AI):', 14, afterTableY);
-        doc.setFontSize(9.5);
-        const lines = doc.splitTextToSize(waliCurrentAIAnalysisText.replace(/\*\*/g, ''), 180);
-        doc.text(lines, 14, afterTableY + 6);
+    const q = (document.getElementById('wali-search-input')?.value || '').toLowerCase().trim();
+    const filterEws = document.getElementById('wali-filter-ews')?.value || 'all';
+    const allBinaan = allStudentsGlobal.filter(s => binaanIdsCache.has(Number(s.id)));
+    const list = allBinaan.filter(s => {
+        const m = waliMetricsCache[Number(s.id)] || { ews: 'aman' };
+        return (!q || s.nama.toLowerCase().includes(q) || (s.classes?.nama_kelas || '').toLowerCase().includes(q)) && (filterEws === 'all' || m.ews === filterEws);
+    });
+
+    if (!list.length) {
+        return showToast('Belum ada data siswa binaan yang bisa diekspor.', 'error');
     }
 
-    doc.save(`Laporan_360_${(s?.nama || 'Siswa').replace(/\s+/g, '_')}.pdf`);
+    const btn = document.getElementById('btn-export-wali-pdf');
+    const prevBtnHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i><span>Menyusun PDF...</span>`;
+    }
+
+    try {
+        await new Promise(resolve => setTimeout(resolve, 40));
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
+        const marginX = 14;
+        const contentW = pageW - marginX * 2;
+
+        const guruWaliName = pdfSanitizeText(currentUser?.nama_lengkap || 'Guru Wali');
+        const periodLabel = pdfSanitizeText(activePeriodName || currentDatePeriodName || '-');
+        const printedAt = new Date().toLocaleString('id-ID', {
+            day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+
+        let cntAman = 0, cntWaspada = 0, cntKritis = 0;
+        let totH = 0, totS = 0, totI = 0, totA = 0;
+        let sumAtt = 0, sumAvgNilai = 0, gradedCount = 0, totalPending = 0, stuWithPending = 0;
+        const classSet = new Set();
+
+        const rowsData = list.map((s, idx) => {
+            const m = waliMetricsCache[Number(s.id)] || { h: 0, s: 0, i: 0, a: 0, attRate: 100, pendingTasks: [], avgFinalAllSubjects: 0, hasAnySubjectData: false, ews: 'aman' };
+            if (m.ews === 'kritis') cntKritis++;
+            else if (m.ews === 'waspada') cntWaspada++;
+            else cntAman++;
+
+            totH += m.h || 0; totS += m.s || 0; totI += m.i || 0; totA += m.a || 0;
+            sumAtt += Number(m.attRate ?? 100);
+            if (m.hasAnySubjectData) {
+                sumAvgNilai += Number(m.avgFinalAllSubjects || 0);
+                gradedCount++;
+            }
+            const pendCnt = (m.pendingTasks || []).length;
+            totalPending += pendCnt;
+            if (pendCnt > 0) stuWithPending++;
+            if (s.classes?.nama_kelas) classSet.add(s.classes.nama_kelas);
+
+            return {
+                no: idx + 1,
+                nisn: pdfSanitizeText(s.nisn || '-'),
+                nama: pdfSanitizeText(s.nama || '-'),
+                kelas: pdfSanitizeText(s.classes?.nama_kelas || '-'),
+                attRate: Number(m.attRate ?? 100),
+                pending: pendCnt,
+                avgNilai: m.hasAnySubjectData ? Number(m.avgFinalAllSubjects || 0) : null,
+                ews: m.ews || 'aman'
+            };
+        });
+
+        const n = rowsData.length;
+        const avgAttAll = n ? (sumAtt / n) : 100;
+        const avgNilaiAll = gradedCount ? (sumAvgNilai / gradedCount) : 0;
+        const totLogs = totH + totS + totI + totA;
+
+        // ---- RENDER 2 GRAFIK OFFSCREEN RESOLUSI TINGGI ----
+        // Chart 1: Distribusi Status EWS (Doughnut)
+        const ewsDonutImg = renderOffscreenChartDataUrl(500, 290, () => ({
+            type: 'doughnut',
+            data: {
+                labels: [
+                    `Aman (${cntAman})`,
+                    `Waspada (${cntWaspada})`,
+                    `Kritis (${cntKritis})`
+                ],
+                datasets: [{
+                    data: [cntAman, cntWaspada, cntKritis],
+                    backgroundColor: ['#10b981', '#f59e0b', '#f43f5e'],
+                    borderColor: '#ffffff',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                cutout: '64%',
+                layout: { padding: { top: 8, bottom: 8, left: 6, right: 12 } },
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: { color: '#1e293b', boxWidth: 14, padding: 14, font: { size: 13, weight: 'bold' } }
+                    }
+                }
+            },
+            plugins: [{
+                id: 'ewsCenterCount',
+                afterDraw(chart) {
+                    const meta = chart.getDatasetMeta(0);
+                    if (!meta?.data?.[0]) return;
+                    const { x, y } = meta.data[0];
+                    const c = chart.ctx;
+                    c.save();
+                    c.textAlign = 'center';
+                    c.textBaseline = 'middle';
+                    c.fillStyle = '#0f172a';
+                    c.font = 'bold 24px Helvetica, Arial, sans-serif';
+                    c.fillText(`${n}`, x, y - 7);
+                    c.fillStyle = '#64748b';
+                    c.font = 'bold 11px Helvetica, Arial, sans-serif';
+                    c.fillText('Binaan', x, y + 14);
+                    c.restore();
+                }
+            }]
+        }));
+
+        // Chart 2: Distribusi Capaian Nilai & Kehadiran Siswa Binaan
+        let perfChartTitle = 'Perbandingan Kehadiran & Nilai Binaan';
+        let perfChartImg = '';
+        if (n <= 10) {
+            const pLabels = rowsData.map(r => {
+                const first = r.nama.split(' ')[0];
+                return first.length > 10 ? first.slice(0, 9) + '.' : first;
+            });
+            perfChartImg = renderOffscreenChartDataUrl(520, 290, () => ({
+                type: 'bar',
+                data: {
+                    labels: pLabels,
+                    datasets: [
+                        { label: 'Kehadiran (%)', data: rowsData.map(r => Number(r.attRate.toFixed(0))), backgroundColor: '#10b981', borderRadius: 5 },
+                        { label: 'Rata2 Nilai', data: rowsData.map(r => r.avgNilai !== null ? Number(r.avgNilai.toFixed(1)) : 0), backgroundColor: '#4f46e5', borderRadius: 5 }
+                    ]
+                },
+                options: {
+                    layout: { padding: { top: 14, bottom: 6, left: 4, right: 10 } },
+                    scales: {
+                        x: { ticks: { color: '#334155', font: { size: 10, weight: 'bold' } }, grid: { display: false } },
+                        y: { min: 0, max: 100, ticks: { color: '#475569', stepSize: 25, font: { size: 10 } }, grid: { color: '#e2e8f0' } }
+                    },
+                    plugins: {
+                        legend: { position: 'top', labels: { color: '#334155', boxWidth: 10, font: { size: 10, weight: 'bold' } } }
+                    }
+                }
+            }));
+        } else {
+            perfChartTitle = 'Distribusi Rentang Nilai Rata-rata Binaan';
+            const buckets = [
+                { label: '< 75 (Remedial)', count: rowsData.filter(r => r.avgNilai !== null && r.avgNilai < 75).length, color: '#f43f5e' },
+                { label: '75 - 84 (Baik)', count: rowsData.filter(r => r.avgNilai !== null && r.avgNilai >= 75 && r.avgNilai < 85).length, color: '#3b82f6' },
+                { label: '85 - 100 (Unggul)', count: rowsData.filter(r => r.avgNilai !== null && r.avgNilai >= 85).length, color: '#10b981' },
+                { label: 'Belum Dinilai', count: rowsData.filter(r => r.avgNilai === null).length, color: '#94a3b8' }
+            ];
+            perfChartImg = renderOffscreenChartDataUrl(520, 290, () => ({
+                type: 'bar',
+                data: {
+                    labels: buckets.map(b => b.label),
+                    datasets: [{
+                        label: 'Jumlah Siswa',
+                        data: buckets.map(b => b.count),
+                        backgroundColor: buckets.map(b => b.color),
+                        borderRadius: 7,
+                        maxBarThickness: 50
+                    }]
+                },
+                options: {
+                    layout: { padding: { top: 22, bottom: 6, left: 6, right: 10 } },
+                    scales: {
+                        x: { ticks: { color: '#334155', font: { size: 10, weight: 'bold' } }, grid: { display: false } },
+                        y: { beginAtZero: true, ticks: { color: '#475569', precision: 0, font: { size: 10 } }, grid: { color: '#e2e8f0' } }
+                    },
+                    plugins: { legend: { display: false } }
+                },
+                plugins: [{
+                    id: 'waliBucketLabels',
+                    afterDatasetsDraw(chart) {
+                        const c = chart.ctx;
+                        const meta = chart.getDatasetMeta(0);
+                        c.save();
+                        c.fillStyle = '#0f172a';
+                        c.font = 'bold 12px Helvetica, Arial, sans-serif';
+                        c.textAlign = 'center';
+                        c.textBaseline = 'bottom';
+                        meta.data.forEach((bar, idx) => {
+                            c.fillText(`${buckets[idx].count}`, bar.x, bar.y - 4);
+                        });
+                        c.restore();
+                    }
+                }]
+            }));
+        }
+
+        // ==================== HEADER BANNER ====================
+        doc.setFillColor(49, 46, 129);
+        doc.rect(0, 0, pageW, 34, 'F');
+        doc.setFillColor(99, 102, 241);
+        doc.rect(0, 34, pageW, 1.8, 'F');
+
+        doc.setTextColor(199, 210, 254);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.2);
+        doc.text('PANTAUBELAJAR  |  PEMBIMBINGAN AKADEMIK (GURU WALI)', marginX, 11);
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(14.5);
+        doc.text('LAPORAN RINGKASAN SISWA BINAAN GURU WALI', marginX, 19);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9.2);
+        doc.setTextColor(224, 231, 255);
+        doc.text(`Guru Wali: ${guruWaliName}   |   Total Binaan: ${n} Siswa (${classSet.size || 1} Kelas)`, marginX, 27);
+
+        doc.setFontSize(8.3);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(255, 255, 255);
+        doc.text(`Periode: ${periodLabel}`, pageW - marginX, 12.5, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(224, 231, 255);
+        doc.text(`Dicetak: ${printedAt}`, pageW - marginX, 19.5, { align: 'right' });
+
+        let curY = 42;
+
+        if (q || filterEws !== 'all') {
+            doc.setFillColor(254, 243, 199);
+            doc.setDrawColor(245, 158, 11);
+            doc.roundedRect(marginX, curY, contentW, 7.2, 2, 2, 'FD');
+            doc.setTextColor(146, 64, 14);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.8);
+            const filterDesc = [
+                filterEws !== 'all' ? `Status EWS: ${filterEws.toUpperCase()}` : '',
+                q ? `Pencarian: "${pdfSanitizeText(q)}"` : ''
+            ].filter(Boolean).join('  |  ');
+            doc.text(`Filter Aktif: ${filterDesc} (Menampilkan ${n} dari ${allBinaan.length} siswa binaan)`, marginX + 3, curY + 4.7);
+            curY += 10;
+        }
+
+        // ---- 4 KARTU KPI KOLEKTIF ----
+        const cardGap = 3.5;
+        const cardW = (contentW - cardGap * 3) / 4;
+        const cardH = 25;
+
+        const drawOverviewKpi = (idx, accentRgb, title, bigVal, valRgb, footerFn) => {
+            const x = marginX + idx * (cardW + cardGap);
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.35);
+            doc.roundedRect(x, curY, cardW, cardH, 2.5, 2.5, 'FD');
+            doc.setFillColor(...accentRgb);
+            doc.roundedRect(x, curY, cardW, 2.2, 1.5, 1.5, 'F');
+            doc.rect(x, curY + 1.1, cardW, 1.1, 'F');
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.2);
+            doc.setTextColor(100, 116, 139);
+            doc.text(title, x + 3, curY + 7);
+
+            doc.setFontSize(14);
+            doc.setTextColor(...valRgb);
+            doc.text(bigVal, x + 3, curY + 14.5);
+
+            footerFn(x + 3, curY + 17.2, cardW - 6);
+        };
+
+        drawOverviewKpi(0, [79, 70, 229], 'TOTAL SISWA BINAAN', `${n} Siswa`, [15, 23, 42], (fx, fy) => {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.8);
+            doc.setTextColor(5, 150, 105);
+            doc.text(`Aman:${cntAman}  Waspada:${cntWaspada}  Kritis:${cntKritis}`, fx, fy + 4);
+        });
+
+        drawOverviewKpi(1, [16, 185, 129], 'RATA-RATA KEHADIRAN', `${avgAttAll.toFixed(1)}%`, [5, 150, 105], (fx, fy, fw) => {
+            doc.setFillColor(226, 232, 240);
+            doc.roundedRect(fx, fy, fw, 2, 1, 1, 'F');
+            if (totLogs > 0) {
+                const segs = [
+                    { v: totH, c: [16, 185, 129] },
+                    { v: totS, c: [245, 158, 11] },
+                    { v: totI, c: [59, 130, 246] },
+                    { v: totA, c: [244, 63, 94] }
+                ];
+                let sx = fx;
+                segs.forEach(sg => {
+                    const w2 = (sg.v / totLogs) * fw;
+                    if (w2 > 0.2) { doc.setFillColor(...sg.c); doc.rect(sx, fy, w2, 2, 'F'); sx += w2; }
+                });
+            }
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.8);
+            doc.setTextColor(100, 116, 139);
+            doc.text(`H:${totH}  S:${totS}  I:${totI}  A:${totA}`, fx, fy + 5.4);
+        });
+
+        drawOverviewKpi(2, [37, 99, 235], 'RATA-RATA NILAI MAPEL', gradedCount > 0 ? avgNilaiAll.toFixed(1) : '-', [37, 99, 235], (fx, fy) => {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.8);
+            doc.setTextColor(71, 85, 105);
+            doc.text(`${gradedCount}/${n} siswa memiliki nilai`, fx, fy + 4);
+        });
+
+        drawOverviewKpi(3, [225, 29, 72], 'TOTAL TUNGGAKAN TUGAS', `${totalPending} Tugas`, totalPending > 0 ? [190, 18, 60] : [5, 150, 105], (fx, fy) => {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.8);
+            doc.setTextColor(100, 116, 139);
+            doc.text(totalPending > 0 ? `Pada ${stuWithPending} siswa binaan` : 'Semua binaan tuntas tugas', fx, fy + 4);
+        });
+
+        curY += cardH + 6;
+
+        // ---- 2 GRAFIK VISUAL SIDE-BY-SIDE ----
+        const halfW = (contentW - 4) / 2;
+        const chartH = 56;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.8);
+        doc.setTextColor(15, 23, 42);
+        doc.text('VISUALISASI STATUS EARLY WARNING SYSTEM (EWS) & PERFORMA', marginX, curY);
+        curY += 3.5;
+
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(marginX, curY, halfW, chartH, 2.5, 2.5, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.3);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Distribusi Status EWS Binaan', marginX + 3.5, curY + 5.6);
+        doc.addImage(ewsDonutImg, 'PNG', marginX + 2, curY + 7.2, halfW - 4, chartH - 9, undefined, 'FAST');
+
+        const rightX = marginX + halfW + 4;
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(rightX, curY, halfW, chartH, 2.5, 2.5, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.3);
+        doc.setTextColor(30, 41, 59);
+        doc.text(perfChartTitle, rightX + 3.5, curY + 5.6);
+        doc.addImage(perfChartImg, 'PNG', rightX + 2, curY + 7.2, halfW - 4, chartH - 9, undefined, 'FAST');
+
+        curY += chartH + 5;
+
+        // ---- BAR VISUAL DISTRIBUSI EWS ----
+        const barBoxH = 21;
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(marginX, curY, contentW, barBoxH, 2.5, 2.5, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.2);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Proporsi Kategori Pantauan EWS', marginX + 3.5, curY + 5.6);
+
+        const bx = marginX + 3.5;
+        const by = curY + 8.2;
+        const bw = contentW - 7;
+        doc.setFillColor(226, 232, 240);
+        doc.roundedRect(bx, by, bw, 4.2, 1.5, 1.5, 'F');
+        let sx = bx;
+        [
+            { v: cntAman, c: [16, 185, 129] },
+            { v: cntWaspada, c: [245, 158, 11] },
+            { v: cntKritis, c: [244, 63, 94] }
+        ].forEach(sg => {
+            const w2 = n ? (sg.v / n) * bw : 0;
+            if (w2 > 0.3) { doc.setFillColor(...sg.c); doc.rect(sx, by, w2, 4.2, 'F'); sx += w2; }
+        });
+
+        const ly = curY + 17.5;
+        const drawLeg = (lx, rgb, txt) => {
+            doc.setFillColor(...rgb);
+            doc.circle(lx + 1.5, ly - 1, 1.3, 'F');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.5);
+            doc.setTextColor(51, 65, 85);
+            doc.text(txt, lx + 4.2, ly);
+        };
+        drawLeg(marginX + 3.5, [16, 185, 129], `Status Aman: ${cntAman} siswa (${Math.round((cntAman / n) * 100)}%)`);
+        drawLeg(marginX + 66, [245, 158, 11], `Perlu Pantauan: ${cntWaspada} siswa (${Math.round((cntWaspada / n) * 100)}%)`);
+        drawLeg(marginX + 130, [244, 63, 94], `Prioritas Kritis: ${cntKritis} siswa (${Math.round((cntKritis / n) * 100)}%)`);
+
+        curY += barBoxH + 6;
+
+        // ---- TABEL LENGKAP SISWA BINAAN ----
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.8);
+        doc.setTextColor(15, 23, 42);
+        doc.text(`DAFTAR MONITORING SISWA BINAAN (${n} Siswa)`, marginX, curY);
+        curY += 3;
+
+        doc.autoTable({
+            startY: curY,
+            margin: { left: marginX, right: marginX, bottom: 18 },
+            head: [['No', 'NISN', 'Nama Siswa', 'Kelas', 'Kehadiran', 'Tunggakan', 'Rata2', 'Status EWS']],
+            body: rowsData.map(r => [
+                r.no,
+                r.nisn,
+                r.nama,
+                r.kelas,
+                `${r.attRate.toFixed(0)}%`,
+                `${r.pending} Tugas`,
+                r.avgNilai !== null ? r.avgNilai.toFixed(1) : '-',
+                r.ews === 'kritis' ? 'KRITIS' : r.ews === 'waspada' ? 'WASPADA' : 'AMAN'
+            ]),
+            theme: 'grid',
+            headStyles: { fillColor: [49, 46, 129], textColor: 255, fontSize: 7.8, fontStyle: 'bold' },
+            styles: { fontSize: 7.6, cellPadding: 2.3, textColor: [30, 41, 59], lineColor: [226, 232, 240] },
+            alternateRowStyles: { fillColor: [248, 250, 252] },
+            columnStyles: {
+                0: { halign: 'center', cellWidth: 9 },
+                1: { cellWidth: 24 },
+                2: { cellWidth: 42, fontStyle: 'bold' },
+                3: { halign: 'center', cellWidth: 20 },
+                4: { halign: 'right', cellWidth: 28, fontStyle: 'bold' },
+                5: { halign: 'center', cellWidth: 17 },
+                6: { halign: 'center', cellWidth: 16, fontStyle: 'bold', textColor: [29, 78, 216] },
+                7: { halign: 'center', cellWidth: 26, fontStyle: 'bold' }
+            },
+            didParseCell(data) {
+                if (data.section === 'body' && data.column.index === 7) {
+                    const v = data.cell.raw;
+                    if (v === 'AMAN') {
+                        data.cell.styles.fillColor = [209, 250, 229];
+                        data.cell.styles.textColor = [6, 95, 70];
+                    } else if (v === 'WASPADA') {
+                        data.cell.styles.fillColor = [254, 243, 199];
+                        data.cell.styles.textColor = [146, 64, 14];
+                    } else {
+                        data.cell.styles.fillColor = [254, 226, 226];
+                        data.cell.styles.textColor = [159, 18, 57];
+                    }
+                }
+            },
+            didDrawCell(data) {
+                if (data.section === 'body' && data.column.index === 4) {
+                    const pct = rowsData[data.row.index]?.attRate || 0;
+                    const cell = data.cell;
+                    const bx2 = cell.x + 2;
+                    const by2 = cell.y + cell.height / 2 - 1.3;
+                    const bw2 = Math.max(7, cell.width - 13);
+                    doc.setFillColor(226, 232, 240);
+                    doc.roundedRect(bx2, by2, bw2, 2.6, 1, 1, 'F');
+                    if (pct > 0) {
+                        const rgb = pct >= 90 ? [16, 185, 129] : pct >= 80 ? [245, 158, 11] : [244, 63, 94];
+                        doc.setFillColor(...rgb);
+                        doc.roundedRect(bx2, by2, (Math.min(100, pct) / 100) * bw2, 2.6, 1, 1, 'F');
+                    }
+                }
+            }
+        });
+
+        curY = (doc.lastAutoTable?.finalY || curY + 20) + 10;
+
+        // ---- BLOK PENGESAHAN GURU WALI ----
+        if (curY > pageH - 36) {
+            doc.addPage();
+            curY = 22;
+        }
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`Dicetak melalui PantauBelajar pada ${printedAt}`, marginX, curY + 4);
+        doc.text('Mengetahui,', pageW - marginX - 55, curY + 2);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(15, 23, 42);
+        doc.text('Guru Wali (PA),', pageW - marginX - 55, curY + 7);
+        doc.setDrawColor(148, 163, 184);
+        doc.line(pageW - marginX - 55, curY + 23, pageW - marginX, curY + 23);
+        doc.text(guruWaliName, pageW - marginX - 55, curY + 27.5);
+
+        // ---- FOOTER NOMOR HALAMAN ----
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let p = 1; p <= totalPages; p++) {
+            doc.setPage(p);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.3);
+            doc.line(marginX, pageH - 12, pageW - marginX, pageH - 12);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7.5);
+            doc.setTextColor(100, 116, 139);
+            doc.text(`PantauBelajar  |  Ringkasan Siswa Binaan Guru Wali (${guruWaliName}) - ${periodLabel}`, marginX, pageH - 7.5);
+            doc.text(`Halaman ${p} dari ${totalPages}`, pageW - marginX, pageH - 7.5, { align: 'right' });
+        }
+
+        const safePeriod = periodLabel.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'Periode';
+        doc.save(`Ringkasan_Guru_Wali_${safePeriod}.pdf`);
+        showToast('📄 Laporan Ringkasan PDF Guru Wali lengkap dengan grafik berhasil diunduh!');
+    } catch (err) {
+        console.error('Export Wali Overview PDF Error:', err);
+        showToast('Gagal mengekspor PDF Guru Wali: ' + (err?.message || err), 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = prevBtnHtml;
+        }
+    }
 }
 
 function exportWaliBinaanExcel() {
