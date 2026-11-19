@@ -11,6 +11,7 @@
     "lint": "node --check server.js && node --check config.js && node --check app-guru.js && node --check app-siswa.js && node --check public/pwa.js && node --check public/sw.js"
   },
   "dependencies": {
+    "@google/genai": "^3.6.1",
     "express": "^5.3.0"
   }
 }

@@ -337,6 +337,14 @@ function logout() {
         clearInterval(guruQrCountdownTimer);
         guruQrCountdownTimer = null;
     }
+    if (guruChatAbortController) {
+        guruChatAbortController.abort();
+        guruChatAbortController = null;
+    }
+    guruChatHistory = [];
+    guruChatReplyStore = {};
+    guruChatInitialized = false;
+    toggleGuruAiChat(false);
     localStorage.removeItem('sipantau_user');
     currentUser = null;
     showSection('view-login');
@@ -883,6 +891,7 @@ async function loadWorkspaceData() {
         loadRecordedDates();
         loadDailyAttendanceForDate();
         renderAttendanceRecapTable();
+        updateGuruChatContextBadge();
         return;
     }
 
@@ -973,6 +982,7 @@ async function loadWorkspaceData() {
     renderGuruQrSessionPanel();
     renderAttendanceRecapTable();
     updateGuruSidebarBadges();
+    updateGuruChatContextBadge();
     setupGuruRealtime();
 }
 
@@ -3362,13 +3372,42 @@ function loadAssessmentScores() {
             <th class="p-3">Nama Siswa</th>
             ${isGroup ? '<th class="p-3 w-36">Kelompok</th>' : ''}
             <th class="p-3 text-center">File / Link Siswa</th>
-            <th class="p-3 text-center w-36">Status Tugas</th>
+            <th class="p-3 text-center w-16 sm:w-36"><span class="sm:hidden">Status</span><span class="hidden sm:inline">Status Tugas</span></th>
             <th class="p-3 min-w-[190px]">Catatan / Revisi Guru</th>
             <th class="p-3 text-center w-24">Nilai (0-100)</th>
         </tr>
     `;
 
     let submitted = 0, ungraded = 0, sumScore = 0, gradedCount = 0;
+
+    const getStatusUiMeta = (val) => {
+        if (val === 'approved') {
+            return {
+                symbol: '✅',
+                label: 'Sudah / Tuntas',
+                colorCls: 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:border-emerald-800 dark:text-emerald-300'
+            };
+        }
+        if (val === 'rejected') {
+            return {
+                symbol: '❌',
+                label: 'Perlu Revisi',
+                colorCls: 'border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:border-rose-800 dark:text-rose-300'
+            };
+        }
+        if (val === 'pending') {
+            return {
+                symbol: '⏳',
+                label: 'Pending',
+                colorCls: 'border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:border-amber-800 dark:text-amber-300'
+            };
+        }
+        return {
+            symbol: '—',
+            label: 'Belum',
+            colorCls: 'border-slate-300 bg-white text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'
+        };
+    };
 
     tbody.innerHTML = studentsCache.map((s, idx) => {
         const sc = scoresCache.find(x => Number(x.assessment_id) === assId && Number(x.student_id) === Number(s.id)) || {};
@@ -3406,13 +3445,7 @@ function loadAssessmentScores() {
                </div>`
             : `<span class="text-[11px] text-slate-400">-</span>`;
 
-        const selectColorCls = statusVal === 'approved'
-            ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:border-emerald-800 dark:text-emerald-300'
-            : statusVal === 'rejected'
-                ? 'border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:border-rose-800 dark:text-rose-300'
-                : statusVal === 'pending'
-                    ? 'border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:border-amber-800 dark:text-amber-300'
-                    : 'border-slate-300 bg-white text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300';
+        const stMeta = getStatusUiMeta(statusVal);
 
         return `
             <tr data-score-stu="${s.id}" class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
@@ -3424,12 +3457,18 @@ function loadAssessmentScores() {
                 ${isGroup ? `<td class="p-2.5"><input type="text" list="datalist-kelompok-options" value="${escapeHtmlSafe(sc.nama_kelompok || '')}" oninput="syncGroupRowChange(${s.id})" class="sc-kelompok w-full border dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg p-1.5 text-xs font-bold"></td>` : ''}
                 <td class="p-2.5 text-center">${fileLinkHtml}</td>
                 <td class="p-2.5 text-center">
-                    <select onchange="onScoreStatusChange(this, ${s.id})" class="sc-status w-full border rounded-lg px-2 py-1.5 text-[11px] font-extrabold outline-none cursor-pointer ${selectColorCls}">
-                        <option value="none" ${statusVal === 'none' ? 'selected' : ''}>— Belum</option>
-                        <option value="pending" ${statusVal === 'pending' ? 'selected' : ''}>⏳ Pending</option>
-                        <option value="approved" ${statusVal === 'approved' ? 'selected' : ''}>✅ Sudah / Tuntas</option>
-                        <option value="rejected" ${statusVal === 'rejected' ? 'selected' : ''}>❌ Perlu Revisi</option>
-                    </select>
+                    <div class="sc-status-wrap relative inline-flex sm:flex items-center justify-center sm:w-full" title="${stMeta.label}">
+                        <span class="sc-status-mobile sm:hidden inline-flex items-center justify-center gap-1 min-w-[52px] px-2 py-1.5 rounded-lg border text-xs font-extrabold leading-none pointer-events-none select-none ${stMeta.colorCls}">
+                            <span class="sc-status-symbol">${stMeta.symbol}</span>
+                            <i class="fa-solid fa-chevron-down text-[9px] opacity-70"></i>
+                        </span>
+                        <select onchange="onScoreStatusChange(this, ${s.id})" aria-label="Status Tugas" class="sc-status absolute inset-0 w-full h-full opacity-0 sm:static sm:opacity-100 sm:min-w-[132px] border rounded-lg px-2 py-1.5 text-[11px] font-extrabold outline-none cursor-pointer ${stMeta.colorCls}">
+                            <option value="none" ${statusVal === 'none' ? 'selected' : ''}>— Belum</option>
+                            <option value="pending" ${statusVal === 'pending' ? 'selected' : ''}>⏳ Pending</option>
+                            <option value="approved" ${statusVal === 'approved' ? 'selected' : ''}>✅ Sudah / Tuntas</option>
+                            <option value="rejected" ${statusVal === 'rejected' ? 'selected' : ''}>❌ Perlu Revisi</option>
+                        </select>
+                    </div>
                 </td>
                 <td class="p-2.5">
                     <input type="text" value="${feedbackVal}" placeholder="Catatan / alasan revisi..." oninput="syncGroupRowChange(${s.id})" class="sc-catatan w-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500">
@@ -3449,16 +3488,36 @@ function loadAssessmentScores() {
 
 function applyScoreStatusSelectStyle(sel) {
     if (!sel) return;
-    const base = 'sc-status w-full border rounded-lg px-2 py-1.5 text-[11px] font-extrabold outline-none cursor-pointer ';
+    const baseSelect = 'sc-status absolute inset-0 w-full h-full opacity-0 sm:static sm:opacity-100 sm:min-w-[132px] border rounded-lg px-2 py-1.5 text-[11px] font-extrabold outline-none cursor-pointer ';
+    const baseMobile = 'sc-status-mobile sm:hidden inline-flex items-center justify-center gap-1 min-w-[52px] px-2 py-1.5 rounded-lg border text-xs font-extrabold leading-none pointer-events-none select-none ';
     const v = sel.value;
+
+    let symbol = '—';
+    let label = 'Belum';
+    let colorCls = 'border-slate-300 bg-white text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300';
+
     if (v === 'approved') {
-        sel.className = base + 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:border-emerald-800 dark:text-emerald-300';
+        symbol = '✅';
+        label = 'Sudah / Tuntas';
+        colorCls = 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:border-emerald-800 dark:text-emerald-300';
     } else if (v === 'rejected') {
-        sel.className = base + 'border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:border-rose-800 dark:text-rose-300';
+        symbol = '❌';
+        label = 'Perlu Revisi';
+        colorCls = 'border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:border-rose-800 dark:text-rose-300';
     } else if (v === 'pending') {
-        sel.className = base + 'border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:border-amber-800 dark:text-amber-300';
-    } else {
-        sel.className = base + 'border-slate-300 bg-white text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300';
+        symbol = '⏳';
+        label = 'Pending';
+        colorCls = 'border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:border-amber-800 dark:text-amber-300';
+    }
+
+    sel.className = baseSelect + colorCls;
+    const wrap = sel.closest('.sc-status-wrap');
+    if (wrap) {
+        wrap.title = label;
+        const mobPill = wrap.querySelector('.sc-status-mobile');
+        if (mobPill) mobPill.className = baseMobile + colorCls;
+        const mobSym = wrap.querySelector('.sc-status-symbol');
+        if (mobSym) mobSym.innerText = symbol;
     }
 }
 
@@ -6479,6 +6538,7 @@ function updateGeminiKeyUI() {
             <button type="button" id="btn-save-gemini-key" onclick="saveAndTestTeacherGeminiKey()" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold shadow-sm">Simpan & Uji Koneksi</button>
         `;
     }
+    if (typeof refreshGuruChatConnectionState === 'function') refreshGuruChatConnectionState();
 }
 
 async function saveAndTestTeacherGeminiKey() {
@@ -6600,4 +6660,567 @@ function showToast(msg, type = 'success') {
     t.className = `fixed bottom-20 lg:bottom-5 right-4 lg:right-5 z-50 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg text-white transition-all duration-300 ${type === 'error' ? 'bg-rose-600' : 'bg-slate-900 dark:bg-blue-600'}`;
     t.classList.remove('hidden');
     setTimeout(() => t.classList.add('hidden'), 3500);
+}
+
+// ==================== 13. CHATBOT ASISTEN AI GEMINI (DASHBOARD GURU) ====================
+let guruChatHistory = [];
+let guruChatAbortController = null;
+let guruChatIsStreaming = false;
+let guruChatInitialized = false;
+let guruChatReplyStore = {};
+let guruChatReplySeq = 0;
+
+function hasTeacherPersonalGeminiKey() {
+    return Boolean(currentUser?.id && currentUser?.gemini_api_key && String(currentUser.gemini_api_key).trim() !== '');
+}
+
+function openTeacherGeminiSettingsFromChat() {
+    toggleGuruAiChat(false);
+    if (typeof switchGuruTab === 'function') switchGuruTab('bobot');
+    setTimeout(() => {
+        const badge = document.getElementById('gemini-key-status-badge');
+        const card = badge?.closest('.bg-white') || badge;
+        if (card && typeof card.scrollIntoView === 'function') {
+            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            card.classList.add('ring-2', 'ring-indigo-500', 'ring-offset-2', 'dark:ring-offset-slate-950');
+            setTimeout(() => card.classList.remove('ring-2', 'ring-indigo-500', 'ring-offset-2', 'dark:ring-offset-slate-950'), 2400);
+        }
+        document.getElementById('gemini-api-key-input')?.focus();
+    }, 140);
+}
+
+function updateGuruChatContextBadge() {
+    const el = document.getElementById('guru-chat-context-label');
+    if (!el) return;
+    if (!hasTeacherPersonalGeminiKey()) {
+        el.innerText = '⚠️ Belum terhubung ke Gemini pribadi';
+        return;
+    }
+    const cls = classesCache.find(c => Number(c.id) === Number(activeClassId));
+    const amp = getActiveAmpuan();
+    if (!cls || !amp) {
+        el.innerText = '✨ Gemini Pribadi • Pilih kelas & mapel';
+        return;
+    }
+    el.innerText = `✨ Gemini Pribadi • ${cls.nama_kelas} • ${amp.mapel} • ${studentsCache.length} Siswa`;
+}
+
+function refreshGuruChatConnectionState() {
+    updateGuruChatContextBadge();
+    const connected = hasTeacherPersonalGeminiKey();
+    const input = document.getElementById('guru-chat-input');
+    const sendBtn = document.getElementById('btn-guru-chat-send');
+    const quickWrap = document.getElementById('guru-chat-quick-prompts');
+
+    if (input) {
+        input.disabled = guruChatIsStreaming || !connected;
+        input.placeholder = connected
+            ? 'Tanya statistik kelas, tugas, atau saran bimbingan siswa...'
+            : 'Hubungkan Gemini pribadi di menu Pengaturan terlebih dahulu...';
+    }
+    if (sendBtn) {
+        sendBtn.disabled = !connected;
+        sendBtn.classList.toggle('opacity-50', !connected);
+        sendBtn.classList.toggle('cursor-not-allowed', !connected);
+    }
+    if (quickWrap) {
+        quickWrap.classList.toggle('opacity-60', !connected);
+    }
+    if (guruChatInitialized && guruChatHistory.length === 0) {
+        renderGuruChatWelcome();
+    }
+}
+
+function buildGuruDashboardChatContext() {
+    const cls = classesCache.find(c => Number(c.id) === Number(activeClassId));
+    const amp = getActiveAmpuan();
+    const kkm = Number(amp?.kkm || 75);
+
+    if (!activeClassId || !cls || !amp) {
+        return {
+            status: 'belum_ada_kelas_aktif',
+            guru: currentUser?.nama_lengkap || 'Guru',
+            periode: activePeriodName || currentDatePeriodName || '-'
+        };
+    }
+
+    let sumAttRate = 0, sumFinal = 0, sumDoneTasks = 0, sumTotalTasks = 0;
+    let totalH = 0, totalS = 0, totalI = 0, totalA = 0;
+    let tuntasCount = 0;
+
+    const studentDetails = studentsCache.map(s => {
+        const m = computeStudentMetrics(s.id);
+        sumAttRate += m.attRate;
+        sumFinal += m.finalScore;
+        sumDoneTasks += m.doneTasks;
+        sumTotalTasks += m.totalTasks;
+        totalH += m.h;
+        totalS += m.s;
+        totalI += m.i;
+        totalA += m.a;
+        const isTuntas = m.finalScore >= m.kkm;
+        if (isTuntas) tuntasCount++;
+
+        const missingTasks = Math.max(0, m.totalTasks - m.doneTasks);
+        const needsAttention = !isTuntas || m.attRate < 85 || missingTasks > 0;
+
+        return {
+            nama: s.nama,
+            nisn: s.nisn,
+            kehadiranPct: Number(m.attRate.toFixed(1)),
+            hadir: m.h,
+            sakit: m.s,
+            izin: m.i,
+            alpa: m.a,
+            tugasSelesai: m.doneTasks,
+            totalTugas: m.totalTasks,
+            tunggakanTugas: missingTasks,
+            rataTugas: Number(m.avgTugas.toFixed(1)),
+            rataUjianBab: Number(m.avgBab.toFixed(1)),
+            rataUjianSemester: Number(m.avgSmt.toFixed(1)),
+            nilaiAkhir: Number(m.finalScore.toFixed(1)),
+            status: isTuntas ? 'TUNTAS' : 'PERLU_BIMBINGAN',
+            needsAttention
+        };
+    });
+
+    const nStu = studentDetails.length;
+    const avgAttRate = nStu ? Number((sumAttRate / nStu).toFixed(1)) : 100;
+    const avgFinal = nStu ? Number((sumFinal / nStu).toFixed(1)) : 0;
+    const taskCompletionPct = sumTotalTasks ? Number(((sumDoneTasks / sumTotalTasks) * 100).toFixed(1)) : 0;
+
+    const assIdsSet = new Set(assessmentsCache.map(a => Number(a.id)));
+    const pendingReviewCount = scoresCache.filter(sc =>
+        assIdsSet.has(Number(sc.assessment_id)) &&
+        (sc.status_pengajuan === 'pending' || ((sc.status_kumpul === true || sc.status_pengajuan === 'approved') && !hasFilledScore(sc)))
+    ).length;
+
+    const daftarPenilaian = assessmentsCache.slice(0, 15).map(a => {
+        const relScores = scoresCache.filter(sc => Number(sc.assessment_id) === Number(a.id));
+        const submittedCount = relScores.filter(sc => sc.status_kumpul === true || sc.status_pengajuan === 'approved' || hasFilledScore(sc)).length;
+        const gradedScores = relScores.filter(sc => hasFilledScore(sc)).map(sc => Number(sc.nilai));
+        const avgScore = gradedScores.length ? Number((gradedScores.reduce((acc, v) => acc + v, 0) / gradedScores.length).toFixed(1)) : null;
+        return {
+            judul: a.judul,
+            kategori: getKategoriLabel(a.kategori),
+            tenggat: a.deadline || null,
+            terkumpul: submittedCount,
+            belumKumpul: Math.max(0, nStu - submittedCount),
+            rataRataNilai: avgScore
+        };
+    });
+
+    const siswaPrioritasBimbingan = studentDetails
+        .filter(s => s.needsAttention)
+        .sort((a, b) => a.nilaiAkhir - b.nilaiAkhir || b.tunggakanTugas - a.tunggakanTugas)
+        .slice(0, 20)
+        .map(({ needsAttention, ...rest }) => rest);
+
+    const siswaBerprestasi = [...studentDetails]
+        .sort((a, b) => b.nilaiAkhir - a.nilaiAkhir)
+        .slice(0, 5)
+        .map(s => ({ nama: s.nama, nilaiAkhir: s.nilaiAkhir, kehadiranPct: s.kehadiranPct }));
+
+    const ringkasanSemuaSiswa = studentDetails.slice(0, 45).map(s => ({
+        nama: s.nama,
+        nilaiAkhir: s.nilaiAkhir,
+        kehadiranPct: s.kehadiranPct,
+        tugas: `${s.tugasSelesai}/${s.totalTugas}`,
+        alpa: s.alpa,
+        status: s.status
+    }));
+
+    return {
+        guru: currentUser?.nama_lengkap || 'Guru',
+        kelas: cls.nama_kelas,
+        mapel: amp.mapel,
+        periode: activePeriodName || currentDatePeriodName || '-',
+        kkm,
+        ringkasanKelas: {
+            totalSiswa: nStu,
+            rataRataKehadiranPct: avgAttRate,
+            totalHadir: totalH,
+            totalSakit: totalS,
+            totalIzin: totalI,
+            totalAlpa: totalA,
+            totalPenilaian: assessmentsCache.length,
+            ketuntasanTugasPct: taskCompletionPct,
+            rataRataNilaiAkhir: avgFinal,
+            jumlahTuntasKkm: tuntasCount,
+            jumlahPerluPerhatian: siswaPrioritasBimbingan.length,
+            kirimanMenungguReview: pendingReviewCount,
+            totalMateri: materialsCache.length
+        },
+        daftarPenilaian,
+        siswaPrioritasBimbingan,
+        siswaBerprestasi,
+        ringkasanSemuaSiswa
+    };
+}
+
+function renderChatMarkdownSafe(rawText) {
+    const escaped = escapeHtmlSafe(rawText || '');
+    const lines = escaped.split(/\r?\n/);
+    const htmlParts = [];
+    let listType = null;
+
+    const formatInline = (txt) => txt
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
+
+    const closeList = () => {
+        if (listType) {
+            htmlParts.push(`</${listType}>`);
+            listType = null;
+        }
+    };
+
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) {
+            closeList();
+            continue;
+        }
+        const ulMatch = line.match(/^[-*•]\s+(.+)$/);
+        const olMatch = line.match(/^\d+\.\s+(.+)$/);
+        const hMatch = line.match(/^#{1,4}\s+(.+)$/);
+
+        if (hMatch) {
+            closeList();
+            htmlParts.push(`<p class="font-extrabold text-slate-900 dark:text-white mt-1.5">${formatInline(hMatch[1])}</p>`);
+        } else if (ulMatch) {
+            if (listType !== 'ul') {
+                closeList();
+                htmlParts.push('<ul>');
+                listType = 'ul';
+            }
+            htmlParts.push(`<li>${formatInline(ulMatch[1])}</li>`);
+        } else if (olMatch) {
+            if (listType !== 'ol') {
+                closeList();
+                htmlParts.push('<ol>');
+                listType = 'ol';
+            }
+            htmlParts.push(`<li>${formatInline(olMatch[1])}</li>`);
+        } else {
+            closeList();
+            htmlParts.push(`<p>${formatInline(line)}</p>`);
+        }
+    }
+    closeList();
+    return htmlParts.join('');
+}
+
+function renderGuruChatWelcome() {
+    const container = document.getElementById('guru-chat-messages');
+    if (!container) return;
+
+    if (!hasTeacherPersonalGeminiKey()) {
+        container.innerHTML = `
+            <div class="flex items-start gap-2.5">
+                <div class="w-7 h-7 rounded-xl bg-amber-100 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <i class="fa-solid fa-key text-xs"></i>
+                </div>
+                <div class="bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800/70 rounded-2xl rounded-tl-sm px-3.5 py-3 text-xs text-slate-700 dark:text-slate-200 shadow-sm space-y-2.5 max-w-[90%]">
+                    <p class="font-extrabold text-slate-900 dark:text-white">Hubungkan Google Gemini Pribadi Anda</p>
+                    <p class="leading-relaxed">Agar kuota token tetap terjaga dan tidak habis dipakai bersama, setiap guru menghubungkan <strong>API Key Gemini pribadi</strong> masing-masing.</p>
+                    <ol class="list-decimal pl-4 space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
+                        <li>Buka kartu <strong>Asisten Analisis AI (Google Gemini Mandiri)</strong> di menu <strong>Pengaturan</strong>.</li>
+                        <li>Ambil API Key gratis dari Google AI Studio lalu klik <strong>Simpan &amp; Uji Koneksi</strong>.</li>
+                    </ol>
+                    <button type="button" onclick="openTeacherGeminiSettingsFromChat()" class="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm transition">
+                        <i class="fa-solid fa-sliders"></i> Hubungkan Gemini di Pengaturan →
+                    </button>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    const cls = classesCache.find(c => Number(c.id) === Number(activeClassId));
+    const amp = getActiveAmpuan();
+    const ctxText = cls && amp
+        ? `Saat ini terhubung otomatis ke data <strong>${escapeHtmlSafe(cls.nama_kelas)} — ${escapeHtmlSafe(amp.mapel)}</strong> (${studentsCache.length} siswa) menggunakan <strong>Gemini pribadi Anda</strong>.`
+        : 'Terhubung dengan <strong>Gemini pribadi Anda</strong>. Pilih kelas dan mata pelajaran di ruang kerja agar saya dapat menganalisis data aktual kelas Anda.';
+
+    container.innerHTML = `
+        <div class="flex items-start gap-2.5">
+            <div class="w-7 h-7 rounded-xl bg-indigo-100 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
+                <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
+            </div>
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-xs text-slate-700 dark:text-slate-200 shadow-sm space-y-1.5 max-w-[88%]">
+                <p class="font-extrabold text-slate-900 dark:text-white">Halo! Saya Asisten AI Dashboard Guru.</p>
+                <p class="leading-relaxed">${ctxText}</p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">Tanyakan statistik kehadiran, evaluasi tugas, nama siswa tertentu, atau minta saran bimbingan personal.</p>
+            </div>
+        </div>
+    `;
+}
+
+function toggleGuruAiChat(forceState) {
+    const panel = document.getElementById('guru-ai-chat-panel');
+    const fab = document.getElementById('guru-ai-chat-fab');
+    if (!panel) return;
+    const shouldOpen = typeof forceState === 'boolean' ? forceState : panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', !shouldOpen);
+    if (fab) fab.classList.toggle('hidden', shouldOpen);
+    if (shouldOpen) {
+        if (!guruChatInitialized) {
+            guruChatInitialized = true;
+            renderGuruChatWelcome();
+        }
+        refreshGuruChatConnectionState();
+        if (hasTeacherPersonalGeminiKey()) {
+            setTimeout(() => document.getElementById('guru-chat-input')?.focus(), 100);
+        }
+    } else {
+        updateGuruChatContextBadge();
+    }
+}
+
+function resetGuruAiChat() {
+    if (guruChatAbortController) {
+        guruChatAbortController.abort();
+        guruChatAbortController = null;
+    }
+    guruChatIsStreaming = false;
+    guruChatHistory = [];
+    guruChatReplyStore = {};
+    setGuruChatBusyUI(false);
+    renderGuruChatWelcome();
+    refreshGuruChatConnectionState();
+    showToast('🔄 Percakapan Asisten AI dimulai ulang.');
+}
+
+function askGuruAiQuickPrompt(promptText) {
+    toggleGuruAiChat(true);
+    if (!hasTeacherPersonalGeminiKey()) {
+        if (guruChatHistory.length === 0) renderGuruChatWelcome();
+        showToast('Hubungkan Gemini pribadi Anda di menu Pengaturan terlebih dahulu.', 'error');
+        return;
+    }
+    if (guruChatIsStreaming) return;
+    sendGuruAiChatMessage(null, promptText);
+}
+
+function handleGuruChatKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendGuruAiChatMessage(e);
+    }
+}
+
+function stopGuruAiChatStream() {
+    if (guruChatAbortController) {
+        guruChatAbortController.abort();
+        guruChatAbortController = null;
+    }
+}
+
+function setGuruChatBusyUI(busy) {
+    guruChatIsStreaming = busy;
+    const connected = hasTeacherPersonalGeminiKey();
+    const sendBtn = document.getElementById('btn-guru-chat-send');
+    const stopBtn = document.getElementById('btn-guru-chat-stop');
+    const input = document.getElementById('guru-chat-input');
+    if (sendBtn) {
+        sendBtn.classList.toggle('hidden', busy);
+        sendBtn.disabled = !connected;
+    }
+    if (stopBtn) stopBtn.classList.toggle('hidden', !busy);
+    if (input) input.disabled = busy || !connected;
+}
+
+function copyGuruChatReply(replyKey) {
+    const text = guruChatReplyStore[replyKey];
+    if (!text) return;
+    navigator.clipboard.writeText(text)
+        .then(() => showToast('📋 Jawaban AI disalin ke clipboard'))
+        .catch(() => showToast('Gagal menyalin teks.', 'error'));
+}
+
+async function sendGuruAiChatMessage(e, overridePrompt = null) {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    if (guruChatIsStreaming) return;
+
+    const inputEl = document.getElementById('guru-chat-input');
+    const messagesEl = document.getElementById('guru-chat-messages');
+    if (!messagesEl) return;
+
+    if (!hasTeacherPersonalGeminiKey()) {
+        if (guruChatHistory.length === 0) {
+            renderGuruChatWelcome();
+        } else {
+            const warnWrap = document.createElement('div');
+            warnWrap.className = 'flex items-start gap-2.5';
+            warnWrap.innerHTML = `
+                <div class="w-7 h-7 rounded-xl bg-amber-100 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <i class="fa-solid fa-key text-xs"></i>
+                </div>
+                <div class="bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-xs text-amber-900 dark:text-amber-200 shadow-sm space-y-2 max-w-[88%]">
+                    <p class="font-bold">Gemini pribadi Anda belum terhubung.</p>
+                    <button type="button" onclick="openTeacherGeminiSettingsFromChat()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-extrabold transition">
+                        <i class="fa-solid fa-sliders"></i> Buka Pengaturan Gemini
+                    </button>
+                </div>
+            `;
+            messagesEl.appendChild(warnWrap);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+        refreshGuruChatConnectionState();
+        showToast('Hubungkan Gemini pribadi Anda di menu Pengaturan terlebih dahulu.', 'error');
+        return;
+    }
+
+    const prompt = (overridePrompt !== null ? overridePrompt : (inputEl?.value || '')).trim();
+    if (!prompt) return;
+    if (inputEl && overridePrompt === null) inputEl.value = '';
+
+    // Bubble pesan guru
+    const userWrap = document.createElement('div');
+    userWrap.className = 'flex justify-end';
+    userWrap.innerHTML = `
+        <div class="bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-xs leading-relaxed shadow-sm max-w-[85%] whitespace-pre-wrap">${escapeHtmlSafe(prompt)}</div>
+    `;
+    messagesEl.appendChild(userWrap);
+
+    // Bubble balasan AI (streaming)
+    const replyKey = `r_${++guruChatReplySeq}`;
+    const aiWrap = document.createElement('div');
+    aiWrap.className = 'flex items-start gap-2.5';
+    aiWrap.innerHTML = `
+        <div class="w-7 h-7 rounded-xl bg-indigo-100 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
+            <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
+        </div>
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-xs text-slate-700 dark:text-slate-200 shadow-sm max-w-[88%] space-y-2 min-w-0">
+            <div class="guru-chat-md leading-relaxed break-words" data-ai-content>
+                <span class="inline-flex items-center gap-1.5 text-slate-400"><i class="fa-solid fa-spinner fa-spin"></i> Menganalisis data kelas...</span>
+            </div>
+            <div class="hidden pt-1 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end" data-ai-actions>
+                <button type="button" onclick="copyGuruChatReply('${replyKey}')" class="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition">
+                    <i class="fa-regular fa-copy"></i> Salin
+                </button>
+            </div>
+        </div>
+    `;
+    messagesEl.appendChild(aiWrap);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    const contentBox = aiWrap.querySelector('[data-ai-content]');
+    const actionsBox = aiWrap.querySelector('[data-ai-actions]');
+
+    setGuruChatBusyUI(true);
+    guruChatAbortController = new AbortController();
+
+    let fullReply = '';
+    try {
+        const res = await fetch('/api/gemini/teacher-chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: guruChatAbortController.signal,
+            body: JSON.stringify({
+                teacherId: currentUser.id,
+                message: prompt,
+                history: guruChatHistory.slice(-12),
+                context: buildGuruDashboardChatContext()
+            })
+        });
+
+        const contentType = res.headers.get('content-type') || '';
+        if (!res.ok) {
+            let errMsg = `Gagal terhubung ke Asisten AI (HTTP ${res.status}).`;
+            let errCode = null;
+            try {
+                const errJson = await res.json();
+                if (errJson?.error) errMsg = errJson.error;
+                if (errJson?.code) errCode = errJson.code;
+            } catch { /* ignore */ }
+            const customErr = new Error(errMsg);
+            customErr.code = errCode;
+            throw customErr;
+        }
+
+        if (contentType.includes('text/event-stream') && res.body) {
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+
+                const events = buffer.split('\n\n');
+                buffer = events.pop() || '';
+
+                for (const evt of events) {
+                    const line = evt.trim();
+                    if (!line.startsWith('data:')) continue;
+                    const jsonStr = line.slice(5).trim();
+                    if (!jsonStr) continue;
+                    let payload;
+                    try {
+                        payload = JSON.parse(jsonStr);
+                    } catch {
+                        continue;
+                    }
+                    if (payload.error) {
+                        const sseErr = new Error(payload.error);
+                        sseErr.code = payload.code || null;
+                        throw sseErr;
+                    }
+                    if (payload.text) {
+                        fullReply += payload.text;
+                        contentBox.innerHTML = renderChatMarkdownSafe(fullReply);
+                        messagesEl.scrollTop = messagesEl.scrollHeight;
+                    }
+                }
+            }
+        } else {
+            const data = await res.json();
+            if (data?.error) {
+                const jsonErr = new Error(data.error);
+                jsonErr.code = data.code || null;
+                throw jsonErr;
+            }
+            fullReply = data?.text || '';
+            contentBox.innerHTML = renderChatMarkdownSafe(fullReply);
+        }
+
+        if (!fullReply.trim()) {
+            throw new Error('Tidak ada respons yang diterima dari Gemini.');
+        }
+
+        guruChatReplyStore[replyKey] = fullReply;
+        guruChatHistory.push({ role: 'user', text: prompt });
+        guruChatHistory.push({ role: 'model', text: fullReply });
+        if (guruChatHistory.length > 24) guruChatHistory = guruChatHistory.slice(-24);
+        if (actionsBox) actionsBox.classList.remove('hidden');
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            if (fullReply.trim()) {
+                guruChatReplyStore[replyKey] = fullReply;
+                contentBox.innerHTML = renderChatMarkdownSafe(fullReply) + '<p class="text-[10px] text-slate-400 italic mt-1">(Dihentikan oleh guru)</p>';
+                if (actionsBox) actionsBox.classList.remove('hidden');
+            } else {
+                contentBox.innerHTML = '<span class="text-slate-400 italic">Permintaan dibatalkan.</span>';
+            }
+        } else {
+            const needsKeySettings = err.code === 'MISSING_TEACHER_KEY' || err.code === 'INVALID_TEACHER_KEY';
+            contentBox.innerHTML = `
+                <div class="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-[11px] font-semibold space-y-2">
+                    <div><i class="fa-solid fa-circle-exclamation mr-1"></i> ${escapeHtmlSafe(err.message || 'Terjadi kesalahan saat menghubungi layanan AI.')}</div>
+                    ${needsKeySettings ? `<button type="button" onclick="openTeacherGeminiSettingsFromChat()" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-extrabold transition"><i class="fa-solid fa-sliders"></i> Buka Pengaturan Gemini</button>` : ''}
+                </div>
+            `;
+        }
+    } finally {
+        guruChatAbortController = null;
+        setGuruChatBusyUI(false);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        if (hasTeacherPersonalGeminiKey()) {
+            document.getElementById('guru-chat-input')?.focus();
+        }
+    }
 }

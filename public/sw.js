@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v7';
+const CACHE_VERSION = 'v11';
 const SHELL_CACHE = `pantaubelajar-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `pantaubelajar-runtime-${CACHE_VERSION}`;
 
@@ -8,11 +8,11 @@ const APP_SHELL_ASSETS = [
   '/siswa.html',
   '/privacy.html',
   '/style.css',
-  '/style.css?v=9.3',
+  '/style.css?v=9.5',
   '/config.js',
   '/config.js?v=9.0',
   '/app-guru.js',
-  '/app-guru.js?v=9.3',
+  '/app-guru.js?v=9.6',
   '/app-siswa.js',
   '/app-siswa.js?v=9.3',
   '/pwa.js',
@@ -76,10 +76,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Never intercept Supabase API / Realtime / WebSocket / health checks
+  // Never intercept Supabase API / Realtime / WebSocket / server API / health checks
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
   if (url.hostname.endsWith('supabase.co')) return;
-  if (url.pathname === '/health') return;
+  if (url.pathname === '/health' || url.pathname.startsWith('/api/')) return;
 
   // Same-origin App Shell: Network-First with Cache Fallback
   if (url.origin === self.location.origin) {

@@ -40,7 +40,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=9.3">
+    <link rel="stylesheet" href="style.css?v=9.5">
 </head>
 <body class="min-h-screen flex flex-col bg-[#f8fafc] dark:bg-slate-950 text-slate-800 dark:text-slate-100 antialiased transition-colors duration-200">
 
@@ -282,7 +282,7 @@
             </div>
 
             <!-- ISI TAB-TAB UTAMA -->
-            <main class="max-w-7xl w-full mx-auto p-3 sm:p-6 mobile-nav-safe-bottom space-y-5 flex-1 min-w-0">
+            <main class="max-w-7xl w-full mx-auto px-3 pt-3 sm:px-6 sm:pt-6 pb-36 lg:pb-24 mobile-nav-safe-bottom space-y-5 flex-1 min-w-0">
 
                 <!-- ==================== TAB 1: DASHBOARD ==================== -->
                 <div id="gcontent-dashboard" class="space-y-5 min-w-0">
@@ -294,10 +294,16 @@
                             </h2>
                             <p class="text-[11px] text-slate-500 dark:text-slate-400">Statistik kehadiran, ketuntasan tugas, grafik visual, dan capaian siswa.</p>
                         </div>
-                        <button type="button" id="btn-export-dashboard-pdf" onclick="exportDashboardSummaryPDF()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-sm transition shrink-0">
-                            <i class="fa-solid fa-file-pdf"></i>
-                            <span>Ekspor Ringkasan PDF</span>
-                        </button>
+                        <div class="flex flex-wrap items-center gap-2 shrink-0">
+                            <button type="button" id="btn-open-guru-chat" onclick="toggleGuruAiChat(true)" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm transition shrink-0">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                <span>Tanya Asisten AI</span>
+                            </button>
+                            <button type="button" id="btn-export-dashboard-pdf" onclick="exportDashboardSummaryPDF()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-sm transition shrink-0">
+                                <i class="fa-solid fa-file-pdf"></i>
+                                <span>Ekspor Ringkasan PDF</span>
+                            </button>
+                        </div>
                     </div>
 
                     <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
@@ -812,7 +818,7 @@
                                     <h3 class="font-extrabold text-sm text-slate-900 dark:text-white">✨ Asisten Analisis AI (Google Gemini Mandiri)</h3>
                                     <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-100 dark:bg-indigo-900/70 text-indigo-700 dark:text-indigo-300">Gratis 500x / Hari</span>
                                 </div>
-                                <p class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">Gunakan API Key gratis dari akun Google Anda sendiri untuk menganalisis tren perkembangan & kekuatan/kelemahan siswa binaan secara otomatis.</p>
+                                <p class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">Hubungkan akun Google Gemini pribadi Anda untuk mengaktifkan <b>Chatbot Asisten AI Dashboard Guru</b> dan analisis 360° siswa binaan dengan kuota mandiri.</p>
                             </div>
                             <div id="gemini-key-status-badge"></div>
                         </div>
@@ -895,6 +901,64 @@
                 </button>
             </div>
         </nav>
+        <!-- FLOATING BUTTON & PANEL CHATBOT AI DASHBOARD GURU -->
+        <button type="button" id="guru-ai-chat-fab" onclick="toggleGuruAiChat()" title="Buka Asisten AI Kelas" class="fixed bottom-[4.5rem] lg:bottom-6 right-3 lg:right-6 z-40 inline-flex items-center gap-2 p-3 sm:px-4 sm:py-3 rounded-full sm:rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white text-xs font-extrabold shadow-lg shadow-indigo-600/30 transition">
+            <i class="fa-solid fa-wand-magic-sparkles text-sm"></i>
+            <span class="hidden sm:inline">Asisten AI</span>
+        </button>
+
+        <aside id="guru-ai-chat-panel" aria-label="Asisten AI Dashboard Guru" class="hidden fixed bottom-20 lg:bottom-6 right-3 lg:right-6 z-[95] w-[calc(100vw-1.5rem)] sm:w-[420px] max-w-[420px] h-[min(74vh,600px)] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
+            <!-- Header Chat -->
+            <div class="px-4 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white flex items-center justify-between gap-2 shrink-0">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
+                        <i class="fa-solid fa-wand-magic-sparkles text-sm"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 class="font-extrabold text-xs sm:text-sm leading-tight truncate">Asisten AI Kelas</h3>
+                        <p id="guru-chat-context-label" class="text-[10px] text-indigo-100 truncate">Pilih kelas untuk mulai bertanya</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                    <button type="button" onclick="resetGuruAiChat()" title="Mulai Percakapan Baru" class="p-2 rounded-xl hover:bg-white/15 text-white/90 hover:text-white text-xs transition">
+                        <i class="fa-solid fa-rotate-right"></i>
+                    </button>
+                    <button type="button" onclick="toggleGuruAiChat(false)" title="Tutup Panel" class="p-2 rounded-xl hover:bg-white/15 text-white/90 hover:text-white text-xs transition">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Pintasan Pertanyaan Cepat -->
+            <div id="guru-chat-quick-prompts" class="px-3 py-2 bg-slate-50 dark:bg-slate-950/70 border-b border-slate-200 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto shrink-0">
+                <button type="button" onclick="askGuruAiQuickPrompt('Ringkas statistik kehadiran, ketuntasan tugas, dan capaian nilai kelas ini.')" class="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 shrink-0 transition">
+                    📊 Ringkas Statistik
+                </button>
+                <button type="button" onclick="askGuruAiQuickPrompt('Evaluasi seluruh tugas & ujian: mana yang paling banyak belum terkumpul atau nilainya rendah?')" class="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 shrink-0 transition">
+                    📝 Evaluasi Tugas
+                </button>
+                <button type="button" onclick="askGuruAiQuickPrompt('Siapa saja siswa yang menjadi prioritas bimbingan di kelas ini, dan apa saran pendekatan personal untuk mereka?')" class="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 shrink-0 transition">
+                    🎯 Prioritas Bimbingan
+                </button>
+                <button type="button" onclick="askGuruAiQuickPrompt('Buatkan rencana tindak lanjut pembelajaran dan remedial yang praktis untuk pekan ini berdasarkan kondisi kelas.')" class="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 shrink-0 transition">
+                    💡 Rencana Tindak Lanjut
+                </button>
+            </div>
+
+            <!-- Area Pesan -->
+            <div id="guru-chat-messages" class="flex-1 overflow-y-auto p-3.5 space-y-3 bg-slate-50/50 dark:bg-slate-950/40"></div>
+
+            <!-- Composer Input -->
+            <form id="guru-chat-form" onsubmit="sendGuruAiChatMessage(event)" class="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-end gap-2 shrink-0">
+                <textarea id="guru-chat-input" rows="1" onkeydown="handleGuruChatKeydown(event)" placeholder="Tanya statistik kelas, tugas, atau saran bimbingan siswa..." class="flex-1 resize-none max-h-28 border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-100 leading-relaxed"></textarea>
+                <button type="button" id="btn-guru-chat-stop" onclick="stopGuruAiChatStream()" class="hidden px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shrink-0" title="Hentikan Jawaban">
+                    <i class="fa-solid fa-stop"></i>
+                </button>
+                <button type="submit" id="btn-guru-chat-send" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm shrink-0" title="Kirim Pertanyaan">
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </form>
+        </aside>
     </section>
 
     <!-- ==================== MODAL-MODAL ==================== -->
@@ -1400,7 +1464,7 @@
     </div>
 
     <script src="config.js?v=9.0"></script>
-    <script src="app-guru.js?v=9.3"></script>
+    <script src="app-guru.js?v=9.6"></script>
     <script src="/pwa.js?v=1.0"></script>
 </body>
 </html>
