@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v13';
+const CACHE_VERSION = 'v14';
 const SHELL_CACHE = `pantaubelajar-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `pantaubelajar-runtime-${CACHE_VERSION}`;
 
@@ -12,7 +12,7 @@ const APP_SHELL_ASSETS = [
   '/config.js',
   '/config.js?v=9.0',
   '/app-guru.js',
-  '/app-guru.js?v=9.8',
+  '/app-guru.js?v=9.9',
   '/app-siswa.js',
   '/app-siswa.js?v=9.3',
   '/pwa.js',
@@ -76,17 +76,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Never intercept Supabase API / Realtime / WebSocket / server API / health checks
+  // Never intercept Supabase API / Realtime / WebSocket / server API / auth cookie checks / health checks
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
   if (url.hostname.endsWith('supabase.co')) return;
-  if (url.pathname === '/health' || url.pathname.startsWith('/api/')) return;
+  if (url.pathname === '/health' || url.pathname.startsWith('/api/') || url.pathname.startsWith('/__') || url.pathname.startsWith('/_aistudio')) return;
 
   // Same-origin App Shell: Network-First with Cache Fallback
   if (url.origin === self.location.origin) {
     event.respondWith(
       fetch(req)
         .then((networkRes) => {
-          if (networkRes && networkRes.ok) {
+          if (networkRes && networkRes.ok && !networkRes.redirected && !String(networkRes.url || '').includes('__cookie_check')) {
             const copy = networkRes.clone();
             caches.open(SHELL_CACHE).then((cache) => cache.put(req, copy)).catch(() => {});
           }

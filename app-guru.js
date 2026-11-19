@@ -7127,7 +7127,11 @@ async function sendGuruAiChatMessage(e, overridePrompt = null) {
     try {
         const res = await fetch('/api/gemini/teacher-chat', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream, application/json'
+            },
             signal: guruChatAbortController.signal,
             body: JSON.stringify({
                 teacherId: currentUser.id,
@@ -7137,15 +7141,30 @@ async function sendGuruAiChatMessage(e, overridePrompt = null) {
             })
         });
 
-        const contentType = res.headers.get('content-type') || '';
+        const contentType = (res.headers.get('content-type') || '').toLowerCase();
+        const finalUrl = res.url || '';
+
+        if (res.redirected && /__cookie_check|accounts\.google/i.test(finalUrl)) {
+            const authErr = new Error('Sesi koneksi server perlu diperbarui. Klik "Muat Ulang Halaman" lalu kirim ulang pertanyaan Anda.');
+            authErr.code = 'SESSION_RELOAD_REQUIRED';
+            throw authErr;
+        }
+
         if (!res.ok) {
             let errMsg = `Gagal terhubung ke Asisten AI (HTTP ${res.status}).`;
             let errCode = null;
-            try {
-                const errJson = await res.json();
-                if (errJson?.error) errMsg = errJson.error;
-                if (errJson?.code) errCode = errJson.code;
-            } catch { /* ignore */ }
+            const rawErrText = await res.text().catch(() => '');
+            if (rawErrText) {
+                try {
+                    const errJson = JSON.parse(rawErrText);
+                    if (errJson?.error) errMsg = errJson.error;
+                    if (errJson?.code) errCode = errJson.code;
+                } catch {
+                    if (res.status === 405 || res.status === 404) {
+                        errMsg = `Layanan server Asisten AI tidak tersedia di alamat ini (HTTP ${res.status}). Pastikan aplikasi dibuka dari server backend yang aktif.`;
+                    }
+                }
+            }
             const customErr = new Error(errMsg);
             customErr.code = errCode;
             throw customErr;
@@ -7184,7 +7203,24 @@ async function sendGuruAiChatMessage(e, overridePrompt = null) {
                 }
             }
         } else {
-            const data = await res.json();
+            const rawText = await res.text();
+            const looksLikeHtml = contentType.includes('text/html') || /^\s*<!doctype|^\s*<html/i.test(rawText);
+            if (looksLikeHtml) {
+                const isCookieGate = /__cookie_check|_aistudio-iframe|accounts\.google/i.test(finalUrl + ' ' + rawText.slice(0, 1000));
+                const htmlErr = new Error(
+                    isCookieGate
+                        ? 'Sesi koneksi server perlu diperbarui. Klik "Muat Ulang Halaman" lalu coba kirim pertanyaan lagi.'
+                        : 'Server mengembalikan halaman HTML bukan respons AI. Muat ulang halaman atau pastikan aplikasi dijalankan melalui server backend.'
+                );
+                htmlErr.code = 'SESSION_RELOAD_REQUIRED';
+                throw htmlErr;
+            }
+            let data;
+            try {
+                data = JSON.parse(rawText);
+            } catch {
+                throw new Error('Respons server AI tidak berformat JSON yang valid. Coba muat ulang halaman.');
+            }
             if (data?.error) {
                 const jsonErr = new Error(data.error);
                 jsonErr.code = data.code || null;
@@ -7213,10 +7249,12 @@ async function sendGuruAiChatMessage(e, overridePrompt = null) {
             }
         } else {
             const needsKeySettings = err.code === 'MISSING_TEACHER_KEY' || err.code === 'INVALID_TEACHER_KEY';
+            const needsReload = err.code === 'SESSION_RELOAD_REQUIRED';
             contentBox.innerHTML = `
                 <div class="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-[11px] font-semibold space-y-2">
                     <div><i class="fa-solid fa-circle-exclamation mr-1"></i> ${escapeHtmlSafe(err.message || 'Terjadi kesalahan saat menghubungi layanan AI.')}</div>
                     ${needsKeySettings ? `<button type="button" onclick="openTeacherGeminiSettingsFromChat()" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-extrabold transition"><i class="fa-solid fa-sliders"></i> Buka Pengaturan Gemini</button>` : ''}
+                    ${needsReload ? `<button type="button" onclick="window.location.reload()" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-extrabold transition"><i class="fa-solid fa-rotate-right"></i> Muat Ulang Halaman</button>` : ''}
                 </div>
             `;
         }

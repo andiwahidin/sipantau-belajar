@@ -11,7 +11,7 @@ const GEMINI_FALLBACK_MODEL = 'gemini-3.1-flash-lite';
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://hypajvsnlalytainfjjn.supabase.co';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5cGFqdnNubGFseXRhaW5mampuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI3MjkyMzcsImV4cCI6MjEwODMwNTIzN30.iwGl4NxMeo_O5QCoeik7NlI__FBpFdPrLBaaQPmrY6Q';
 
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '2mb' }));
 
 function createGeminiClientForKey(apiKey) {
   if (!apiKey || !String(apiKey).trim()) return null;
@@ -246,6 +246,22 @@ app.post('/api/gemini/teacher-chat', async (req, res) => {
     res.write(`data: ${JSON.stringify({ error: mapped.message, code: mapped.code })}\n\n`);
     res.end();
   }
+});
+
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'Endpoint API tidak ditemukan.' });
+});
+
+app.use((err, req, res, next) => {
+  if (req.path && req.path.startsWith('/api/')) {
+    const status = Number(err?.status || err?.statusCode || 500);
+    return res.status(status >= 400 && status < 600 ? status : 500).json({
+      error: status === 413
+        ? 'Data konteks kelas terlalu besar untuk diproses.'
+        : (err?.message || 'Terjadi kesalahan pada server API.')
+    });
+  }
+  return next(err);
 });
 
 app.use(express.static(path.join(__dirname, 'public'), {
