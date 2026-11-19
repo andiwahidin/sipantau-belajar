@@ -112,18 +112,20 @@ async function generateStreamWithRetry(ai, params, maxAttempts = 3) {
   throw lastErr;
 }
 
-async function discoverAvailableGeminiModel(apiKey) {
+async function discoverAvailableGeminiModel(ai) {
   try {
-    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
-      headers: { 'x-goog-api-key': String(apiKey).trim() }
-    });
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    const models = Array.isArray(data?.models) ? data.models : [];
-    const usable = models
-      .filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
-      .map((m) => String(m.name || '').replace(/^models\//, ''))
-      .filter((name) => name.startsWith('gemini-') && !/(1\.0|1\.5|2\.0|embedding|tts|imagen|veo|aqa|vision|image|audio|live)/i.test(name));
+    const pager = await ai.models.list();
+    const usable = [];
+    for await (const m of pager) {
+      const actions = Array.isArray(m?.supportedActions)
+        ? m.supportedActions
+        : (Array.isArray(m?.supportedGenerationMethods) ? m.supportedGenerationMethods : []);
+      if (actions.length && !actions.includes('generateContent')) continue;
+      const name = String(m?.name || '').replace(/^models\//, '');
+      if (name.startsWith('gemini-') && !/(1\.0|1\.5|2\.0|embedding|tts|imagen|veo|aqa|vision|image|audio|live)/i.test(name)) {
+        usable.push(name);
+      }
+    }
     if (!usable.length) return null;
     const preferred =
       usable.find((n) => /flash-lite/i.test(n) && !/preview|exp/i.test(n)) ||
@@ -209,7 +211,7 @@ app.post('/api/gemini/teacher-chat', async (req, res) => {
     }
 
     if (!stream) {
-      const discovered = await discoverAvailableGeminiModel(teacherApiKey);
+      const discovered = await discoverAvailableGeminiModel(ai);
       if (discovered && !candidateModels.includes(discovered)) {
         stream = await generateStreamWithRetry(ai, {
           model: discovered,
